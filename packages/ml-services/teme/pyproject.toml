@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "teme"
+version = "0.1.0"
+description = "Tree Emission Management Engine"
+requires-python = ">=3.8"
+
+
+[tool.setuptools]
+packages = ["teme", "teme.core", "teme.api", "teme.data", "teme.models", "teme.utils", "teme.tests"]
+
+[tool.setuptools.package-dir]
+"teme" = "."
+"teme.core" = "core"
+"teme.api" = "api"
+"teme.data" = "data"
+"teme.models" = "models"
+"teme.utils" = "utils"
+"teme.tests" = "tests"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
