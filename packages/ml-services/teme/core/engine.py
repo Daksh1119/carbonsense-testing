@@ -6,6 +6,13 @@ from teme.core.land import calculate_land_required
 from teme.core.exceptions import InfeasiblePlanError
 from teme.core.optimizer import select_species_rule_based
 
+# --- Optional ML import (safe) ---
+try:
+    from teme.ml.survival import predict_survival_adjustment
+    ML_AVAILABLE = True
+except Exception:
+    ML_AVAILABLE = False
+
 
 def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -19,6 +26,8 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
     E = input_payload["emission_kg"]
     T = input_payload["time_horizon_years"]
     constraints = input_payload["constraints"]
+
+    ml_enabled = input_payload.get("ml", {}).get("enabled", False)
 
     # --- Select species (rule-based optimizer) or use provided config ---
     # NOTE:
@@ -53,6 +62,7 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
 
     # --- Annual sequestration computation ---
     offset_plan = []
+    ml_adjustments = {}
 
     for species, cfg in species_config.items():
         alpha = generate_sequestration_curve(
@@ -71,15 +81,40 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
                 f"Survival drops below 85% for species {species}"
             )
 
+        # --- Optional ML-based survival adjustment ---
+        adjusted_sigma = list(sigma)
+        adjustment_factor = 1.0
+
+        if ml_enabled and ML_AVAILABLE:
+            try:
+                adjustment_factor = predict_survival_adjustment(
+                    growth_rate_class=cfg["growth_rate_class"],
+                    drought_score=cfg["drought_score"],
+                    fire_score=cfg["fire_score"],
+                    disease_score=cfg["disease_score"],
+                    planted_count=cfg["count"],
+                    rule_based_survival=sigma[0],
+                )
+
+                adjusted_sigma = [
+                    min(1.0, s * adjustment_factor) for s in sigma
+                ]
+
+            except Exception:
+                # ML failure must NEVER break TEME
+                adjustment_factor = 1.0
+
+        ml_adjustments[species] = round(adjustment_factor, 3)
+
         for t in range(T + 1):
-            annual_total[t] += cfg["count"] * alpha[t] * sigma[t]
+            annual_total[t] += cfg["count"] * alpha[t] * adjusted_sigma[t]
 
         offset_plan.append(
             {
                 "species": species,
                 "count": cfg["count"],
                 "annual_sequestration_kg": alpha,
-                "survival_curve": sigma,
+                "survival_curve": adjusted_sigma,
             }
         )
 
@@ -104,7 +139,7 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
     else:
         confidence = 0.3
 
-    # --- Final output (contract-compliant) ---
+    # --- Final output (contract-compliant + ML transparent) ---
     return {
         "offset_plan": offset_plan,
         "total_trees": sum(species_counts.values()),
@@ -112,4 +147,9 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
         "time_to_neutral_years": offset_year,
         "confidence_score": round(confidence, 2),
         "warnings": list(dict.fromkeys(warnings)),  # deterministic dedupe
+        "ml_metadata": {
+            "enabled": bool(ml_enabled and ML_AVAILABLE),
+            "model_version": "rf-survival-v1.1" if ml_enabled and ML_AVAILABLE else None,
+            "adjustment_factors": ml_adjustments if ml_enabled and ML_AVAILABLE else {},
+        },
     }
