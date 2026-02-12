@@ -30,9 +30,6 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
     ml_enabled = input_payload.get("ml", {}).get("enabled", False)
 
     # --- Select species (rule-based optimizer) or use provided config ---
-    # NOTE:
-    # species_config is accepted only for testing/internal use.
-    # External callers must NOT provide species_config.
     if "species_config" in input_payload:
         species_config = input_payload["species_config"]
     else:
@@ -113,8 +110,8 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
             {
                 "species": species,
                 "count": cfg["count"],
-                "annual_sequestration_kg": alpha,
-                "survival_curve": adjusted_sigma,
+                "annual_sequestration_kg": [round(v, 4) for v in alpha],
+                "survival_curve": [round(v, 4) for v in adjusted_sigma],
             }
         )
 
@@ -143,10 +140,10 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "offset_plan": offset_plan,
         "total_trees": sum(species_counts.values()),
-        "land_required_hectare": land_required,
+        "land_required_hectare": round(land_required, 4),
         "time_to_neutral_years": offset_year,
         "confidence_score": round(confidence, 2),
-        "warnings": list(dict.fromkeys(warnings)),  # deterministic dedupe
+        "warnings": list(dict.fromkeys(warnings)),
         "ml_metadata": {
             "enabled": bool(ml_enabled and ML_AVAILABLE),
             "model_version": "rf-survival-v1.1" if ml_enabled and ML_AVAILABLE else None,

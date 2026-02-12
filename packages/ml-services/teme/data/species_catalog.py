@@ -5,7 +5,11 @@ SPECIES_CATALOG = {
         "peak_sequestration_kg": 25.0,
         "annual_survival_rate": 0.95,
         "land_per_tree": 0.01,
-        "priority": 0.9
+        "priority": 0.9,
+        "growth_rate_class": 7,
+        "drought_score": 8,
+        "fire_score": 7,
+        "disease_score": 8,
     },
     "Peepal": {
         "regions": ["India"],
@@ -13,7 +17,11 @@ SPECIES_CATALOG = {
         "peak_sequestration_kg": 30.0,
         "annual_survival_rate": 0.93,
         "land_per_tree": 0.015,
-        "priority": 0.85
+        "priority": 0.85,
+        "growth_rate_class": 5,
+        "drought_score": 6,
+        "fire_score": 5,
+        "disease_score": 6,
     },
     "Bamboo": {
         "regions": ["India"],
@@ -21,6 +29,10 @@ SPECIES_CATALOG = {
         "peak_sequestration_kg": 20.0,
         "annual_survival_rate": 0.90,
         "land_per_tree": 0.008,
-        "priority": 0.8
-    }
+        "priority": 0.8,
+        "growth_rate_class": 9,
+        "drought_score": 5,
+        "fire_score": 6,
+        "disease_score": 7,
+    },
 }

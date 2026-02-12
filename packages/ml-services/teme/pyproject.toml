@@ -1,26 +1,58 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "teme"
-version = "0.1.0"
-description = "Tree Emission Management Engine"
-requires-python = ">=3.8"
+version = "1.0.0"
+description = "Time-based Ecological Mitigation Engine (TEME)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
 
+authors = [
+  { name = "CarbonSense Team" }
+]
+
+# IMPORTANT:
+# TEME core uses only standard library by default.
+# ML dependencies are OPTIONAL and only required if ML is enabled.
+dependencies = []
 
 [tool.setuptools]
-packages = ["teme", "teme.core", "teme.api", "teme.data", "teme.models", "teme.utils", "teme.tests"]
+# List ONLY directories that actually exist on disk
+packages = [
+    "teme",
+    "teme.core",
+    "teme.api",
+    "teme.data",
+    "teme.ml",
+    "teme.tests",
+    "teme.utils",
+]
 
 [tool.setuptools.package-dir]
+# Map Python package names to actual folder paths
 "teme" = "."
 "teme.core" = "core"
 "teme.api" = "api"
 "teme.data" = "data"
-"teme.models" = "models"
-"teme.utils" = "utils"
+"teme.ml" = "ml"
 "teme.tests" = "tests"
+"teme.utils" = "utils"
+
+# NOTE: [tool.setuptools.packages.find] is REMOVED.
+# You cannot use BOTH explicit packages AND packages.find.
+# That causes: "Cannot declare ('tool', 'setuptools', 'packages', 'find') twice"
+
+[tool.setuptools.package-data]
+# Ensure ML model files are included
+teme = [
+    "ml/models/*.pkl",
+    "data/*.json",
+]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+minversion = "7.0"
 testpaths = ["tests"]
+addopts = "-ra -q"

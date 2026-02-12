@@ -1,8 +1,15 @@
 """
-TEME (Tree Emission Management Engine) Package
+TEME (Tree-based Emission Mitigation Engine)
 
-This package provides functionality for optimizing tree planting strategies
-to sequester carbon emissions while respecting various constraints.
+A deterministic, constraint-aware decision engine that selects viable
+tree species, simulates sequestration over time, applies survival decay,
+and determines carbon neutrality year.
+
+Hybrid deterministic + optional ML refinement architecture.
+
+Usage:
+    from teme.core.engine import run_teme
+    from teme.core.exceptions import TEMEError, InfeasiblePlanError
 """
 
 __version__ = "0.1.0"

@@ -24,6 +24,10 @@ def predict_survival_adjustment(
     """
     Returns a bounded survival adjustment factor.
     """
+    if rule_based_survival == 0:
+        print("[TEME-ML WARNING] rule_based_survival is 0; defaulting adjustment to 1.0")
+        return 1.0
+
     model = load_model()
 
     X = np.array([[
