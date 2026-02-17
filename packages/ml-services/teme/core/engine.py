@@ -13,14 +13,43 @@ try:
 except Exception:
     ML_AVAILABLE = False
 
+# --- Optional Monte Carlo import (safe) ---
+try:
+    from teme.simulation.monte_carlo import run_monte_carlo_simulation
+    MC_AVAILABLE = True
+except Exception:
+    MC_AVAILABLE = False
+
 
 def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Execute the TEME decision engine.
 
+    Produces deterministic offset plan + optional Monte Carlo risk analysis.
+
+    Input payload fields:
+        emission_kg (float): CO2 emission to offset
+        time_horizon_years (int): projection period
+        location (str): planting region
+        constraints (dict): max_land_area_hectare, preferred_species, exclude_species
+        ml (dict, optional): {"enabled": true} to use ML survival adjustment
+        monte_carlo (dict, optional): {
+            "enabled": true,
+            "n_simulations": 1000,  (default)
+            "seed": 42              (default, None for non-deterministic)
+        }
+        species_config (dict, optional): override optimizer with manual config
+
+    Output:
+        Deterministic plan (always)
+        + monte_carlo block (when enabled and successful)
+        + transparency metadata
+
     Notes:
-    - Year index t = 0 corresponds to planting year
-    - time_to_neutral_years is measured in year offsets from start_year
+        - Year index t = 0 corresponds to planting year
+        - time_to_neutral_years = deterministic payback (linear growth)
+        - monte_carlo.risk_aware_payback_years = conservative payback (logistic + hazards)
+        - MC failure NEVER breaks the engine — falls back to deterministic only
     """
 
     E = input_payload["emission_kg"]
@@ -28,6 +57,8 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
     constraints = input_payload["constraints"]
 
     ml_enabled = input_payload.get("ml", {}).get("enabled", False)
+    mc_config = input_payload.get("monte_carlo", {})
+    mc_enabled = mc_config.get("enabled", False)
 
     # --- Select species (rule-based optimizer) or use provided config ---
     if "species_config" in input_payload:
@@ -57,7 +88,7 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
     if land_required > 0.9 * constraints["max_land_area_hectare"]:
         warnings.append("Land constraint nearly saturated")
 
-    # --- Annual sequestration computation ---
+    # --- Annual sequestration computation (deterministic, linear growth) ---
     offset_plan = []
     ml_adjustments = {}
 
@@ -130,14 +161,96 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
     if offset_year > 10:
         warnings.append("Offset not achieved in first 10 years")
 
-    # --- Confidence score (heuristic, bounded) ---
+    # --- Confidence score (heuristic baseline, may be upgraded by MC) ---
     if T > 0:
         confidence = max(0.3, 1.0 - (offset_year / T))
     else:
         confidence = 0.3
 
-    # --- Final output (contract-compliant + ML transparent) ---
-    return {
+    # ===================================================================
+    # MONTE CARLO SIMULATION (optional, never breaks deterministic output)
+    # ===================================================================
+    mc_result = None
+
+    if mc_enabled and MC_AVAILABLE:
+        try:
+            # Build species plan from optimizer output
+            mc_species_plan = []
+            for species, cfg in species_config.items():
+                mc_species_plan.append({
+                    "species": species,
+                    "count": cfg["count"],
+                    "maturity_years": cfg["maturity_years"],
+                    "peak_sequestration_kg": cfg["peak_sequestration_kg"],
+                    "annual_survival_rate": cfg["annual_survival_rate"],
+                })
+
+            mc_n_sims = mc_config.get("n_simulations", 1000)
+            mc_seed = mc_config.get("seed", 42)
+
+            mc_raw = run_monte_carlo_simulation(
+                species_plan=mc_species_plan,
+                emission_kg=E,
+                time_horizon=T,
+                n_simulations=mc_n_sims,
+                seed=mc_seed,
+            )
+
+            # --- Upgrade confidence using MC probability ---
+            mc_probability = mc_raw["risk_metrics"]["probability_of_offset"]
+            confidence = round(mc_probability, 4)
+
+            # --- Extract key MC outputs ---
+            mc_result = {
+                "risk_aware_payback_years": mc_raw["payback"]["risk_aware_years"],
+                "mean_payback_years": mc_raw["payback"]["mean_years"],
+                "probability_of_offset": mc_probability,
+                "payback_distribution": mc_raw["payback"]["payback_distribution"],
+                "risk_metrics": mc_raw["risk_metrics"],
+                "curves": mc_raw["curves"],
+                "species_hazard_info": mc_raw["species_hazard_info"],
+                "transparency": mc_raw["transparency"],
+            }
+
+            # --- Add MC-specific warnings ---
+            risk_aware = mc_raw["payback"]["risk_aware_years"]
+            if risk_aware is not None and risk_aware > offset_year:
+                warnings.append(
+                    f"Risk-aware payback ({risk_aware}yr) is "
+                    f"{risk_aware - offset_year}yr later than deterministic "
+                    f"({offset_year}yr)"
+                )
+
+            spread = mc_raw["risk_metrics"]["spread_p95_p5_kg"]
+            if spread > E * 0.5:
+                warnings.append(
+                    f"High uncertainty: P95-P5 spread ({spread:.0f} kg) "
+                    f"exceeds 50% of emission target ({E} kg)"
+                )
+
+        except Exception as e:
+            # MC failure must NEVER break TEME
+            mc_result = {
+                "error": str(e),
+                "fallback": "deterministic_only",
+            }
+            warnings.append(
+                f"Monte Carlo simulation failed: {e}. "
+                f"Using deterministic estimates only."
+            )
+
+    elif mc_enabled and not MC_AVAILABLE:
+        mc_result = {
+            "error": "Monte Carlo module not available",
+            "fallback": "deterministic_only",
+        }
+        warnings.append(
+            "Monte Carlo requested but simulation module not available. "
+            "Using deterministic estimates only."
+        )
+
+    # --- Final output (backward-compatible + MC-extended) ---
+    result = {
         "offset_plan": offset_plan,
         "total_trees": sum(species_counts.values()),
         "land_required_hectare": round(land_required, 4),
@@ -146,7 +259,17 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
         "warnings": list(dict.fromkeys(warnings)),
         "ml_metadata": {
             "enabled": bool(ml_enabled and ML_AVAILABLE),
-            "model_version": "rf-survival-v1.1" if ml_enabled and ML_AVAILABLE else None,
-            "adjustment_factors": ml_adjustments if ml_enabled and ML_AVAILABLE else {},
+            "model_version": (
+                "rf-survival-v1.1" if ml_enabled and ML_AVAILABLE else None
+            ),
+            "adjustment_factors": (
+                ml_adjustments if ml_enabled and ML_AVAILABLE else {}
+            ),
         },
     }
+
+    # Only include monte_carlo key when MC was requested
+    if mc_enabled:
+        result["monte_carlo"] = mc_result
+
+    return result
