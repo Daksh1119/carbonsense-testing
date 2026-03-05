@@ -2,7 +2,6 @@ import os
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
-# Explicitly load .env from repo root/current working directory
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
