@@ -1,17 +1,14 @@
 import os
 from dotenv import load_dotenv
-from supabase import Client, create_client
+from supabase import create_client, Client
 
-# Load variables from .env (if present)
+# Explicitly load .env from repo root/current working directory
 load_dotenv()
 
-# Correct usage: getenv takes ENV VARIABLE NAMES, not raw values
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-    raise RuntimeError(
-        "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment variables."
-    )
+    raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
