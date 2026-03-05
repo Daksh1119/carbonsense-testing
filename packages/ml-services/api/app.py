@@ -2,17 +2,17 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 
-from teme.core.engine import run_teme
-from teme.core.exceptions import InfeasiblePlanError
+from api.teme_routes import router as teme_router
+from api.ocr_routes import router as ocr_router
 
 app = FastAPI(
-    title="TEME Service",
-    version="1.0.0",
-    description="Time-based Ecological Mitigation Engine",
+    title="CarbonSense ML Service",
+    version="1.1.0",
+    description="Time-based Ecological Mitigation Engine (TEME) + OCR APIs",
 )
 
 
-# --- Request/Response Schemas ---
+# --- Request/Response Schemas (TEME) ---
 
 class MLConfig(BaseModel):
     enabled: bool = False
@@ -54,7 +54,14 @@ class TEMEOutput(BaseModel):
     ml_metadata: Optional[Dict[str, Any]] = None
 
 
-# --- API Endpoint ---
+# --- Health Endpoint ---
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "service": "carbonsense-ml"}
+
+
+# --- TEME Endpoint ---
 
 @app.post("/teme/run", response_model=TEMEOutput)
 def run_teme_api(payload: TEMEInput):
@@ -73,17 +80,21 @@ def run_teme_api(payload: TEMEInput):
         if input_dict.get("ml") is None:
             input_dict["ml"] = {"enabled": False}
 
-        print(f"[TEME API] Received request: emission_kg={input_dict['emission_kg']}, "
-              f"location={input_dict['location']}, "
-              f"time_horizon={input_dict['time_horizon_years']} years, "
-              f"ml_enabled={input_dict['ml']['enabled']}")
+        print(
+            f"[TEME API] Received request: emission_kg={input_dict['emission_kg']}, "
+            f"location={input_dict['location']}, "
+            f"time_horizon={input_dict['time_horizon_years']} years, "
+            f"ml_enabled={input_dict['ml']['enabled']}"
+        )
 
         result = run_teme(input_dict)
 
-        print(f"[TEME API] Success: {result['total_trees']} trees, "
-              f"neutrality in {result['time_to_neutral_years']} years, "
-              f"confidence={result['confidence_score']}, "
-              f"ml_active={result['ml_metadata']['enabled']}")
+        print(
+            f"[TEME API] Success: {result['total_trees']} trees, "
+            f"neutrality in {result['time_to_neutral_years']} years, "
+            f"confidence={result['confidence_score']}, "
+            f"ml_active={result.get('ml_metadata', {}).get('enabled', False)}"
+        )
 
         return result
 
@@ -106,3 +117,7 @@ def run_teme_api(payload: TEMEInput):
     except Exception as e:
         print(f"[TEME API] Unexpected error: {type(e).__name__}: {e}")
         raise HTTPException(status_code=500, detail=f"Internal TEME error: {e}")
+
+
+# --- Mount OCR routes under /ocr/* ---
+app.include_router(ocr_router)
