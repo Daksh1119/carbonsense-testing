@@ -1,4 +1,4 @@
-"""
+﻿"""
 TEME Suitability Violation Rate
 
 Tests whether the optimizer EVER recommends a species that violates
@@ -13,8 +13,8 @@ If it's not 0, the constraint filtering is broken.
 """
 
 from typing import Dict, List
-from teme.core.optimizer import select_species_rule_based
-from teme.data.species_catalog import SPECIES_CATALOG
+from ml_services.teme.core.optimizer import select_species_rule_based
+from ml_services.teme.data.species_catalog import SPECIES_CATALOG
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +168,7 @@ def check_single_recommendation(
         # V2: Region must match
         if location not in catalog_entry["regions"]:
             violations.append(
-                f"{species}: REGION MISMATCH — '{location}' not in "
+                f"{species}: REGION MISMATCH â€” '{location}' not in "
                 f"{catalog_entry['regions']}"
             )
 
@@ -182,7 +182,7 @@ def check_single_recommendation(
         land_used = config[species]["count"] * config[species]["land_per_tree"]
         if land_used > constraints["max_land_area_hectare"]:
             violations.append(
-                f"{species}: LAND OVERFLOW — {land_used:.4f} ha > "
+                f"{species}: LAND OVERFLOW â€” {land_used:.4f} ha > "
                 f"{constraints['max_land_area_hectare']} ha"
             )
 

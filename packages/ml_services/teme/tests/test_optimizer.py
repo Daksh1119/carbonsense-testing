@@ -1,4 +1,4 @@
-from teme.core.optimizer import select_species_rule_based
+﻿from ml_services.teme.core.optimizer import select_species_rule_based
 
 
 def test_optimizer_returns_species():
@@ -16,3 +16,4 @@ def test_optimizer_returns_species():
 
     assert len(species_config) > 0
     assert "Neem" in species_config
+

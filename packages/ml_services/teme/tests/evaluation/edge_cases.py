@@ -1,13 +1,13 @@
-"""
+﻿"""
 TEME Edge Case Stress Tests
 
 Deliberately breaks the system to verify graceful handling.
-Every test case must NOT crash — must return error/fallback.
+Every test case must NOT crash â€” must return error/fallback.
 """
 
 from typing import Dict, List
-from teme.core.engine import run_teme
-from teme.core.exceptions import InfeasiblePlanError
+from ml_services.teme.core.engine import run_teme
+from ml_services.teme.core.exceptions import InfeasiblePlanError
 
 
 EDGE_CASES = [

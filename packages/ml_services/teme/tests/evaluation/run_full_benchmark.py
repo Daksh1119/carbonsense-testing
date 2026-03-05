@@ -1,4 +1,4 @@
-"""
+﻿"""
 TEME Full Benchmark Runner
 
 Executes all evaluation modules and produces a comprehensive
@@ -17,18 +17,18 @@ from tests.evaluation.time_debt_validation import run_time_debt_validation
 from tests.evaluation.ranking_stability import run_ranking_stability
 from tests.evaluation.cost_realism import run_cost_realism
 from tests.evaluation.edge_cases import run_edge_case_tests
-from teme.calibration.reliability import run_full_calibration_report
+from ml_services.teme.calibration.reliability import run_full_calibration_report
 
 
 def run_full_benchmark() -> Dict:
     """Execute all evaluation modules and produce report."""
     start_time = time.time()
 
-    print("\n" + "█" * 70)
-    print("█" + " " * 68 + "█")
-    print("█" + "  TEME FORMAL EVALUATION SUITE — FULL BENCHMARK".center(68) + "█")
-    print("█" + " " * 68 + "█")
-    print("█" * 70)
+    print("\n" + "â–ˆ" * 70)
+    print("â–ˆ" + " " * 68 + "â–ˆ")
+    print("â–ˆ" + "  TEME FORMAL EVALUATION SUITE â€” FULL BENCHMARK".center(68) + "â–ˆ")
+    print("â–ˆ" + " " * 68 + "â–ˆ")
+    print("â–ˆ" * 70)
 
     all_results = {}
     pass_count = 0
@@ -37,14 +37,14 @@ def run_full_benchmark() -> Dict:
     # ===================================================================
     # 1. SUITABILITY VIOLATION RATE
     # ===================================================================
-    print(f"\n{'─'*70}")
+    print(f"\n{'â”€'*70}")
     print(f"  [1/6] SUITABILITY VIOLATION RATE")
-    print(f"{'─'*70}")
+    print(f"{'â”€'*70}")
     try:
         suit = run_suitability_evaluation()
         all_results["suitability"] = suit
 
-        status = "✅ PASS" if suit["passed"] else "❌ FAIL"
+        status = "âœ… PASS" if suit["passed"] else "âŒ FAIL"
         print(f"\n  Result: {status}")
         print(f"  Violation rate: {suit['violation_rate']*100:.2f}% "
               f"(target: 0.00%)")
@@ -53,10 +53,10 @@ def run_full_benchmark() -> Dict:
               f"Violations: {suit['total_violations']}")
 
         for r in suit["results"]:
-            icon = "✅" if r["status"] == "PASS" else "❌" if r["status"] == "FAIL" else "⚠️"
+            icon = "âœ…" if r["status"] == "PASS" else "âŒ" if r["status"] == "FAIL" else "âš ï¸"
             print(f"    {icon} {r['name']}: {r['species_recommended']}")
             for v in r.get("violations", []):
-                print(f"       ❌ {v}")
+                print(f"       âŒ {v}")
 
         if suit["passed"]:
             pass_count += 1
@@ -64,16 +64,16 @@ def run_full_benchmark() -> Dict:
             fail_count += 1
 
     except Exception as e:
-        print(f"  ❌ ERROR: {e}")
+        print(f"  âŒ ERROR: {e}")
         all_results["suitability"] = {"error": str(e), "passed": False}
         fail_count += 1
 
     # ===================================================================
     # 2. SURVIVAL CALIBRATION (Brier + ECE)
     # ===================================================================
-    print(f"\n{'─'*70}")
+    print(f"\n{'â”€'*70}")
     print(f"  [2/6] SURVIVAL CALIBRATION (Brier Score + ECE)")
-    print(f"{'─'*70}")
+    print(f"{'â”€'*70}")
     try:
         cal_report = run_full_calibration_report()
         s = cal_report["summary"]
@@ -100,11 +100,11 @@ def run_full_benchmark() -> Dict:
             "passed": calibration_passed,
         }
 
-        status = "✅ PASS" if calibration_passed else "❌ FAIL"
+        status = "âœ… PASS" if calibration_passed else "âŒ FAIL"
         print(f"\n  Result: {status}")
-        print(f"  Brier: {brier_before:.6f} → {brier_after:.6f} "
+        print(f"  Brier: {brier_before:.6f} â†’ {brier_after:.6f} "
               f"(target: < 0.01)")
-        print(f"  ECE:   {s['expected_calibration_error']:.6f} → "
+        print(f"  ECE:   {s['expected_calibration_error']:.6f} â†’ "
               f"{ece_after:.6f} (target: < 0.02)")
         print(f"  Direction: {ps['direction_after']}")
 
@@ -114,21 +114,21 @@ def run_full_benchmark() -> Dict:
             fail_count += 1
 
     except Exception as e:
-        print(f"  ❌ ERROR: {e}")
+        print(f"  âŒ ERROR: {e}")
         all_results["calibration"] = {"error": str(e), "passed": False}
         fail_count += 1
 
     # ===================================================================
     # 3. TIME-DEBT VALIDATION
     # ===================================================================
-    print(f"\n{'─'*70}")
+    print(f"\n{'â”€'*70}")
     print(f"  [3/6] TIME-DEBT VALIDATION (MC Consistency + Divergence)")
-    print(f"{'─'*70}")
+    print(f"{'â”€'*70}")
     try:
         td = run_time_debt_validation()
         all_results["time_debt"] = td
 
-        status = "✅ PASS" if td["passed"] else "❌ FAIL"
+        status = "âœ… PASS" if td["passed"] else "âŒ FAIL"
         print(f"\n  Result: {status}")
         print(f"  Avg MC consistency (mean vs P50): "
               f"{td['avg_mc_consistency_pct']:.2f}% (target: < 15%)")
@@ -136,7 +136,7 @@ def run_full_benchmark() -> Dict:
               f"{td['avg_model_divergence_pct']:.2f}% (target: < 50%)")
 
         for sc in td["scenarios"]:
-            icon = "✅" if sc["passed"] else "❌"
+            icon = "âœ…" if sc["passed"] else "âŒ"
             checks = []
             if not sc["mc_consistency_ok"]:
                 checks.append(f"MC noise={sc['mc_consistency_pct']:.1f}%")
@@ -163,21 +163,21 @@ def run_full_benchmark() -> Dict:
             fail_count += 1
 
     except Exception as e:
-        print(f"  ❌ ERROR: {e}")
+        print(f"  âŒ ERROR: {e}")
         all_results["time_debt"] = {"error": str(e), "passed": False}
         fail_count += 1
 
     # ===================================================================
     # 4. RANKING STABILITY
     # ===================================================================
-    print(f"\n{'─'*70}")
+    print(f"\n{'â”€'*70}")
     print(f"  [4/6] RANKING STABILITY (Perturbation Test)")
-    print(f"{'─'*70}")
+    print(f"{'â”€'*70}")
     try:
         rs = run_ranking_stability(n_perturbations=100, seed=42)
         all_results["ranking_stability"] = rs
 
-        status = "✅ PASS" if rs["passed"] else "❌ FAIL"
+        status = "âœ… PASS" if rs["passed"] else "âŒ FAIL"
         print(f"\n  Result: {status}")
         print(f"  Base ranking: {rs['base_ranking']}")
         print(f"  Top-1 consistency: {rs['top1_consistency_pct']:.1f}% "
@@ -194,32 +194,32 @@ def run_full_benchmark() -> Dict:
             fail_count += 1
 
     except Exception as e:
-        print(f"  ❌ ERROR: {e}")
+        print(f"  âŒ ERROR: {e}")
         all_results["ranking_stability"] = {"error": str(e), "passed": False}
         fail_count += 1
 
     # ===================================================================
     # 5. COST REALISM
     # ===================================================================
-    print(f"\n{'─'*70}")
+    print(f"\n{'â”€'*70}")
     print(f"  [5/6] COST REALISM (vs IPCC benchmarks)")
-    print(f"{'─'*70}")
+    print(f"{'â”€'*70}")
     try:
         cr = run_cost_realism()
         all_results["cost_realism"] = cr
 
-        status = "✅ PASS" if cr["passed"] else "❌ FAIL"
+        status = "âœ… PASS" if cr["passed"] else "âŒ FAIL"
         print(f"\n  Result: {status}")
 
         for sc in cr["scenarios"]:
-            ipcc = "✅" if sc["in_ipcc_range"] else "⚠️"
-            ok = "✅" if sc["in_acceptable_range"] else "❌"
+            ipcc = "âœ…" if sc["in_ipcc_range"] else "âš ï¸"
+            ok = "âœ…" if sc["in_acceptable_range"] else "âŒ"
             print(f"    {ok} {sc['emission_kg']}kg: "
-                  f"₹{sc['cost_per_kg_mc_mean']:.2f}/kg (MC mean) | "
-                  f"₹{sc['cost_per_kg_p5_conservative']:.2f}/kg (P5) | "
+                  f"â‚¹{sc['cost_per_kg_mc_mean']:.2f}/kg (MC mean) | "
+                  f"â‚¹{sc['cost_per_kg_p5_conservative']:.2f}/kg (P5) | "
                   f"IPCC: {ipcc} | Trees: {sc['total_trees']}")
             for flag in sc["flags"]:
-                print(f"       ⚠️ {flag}")
+                print(f"       âš ï¸ {flag}")
 
         if cr["passed"]:
             pass_count += 1
@@ -227,21 +227,21 @@ def run_full_benchmark() -> Dict:
             fail_count += 1
 
     except Exception as e:
-        print(f"  ❌ ERROR: {e}")
+        print(f"  âŒ ERROR: {e}")
         all_results["cost_realism"] = {"error": str(e), "passed": False}
         fail_count += 1
 
     # ===================================================================
     # 6. EDGE CASE HARDENING
     # ===================================================================
-    print(f"\n{'─'*70}")
+    print(f"\n{'â”€'*70}")
     print(f"  [6/6] EDGE CASE HARDENING (Stress Tests)")
-    print(f"{'─'*70}")
+    print(f"{'â”€'*70}")
     try:
         ec = run_edge_case_tests()
         all_results["edge_cases"] = ec
 
-        status = "✅ PASS" if ec["passed"] else "❌ FAIL"
+        status = "âœ… PASS" if ec["passed"] else "âŒ FAIL"
         print(f"\n  Result: {status}")
         print(f"  Total: {ec['total_cases']} | Crashes: {ec['crashes']} | "
               f"Expected errors: {ec['expected_errors']} | "
@@ -249,11 +249,11 @@ def run_full_benchmark() -> Dict:
 
         for r in ec["results"]:
             if r["crashed"]:
-                icon = "💀"
+                icon = "ðŸ’€"
             elif r["status"] == "expected_error":
-                icon = "🛡️"
+                icon = "ðŸ›¡ï¸"
             else:
-                icon = "✅"
+                icon = "âœ…"
             extra = f" ({r['exception']}: {r.get('exception_msg', '')})" if r.get("exception") else ""
             print(f"    {icon} {r['name']}: {r['status']}{extra}")
 
@@ -263,7 +263,7 @@ def run_full_benchmark() -> Dict:
             fail_count += 1
 
     except Exception as e:
-        print(f"  ❌ ERROR: {e}")
+        print(f"  âŒ ERROR: {e}")
         all_results["edge_cases"] = {"error": str(e), "passed": False}
         fail_count += 1
 
@@ -274,32 +274,32 @@ def run_full_benchmark() -> Dict:
     total = pass_count + fail_count
     all_passed = fail_count == 0
 
-    print(f"\n{'█'*70}")
-    print(f"█" + " " * 68 + "█")
-    print(f"█" + "  BENCHMARK SUMMARY".center(68) + "█")
-    print(f"█" + " " * 68 + "█")
-    print(f"█{'─'*68}█")
+    print(f"\n{'â–ˆ'*70}")
+    print(f"â–ˆ" + " " * 68 + "â–ˆ")
+    print(f"â–ˆ" + "  BENCHMARK SUMMARY".center(68) + "â–ˆ")
+    print(f"â–ˆ" + " " * 68 + "â–ˆ")
+    print(f"â–ˆ{'â”€'*68}â–ˆ")
 
     metrics = [
         ("Suitability (0% violations)", all_results.get("suitability", {}).get("passed", False)),
         ("Calibration (Brier<0.01, ECE<0.02)", all_results.get("calibration", {}).get("passed", False)),
         ("Time-Debt (MC<15%, Diverge<50%, Mono, Ratio)", all_results.get("time_debt", {}).get("passed", False)),
         ("Ranking Stability (Top1>80%, Tau>0.6)", all_results.get("ranking_stability", {}).get("passed", False)),
-        ("Cost Realism (₹0.1-15/kg)", all_results.get("cost_realism", {}).get("passed", False)),
+        ("Cost Realism (â‚¹0.1-15/kg)", all_results.get("cost_realism", {}).get("passed", False)),
         ("Edge Cases (0 crashes)", all_results.get("edge_cases", {}).get("passed", False)),
     ]
 
     for name, passed in metrics:
-        icon = "✅" if passed else "❌"
-        print(f"█  {icon}  {name:<50s}█")
+        icon = "âœ…" if passed else "âŒ"
+        print(f"â–ˆ  {icon}  {name:<50s}â–ˆ")
 
-    print(f"█{'─'*68}█")
+    print(f"â–ˆ{'â”€'*68}â–ˆ")
     verdict = "ALL BENCHMARKS PASSED" if all_passed else f"{fail_count} BENCHMARK(S) FAILED"
-    verdict_icon = "✅" if all_passed else "❌"
-    print(f"█  {verdict_icon}  {verdict:<50s}  {pass_count}/{total}  █")
-    print(f"█  ⏱️  Elapsed: {elapsed:.1f}s{' '*48}█")
-    print(f"█" + " " * 68 + "█")
-    print(f"{'█'*70}\n")
+    verdict_icon = "âœ…" if all_passed else "âŒ"
+    print(f"â–ˆ  {verdict_icon}  {verdict:<50s}  {pass_count}/{total}  â–ˆ")
+    print(f"â–ˆ  â±ï¸  Elapsed: {elapsed:.1f}s{' '*48}â–ˆ")
+    print(f"â–ˆ" + " " * 68 + "â–ˆ")
+    print(f"{'â–ˆ'*70}\n")
 
     return {
         "verdict": "PASS" if all_passed else "FAIL",

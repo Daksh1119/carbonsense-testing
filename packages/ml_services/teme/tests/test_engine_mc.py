@@ -3,7 +3,7 @@ Quick integration test: engine.py with Monte Carlo enabled.
 Run from packages/ml_services/teme/
 """
 
-from teme.core.engine import run_teme
+from ml_services.teme.core.engine import run_teme
 
 
 def test_deterministic_unchanged():
@@ -158,3 +158,4 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("  ALL INTEGRATION TESTS PASSED")
     print("=" * 60 + "\n")
+

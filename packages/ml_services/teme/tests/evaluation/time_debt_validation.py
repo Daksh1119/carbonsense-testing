@@ -1,4 +1,4 @@
-"""
+﻿"""
 TEME Time-Debt Projection Validation
 
 Compares:
@@ -7,7 +7,7 @@ Compares:
   - Stochastic MAPE isolates Monte Carlo randomness only
 
 Metrics:
-  - Model Divergence MAPE: det vs MC mean (allowed up to 50% — different models)
+  - Model Divergence MAPE: det vs MC mean (allowed up to 50% â€” different models)
   - Year-by-year comparison at key checkpoints
   - Payback year consistency
 
@@ -17,7 +17,7 @@ The test validates that divergence is bounded and explainable.
 """
 
 from typing import Dict, List
-from teme.core.engine import run_teme
+from ml_services.teme.core.engine import run_teme
 
 
 VALIDATION_SCENARIOS = [
@@ -106,7 +106,7 @@ def validate_single_scenario(scenario: Dict) -> Dict:
     model_divergence_mape = compute_mape(det_curve, mean_curve)
 
     # --- Metric 2: MC consistency (mean vs P50) ---
-    # This should be LOW — isolates pure stochastic noise
+    # This should be LOW â€” isolates pure stochastic noise
     mc_consistency = compute_mc_consistency(mc["curves"])
 
     # --- Metric 3: Spread ratio at end of horizon ---

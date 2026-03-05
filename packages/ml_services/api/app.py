@@ -1,9 +1,9 @@
-from fastapi import FastAPI, HTTPException
+﻿from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 
-from api.teme_routes import router as teme_router
-from api.ocr_routes import router as ocr_router
+from ml_services.api.teme_routes import router as teme_router
+from ml_services.api.ocr_routes import router as ocr_router
 
 app = FastAPI(
     title="CarbonSense ML Service",

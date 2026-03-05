@@ -1,6 +1,6 @@
-import copy
+﻿import copy
 
-from teme.core.engine import run_teme
+from ml_services.teme.core.engine import run_teme
 
 
 BASE_INPUT = {
@@ -33,7 +33,7 @@ BASE_INPUT = {
 
 def test_engine_without_ml():
     """
-    ML disabled → no ml_metadata, deterministic behavior
+    ML disabled â†’ no ml_metadata, deterministic behavior
     """
     payload = copy.deepcopy(BASE_INPUT)
 
@@ -47,7 +47,7 @@ def test_engine_without_ml():
 
 def test_engine_with_ml_enabled():
     """
-    ML enabled → adjustment applied but bounded
+    ML enabled â†’ adjustment applied but bounded
     """
     payload = copy.deepcopy(BASE_INPUT)
     payload["ml"] = {"enabled": True}
@@ -63,3 +63,4 @@ def test_engine_with_ml_enabled():
 
         adj = adjustments["Neem"]
         assert 0.8 <= adj <= 1.05
+

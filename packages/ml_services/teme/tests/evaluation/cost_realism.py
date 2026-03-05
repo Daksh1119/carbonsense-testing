@@ -1,4 +1,4 @@
-"""
+﻿"""
 TEME Cost Realism Validation
 
 Compares TEME's cost-per-kg-CO2 against literature benchmarks
@@ -6,7 +6,7 @@ to ensure we're not producing unrealistic numbers.
 
 Benchmarks:
   - IPCC range: $5-50 per tonne CO2 for afforestation
-  - Indian plantation costs: ₹300-650 per tree (ICFRE)
+  - Indian plantation costs: â‚¹300-650 per tree (ICFRE)
   - Carbon market spot price: ~$15-25 per tonne
 
 Flag if:
@@ -15,17 +15,17 @@ Flag if:
 """
 
 from typing import Dict
-from teme.core.engine import run_teme
-from teme.data.species_catalog import SPECIES_CATALOG
+from ml_services.teme.core.engine import run_teme
+from ml_services.teme.data.species_catalog import SPECIES_CATALOG
 
 
 # Literature benchmarks (INR per kg CO2 offset)
-# IPCC: $5-50/tonne = ₹400-4000/tonne = ₹0.4-4.0/kg
+# IPCC: $5-50/tonne = â‚¹400-4000/tonne = â‚¹0.4-4.0/kg
 COST_BENCHMARKS = {
     "ipcc_lower_inr_per_kg": 0.4,    # Very optimistic
     "ipcc_upper_inr_per_kg": 4.0,    # Conservative
-    "acceptable_lower": 0.1,          # Floor — below this is suspiciously cheap
-    "acceptable_upper": 15.0,         # Ceiling — above this is impractical
+    "acceptable_lower": 0.1,          # Floor â€” below this is suspiciously cheap
+    "acceptable_upper": 15.0,         # Ceiling â€” above this is impractical
 }
 
 
@@ -89,12 +89,12 @@ def compute_cost_per_kg(
 
     flags = []
     if cost_per_kg_mc < COST_BENCHMARKS["acceptable_lower"]:
-        flags.append("SUSPICIOUSLY CHEAP — possible greenwashing risk")
+        flags.append("SUSPICIOUSLY CHEAP â€” possible greenwashing risk")
     if cost_per_kg_mc > COST_BENCHMARKS["acceptable_upper"]:
-        flags.append("IMPRACTICALLY EXPENSIVE — bad advice risk")
+        flags.append("IMPRACTICALLY EXPENSIVE â€” bad advice risk")
     if not in_ipcc_range:
         flags.append(
-            f"Outside IPCC range (₹{COST_BENCHMARKS['ipcc_lower_inr_per_kg']}"
+            f"Outside IPCC range (â‚¹{COST_BENCHMARKS['ipcc_lower_inr_per_kg']}"
             f"-{COST_BENCHMARKS['ipcc_upper_inr_per_kg']}/kg)"
         )
 
@@ -137,7 +137,7 @@ def run_cost_realism() -> Dict:
         "metric": "cost_realism",
         "benchmarks": COST_BENCHMARKS,
         "all_in_acceptable_range": all_acceptable,
-        "target": "All costs within ₹0.1-15.0/kg CO2",
+        "target": "All costs within â‚¹0.1-15.0/kg CO2",
         "passed": all_acceptable,
         "scenarios": results,
     }

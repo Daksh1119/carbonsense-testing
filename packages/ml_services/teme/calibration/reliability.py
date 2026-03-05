@@ -1,4 +1,4 @@
-"""
+﻿"""
 TEME Survival Calibration & Reliability Analysis
 
 Computes:
@@ -16,8 +16,8 @@ Scientific basis:
 from typing import List, Dict, Tuple
 import math
 
-from teme.calibration.validation_data import get_all_validation_pairs
-from teme.core.survival import generate_survival_curve
+from ml_services.teme.calibration.validation_data import get_all_validation_pairs
+from ml_services.teme.core.survival import generate_survival_curve
 
 
 # ---------------------------------------------------------------------------
@@ -30,7 +30,7 @@ def compute_predicted_survival_at_year(
 ) -> float:
     """
     Compute TEME's deterministic predicted survival at a specific year.
-    Mirrors core/survival.py: σ(t) = rate^t
+    Mirrors core/survival.py: Ïƒ(t) = rate^t
     """
     return annual_survival_rate ** year
 
@@ -41,7 +41,7 @@ SPECIES_ANNUAL_RATES = {
     "Neem": 0.95,
     "Peepal": 0.93,
     "Bamboo": 0.90,
-    # Species in validation_data but not yet in catalog — literature estimates
+    # Species in validation_data but not yet in catalog â€” literature estimates
     "Banyan": 0.96,
     "Mango": 0.94,
     "Teak": 0.93,
@@ -81,7 +81,7 @@ def fill_predicted_survival(
 
 def compute_brier_score(pairs: List[Dict]) -> float:
     """
-    Brier Score = Σ weight_i * (predicted_i - observed_i)² / Σ weight_i
+    Brier Score = Î£ weight_i * (predicted_i - observed_i)Â² / Î£ weight_i
     Lower is better. Perfect = 0.0. Random = 0.25.
     """
     if not pairs:
@@ -298,7 +298,7 @@ def compute_per_species_calibration(pairs: List[Dict]) -> Dict:
             raw_factor = global_factor
 
         # Dampening: blend with global factor based on evidence strength
-        # More regions/samples → trust species-specific factor more
+        # More regions/samples â†’ trust species-specific factor more
         total_samples = sum(p["sample_size"] for p in group)
         # Dampening weight: 0 = pure global, 1 = pure species-specific
         # At 500+ total samples, trust species factor ~90%
@@ -336,7 +336,7 @@ def apply_per_species_calibration(
 
 
 # ---------------------------------------------------------------------------
-# 6. Global Ratio Calibration (SECONDARY — for comparison)
+# 6. Global Ratio Calibration (SECONDARY â€” for comparison)
 # ---------------------------------------------------------------------------
 
 def compute_global_ratio_calibration(pairs: List[Dict]) -> Dict:
@@ -615,7 +615,7 @@ def _print_report(report, pairs, reliability, per_species_cal,
               f"{detail['n_regions']:7d} | {detail['total_samples']:7d}")
 
     # Before vs After comparison
-    print(f"\n  BEFORE calibration — per-pair breakdown:")
+    print(f"\n  BEFORE calibration â€” per-pair breakdown:")
     print(f"  {'Species':12s} | {'Region':20s} | {'Yrs':>3s} | {'Predicted':>9s} | {'Observed':>8s} | {'Error':>7s}")
     print(f"  {'-'*12}-+-{'-'*20}-+-{'-'*3}-+-{'-'*9}-+-{'-'*8}-+-{'-'*7}")
     for p in reliability["points"]:
@@ -624,7 +624,7 @@ def _print_report(report, pairs, reliability, per_species_cal,
         print(f"  {p['species']:12s} | {p['region']:20s} | {p['years_tracked']:3d} | "
               f"{p['predicted']:9.4f} | {p['observed']:8.4f} | {sign}{err:6.4f}")
 
-    print(f"\n  AFTER per-species calibration — per-pair breakdown:")
+    print(f"\n  AFTER per-species calibration â€” per-pair breakdown:")
     print(f"  {'Species':12s} | {'Region':20s} | {'Calibrated':>10s} | {'Observed':>8s} | {'Error':>7s}")
     print(f"  {'-'*12}-+-{'-'*20}-+-{'-'*10}-+-{'-'*8}-+-{'-'*7}")
     for p in post_per_species["points"]:
@@ -636,7 +636,7 @@ def _print_report(report, pairs, reliability, per_species_cal,
     print(f"\n  Corrections computed:")
     print(f"    Per-species: {len(per_species_cal['species_factors'])} species-specific factors")
     print(f"    Global:      {global_cal['formula']}")
-    print(f"    Linear:      {linear_cal['formula']}  (R²={linear_cal['r_squared']})")
+    print(f"    Linear:      {linear_cal['formula']}  (RÂ²={linear_cal['r_squared']})")
     print(f"\n  RECOMMENDED: Per-species calibration (lower Brier, lower MAE)")
     print(f"{'='*70}\n")
 
@@ -647,40 +647,40 @@ def _print_report(report, pairs, reliability, per_species_cal,
 
 def _interpret_brier(score: float) -> str:
     if score < 0.01:
-        return "Excellent — predictions nearly match observations"
+        return "Excellent â€” predictions nearly match observations"
     elif score < 0.03:
-        return "Good — minor prediction errors"
+        return "Good â€” minor prediction errors"
     elif score < 0.06:
-        return "Moderate — noticeable gap between predicted and observed"
+        return "Moderate â€” noticeable gap between predicted and observed"
     elif score < 0.10:
-        return "Poor — significant prediction errors, calibration needed"
+        return "Poor â€” significant prediction errors, calibration needed"
     else:
-        return "Very poor — model substantially miscalibrated"
+        return "Very poor â€” model substantially miscalibrated"
 
 
 def _interpret_ece(ece: float) -> str:
     if ece < 0.02:
-        return "Well-calibrated — predicted probabilities match reality"
+        return "Well-calibrated â€” predicted probabilities match reality"
     elif ece < 0.05:
-        return "Slightly miscalibrated — minor systematic bias"
+        return "Slightly miscalibrated â€” minor systematic bias"
     elif ece < 0.10:
-        return "Moderately miscalibrated — correction recommended"
+        return "Moderately miscalibrated â€” correction recommended"
     else:
-        return "Severely miscalibrated — correction required"
+        return "Severely miscalibrated â€” correction required"
 
 
 def _interpret_bias(bias: float, direction: str) -> str:
     abs_bias = abs(bias)
     if direction == "well-calibrated":
-        return f"Minimal bias ({bias:+.4f}) — model is balanced"
+        return f"Minimal bias ({bias:+.4f}) â€” model is balanced"
     elif direction == "underconfident":
         return (
-            f"Underconfident by {abs_bias:.4f} — model predicts LOWER survival "
+            f"Underconfident by {abs_bias:.4f} â€” model predicts LOWER survival "
             f"than observed. Conservative (safe), but needs calibration."
         )
     else:
         return (
-            f"Overconfident by {abs_bias:.4f} — model predicts HIGHER survival "
+            f"Overconfident by {abs_bias:.4f} â€” model predicts HIGHER survival "
             f"than observed. CORRECTION REQUIRED to avoid greenwashing."
         )
 

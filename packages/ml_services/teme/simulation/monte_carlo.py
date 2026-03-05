@@ -1,4 +1,4 @@
-"""
+﻿"""
 TEME Monte Carlo Time-Debt Simulation
 
 Replaces the deterministic time-debt curve with a stochastic simulation
@@ -16,7 +16,7 @@ Each simulation independently:
 
 Outputs:
   - Mean cumulative offset curve
-  - 5th percentile curve (conservative — used for risk-aware payback)
+  - 5th percentile curve (conservative â€” used for risk-aware payback)
   - 95th percentile curve (optimistic)
   - Deterministic baseline for comparison
   - Risk-aware payback year (when P5 curve >= emission)
@@ -32,17 +32,17 @@ import random
 import math
 from typing import Dict, List, Any, Optional
 
-from teme.simulation.hazard_model import (
+from ml_services.teme.simulation.hazard_model import (
     simulate_hazard_events_for_year,
     compute_expected_annual_hazard_loss,
 )
-from teme.calibration.confidence import (
+from ml_services.teme.calibration.confidence import (
     get_calibration_factors,
     compute_survival_confidence,
 )
-from teme.core.sequestration import generate_sequestration_curve
-from teme.core.survival import generate_survival_curve
-from teme.data.species_catalog import SPECIES_CATALOG
+from ml_services.teme.core.sequestration import generate_sequestration_curve
+from ml_services.teme.core.survival import generate_survival_curve
+from ml_services.teme.data.species_catalog import SPECIES_CATALOG
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +75,7 @@ def logistic_sequestration(
 
     value = peak_kg / (1.0 + math.exp(-k * (t - t0)))
 
-    # Subtract baseline so A(0) ≈ 0
+    # Subtract baseline so A(0) â‰ˆ 0
     baseline = peak_kg / (1.0 + math.exp(-k * (0 - t0)))
     adjusted = value - baseline
 

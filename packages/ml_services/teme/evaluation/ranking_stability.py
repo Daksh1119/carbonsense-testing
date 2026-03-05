@@ -1,4 +1,4 @@
-"""
+﻿"""
 TEME Ranking Stability Evaluation
 
 Tests whether species recommendations are stable under small
@@ -6,7 +6,7 @@ perturbations in input parameters.
 
 Method:
   1. Run optimizer with base inputs
-  2. Perturb one parameter at a time (±5-25%)
+  2. Perturb one parameter at a time (Â±5-25%)
   3. Re-run optimizer
   4. Measure ranking consistency
 
@@ -23,8 +23,8 @@ Target:
 import copy
 from typing import Dict, List, Tuple, Any
 
-from teme.core.optimizer import select_species_rule_based
-from teme.data.species_catalog import SPECIES_CATALOG
+from ml_services.teme.core.optimizer import select_species_rule_based
+from ml_services.teme.data.species_catalog import SPECIES_CATALOG
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ from teme.data.species_catalog import SPECIES_CATALOG
 PERTURBATION_SETS = [
     # --- Emission perturbations ---
     {
-        "name": "Emission ±10% (1000kg base)",
+        "name": "Emission Â±10% (1000kg base)",
         "base_emission": 1000,
         "base_location": "India",
         "base_constraints": {
@@ -46,7 +46,7 @@ PERTURBATION_SETS = [
         "perturbations": [900, 950, 1050, 1100],
     },
     {
-        "name": "Emission ±25% (1000kg base)",
+        "name": "Emission Â±25% (1000kg base)",
         "base_emission": 1000,
         "base_location": "India",
         "base_constraints": {
@@ -59,7 +59,7 @@ PERTURBATION_SETS = [
     },
     # --- Land perturbations ---
     {
-        "name": "Land ±10% (5ha base)",
+        "name": "Land Â±10% (5ha base)",
         "base_emission": 1000,
         "base_location": "India",
         "base_constraints": {
@@ -71,7 +71,7 @@ PERTURBATION_SETS = [
         "perturbations": [4.5, 4.75, 5.25, 5.5],
     },
     {
-        "name": "Land ±25% (5ha base)",
+        "name": "Land Â±25% (5ha base)",
         "base_emission": 1000,
         "base_location": "India",
         "base_constraints": {
@@ -385,21 +385,21 @@ def run_ranking_stability_evaluation() -> Dict:
     print(f"{'='*65}")
     print(f"  Perturbation sets:         {len(all_results)}")
     print(f"  Overall Top-1 Consistency: {overall_top1*100:.1f}% "
-          f"(target: ≥80%)")
+          f"(target: â‰¥80%)")
     print(f"  Overall Avg Kendall Tau:   {overall_tau:.4f} "
-          f"(target: ≥0.60)")
+          f"(target: â‰¥0.60)")
     print(f"  Meets Top-1 target:        "
-          f"{'✅ YES' if report['meets_top1_target'] else '❌ NO'}")
+          f"{'âœ… YES' if report['meets_top1_target'] else 'âŒ NO'}")
     print(f"  Meets Tau target:          "
-          f"{'✅ YES' if report['meets_tau_target'] else '❌ NO'}")
+          f"{'âœ… YES' if report['meets_tau_target'] else 'âŒ NO'}")
     print(f"{'='*65}")
 
     for pr in all_results:
         if pr["status"] != "completed":
-            print(f"\n  ⚠️  {pr['perturbation_set']}: {pr.get('error', 'error')}")
+            print(f"\n  âš ï¸  {pr['perturbation_set']}: {pr.get('error', 'error')}")
             continue
 
-        icon = "✅" if pr["top1_consistency"] >= 0.80 else "⚠️"
+        icon = "âœ…" if pr["top1_consistency"] >= 0.80 else "âš ï¸"
         multi = f" ({pr['n_base_species']} species)" if pr["n_base_species"] > 1 else ""
         print(f"\n  {icon} {pr['perturbation_set']}:")
         print(f"     Base top: {pr['base_top_species']} | "

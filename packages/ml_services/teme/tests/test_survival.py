@@ -1,4 +1,4 @@
-from teme.core.survival import generate_survival_curve
+﻿from ml_services.teme.core.survival import generate_survival_curve
 
 
 def test_survival_monotonic():
@@ -10,3 +10,4 @@ def test_survival_monotonic():
     assert curve[0] == 1.0
     for i in range(1, len(curve)):
         assert curve[i] <= curve[i - 1]
+

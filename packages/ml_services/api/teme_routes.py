@@ -1,9 +1,9 @@
-from fastapi import APIRouter, HTTPException
+﻿from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 
-from teme.core.engine import run_teme
-from teme.core.exceptions import InfeasiblePlanError
+from ml_services.teme.core.engine import run_teme
+from ml_services.teme.core.exceptions import InfeasiblePlanError
 
 router = APIRouter(prefix="/teme", tags=["TEME"])
 

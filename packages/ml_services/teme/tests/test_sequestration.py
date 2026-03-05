@@ -1,4 +1,4 @@
-from teme.core.sequestration import generate_sequestration_curve
+﻿from ml_services.teme.core.sequestration import generate_sequestration_curve
 
 
 def test_sequestration_curve_shape():
@@ -13,3 +13,4 @@ def test_sequestration_curve_shape():
     assert curve[5] == 10
     assert curve[6] == 10
     assert all(v >= 0 for v in curve)
+

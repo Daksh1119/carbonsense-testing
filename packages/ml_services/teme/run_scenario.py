@@ -1,5 +1,5 @@
-from teme.core.engine import run_teme
-from teme.core.exceptions import InfeasiblePlanError
+﻿from ml_services.teme.core.engine import run_teme
+from ml_services.teme.core.exceptions import InfeasiblePlanError
 
 payload = {
     "emission_kg": 2000,
@@ -18,3 +18,4 @@ try:
 except InfeasiblePlanError as e:
     print("TEME ERROR (Expected for this scenario):")
     print(str(e))
+

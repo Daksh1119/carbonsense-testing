@@ -1,4 +1,4 @@
-"""
+﻿"""
 TEME Time-Debt & Cost Realism Validation
 
 Validates:
@@ -8,15 +8,15 @@ Validates:
   4. Per-tree absorption rates against FAO literature bounds
 
 Benchmarks:
-  - Total plantation cost: ₹300-1200/tree (ICFRE guidelines)
-  - Cost per kg CO2 offset: ₹3-50 typical via tree planting (IPCC AR6, WG3 Ch12)
+  - Total plantation cost: â‚¹300-1200/tree (ICFRE guidelines)
+  - Cost per kg CO2 offset: â‚¹3-50 typical via tree planting (IPCC AR6, WG3 Ch12)
   - Payback period: 3-25 years typical (ICFRE guidelines)
   - Per-tree absorption: 5-35 kg/year at maturity (FAO)
 """
 
 from typing import Dict, List, Any
-from teme.core.engine import run_teme
-from teme.data.species_catalog import SPECIES_CATALOG
+from ml_services.teme.core.engine import run_teme
+from ml_services.teme.data.species_catalog import SPECIES_CATALOG
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +99,7 @@ def get_total_cost_per_tree(species_name: str) -> float:
     Includes: sapling + land prep + planting labor + 3yr maintenance +
     fencing + monitoring.
 
-    Falls back to ₹500 if species not in catalog.
+    Falls back to â‚¹500 if species not in catalog.
     """
     entry = SPECIES_CATALOG.get(species_name)
     if entry and "cost_per_tree_total_inr" in entry:
@@ -226,13 +226,13 @@ def validate_cost_realism(result: Dict) -> Dict:
     issues = []
     if cost_per_kg < COST_PER_KG_BOUNDS["lower"]:
         issues.append(
-            f"Cost/kg ₹{cost_per_kg:.2f} is below minimum realistic "
-            f"(₹{COST_PER_KG_BOUNDS['lower']})"
+            f"Cost/kg â‚¹{cost_per_kg:.2f} is below minimum realistic "
+            f"(â‚¹{COST_PER_KG_BOUNDS['lower']})"
         )
     if cost_per_kg > COST_PER_KG_BOUNDS["upper"]:
         issues.append(
-            f"Cost/kg ₹{cost_per_kg:.2f} exceeds maximum realistic "
-            f"(₹{COST_PER_KG_BOUNDS['upper']})"
+            f"Cost/kg â‚¹{cost_per_kg:.2f} exceeds maximum realistic "
+            f"(â‚¹{COST_PER_KG_BOUNDS['upper']})"
         )
 
     in_typical_range = (
@@ -371,9 +371,9 @@ def run_time_debt_validation() -> Dict:
     print(f"{'='*60}")
 
     for sr in all_results:
-        print(f"\n  📋 {sr['scenario']}:")
+        print(f"\n  ðŸ“‹ {sr['scenario']}:")
         if sr["status"] == "engine_error":
-            print(f"     ⚠️  Engine error: {sr['error']}")
+            print(f"     âš ï¸  Engine error: {sr['error']}")
             continue
 
         print(f"     Trees: {sr['total_trees']} | "
@@ -381,21 +381,21 @@ def run_time_debt_validation() -> Dict:
               f"Confidence: {sr['confidence']}")
 
         for check in sr["checks"]:
-            icon = "✅" if check["passed"] else "❌"
+            icon = "âœ…" if check["passed"] else "âŒ"
             print(f"     {icon} {check['check']}")
             if check["check"] == "cost_realism":
-                print(f"        Cost/kg: ₹{check['cost_per_kg_inr']:.2f} "
-                      f"(typical: ₹{COST_PER_KG_BOUNDS['typical_lower']}-"
+                print(f"        Cost/kg: â‚¹{check['cost_per_kg_inr']:.2f} "
+                      f"(typical: â‚¹{COST_PER_KG_BOUNDS['typical_lower']}-"
                       f"{COST_PER_KG_BOUNDS['typical_upper']})")
                 if check.get("cost_breakdown"):
                     for cb in check["cost_breakdown"]:
-                        print(f"          {cb['species']}: {cb['count']} × "
-                              f"₹{cb['cost_per_tree_inr']:.0f} = "
-                              f"₹{cb['total_cost_inr']:.0f}")
+                        print(f"          {cb['species']}: {cb['count']} Ã— "
+                              f"â‚¹{cb['cost_per_tree_inr']:.0f} = "
+                              f"â‚¹{cb['total_cost_inr']:.0f}")
                 if check.get("in_typical_range"):
-                    print(f"        ✓ Within typical IPCC range")
+                    print(f"        âœ“ Within typical IPCC range")
             for issue in check.get("issues", []):
-                print(f"        ⚠️  {issue}")
+                print(f"        âš ï¸  {issue}")
 
     print(f"\n{'='*60}\n")
 

@@ -1,7 +1,7 @@
 ﻿from typing import Dict, List
 from datetime import datetime, timedelta
 from collections import defaultdict
-from common.supabase_client import supabase
+from ml_services.common.supabase_client import supabase
 
 
 def _sum_by_category(rows: List[Dict]) -> Dict[str, float]:
@@ -94,3 +94,4 @@ def generate_org_receipt_report(organization_id: str, start_date: str, end_date:
         "top_carbon_items": top_items,
         "recommendations": recommendations,
     }
+

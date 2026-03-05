@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from collections import defaultdict
 
-from ocr.single_processor import process_single_receipt
+from ml_services.ocr.single_processor import process_single_receipt
 
 
 MAX_WORKERS = 8
@@ -75,3 +75,4 @@ def process_receipt_batch(
             "top_carbon_categories": [{"category": k, "carbon_kg": v} for k, v in top_cat],
         },
     }
+

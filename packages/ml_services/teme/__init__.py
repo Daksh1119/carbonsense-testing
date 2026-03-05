@@ -1,4 +1,4 @@
-"""
+﻿"""
 TEME (Tree-based Emission Mitigation Engine)
 
 A deterministic, constraint-aware decision engine that selects viable
@@ -8,8 +8,8 @@ and determines carbon neutrality year.
 Hybrid deterministic + optional ML refinement architecture.
 
 Usage:
-    from teme.core.engine import run_teme
-    from teme.core.exceptions import TEMEError, InfeasiblePlanError
+    from ml_services.teme.core.engine import run_teme
+    from ml_services.teme.core.exceptions import TEMEError, InfeasiblePlanError
 """
 
 __version__ = "0.1.0"

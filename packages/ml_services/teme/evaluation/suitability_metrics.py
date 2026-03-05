@@ -1,4 +1,4 @@
-"""
+﻿"""
 TEME Suitability Evaluation
 
 Tests whether species recommendations satisfy ALL hard constraints:
@@ -14,9 +14,9 @@ Metric:
 
 from typing import Dict, List, Any
 
-from teme.data.species_catalog import SPECIES_CATALOG
-from teme.core.optimizer import select_species_rule_based
-from teme.core.land import calculate_land_required
+from ml_services.teme.data.species_catalog import SPECIES_CATALOG
+from ml_services.teme.core.optimizer import select_species_rule_based
+from ml_services.teme.core.land import calculate_land_required
 
 
 # ---------------------------------------------------------------------------
@@ -330,11 +330,11 @@ def run_suitability_evaluation() -> Dict:
     print(f"  Total violations:     {total_violations}")
     print(f"  Violation rate:       {violation_rate:.4f}")
     print(f"  Target:               0.0000")
-    print(f"  Meets target:         {'✅ YES' if result['meets_target'] else '❌ NO'}")
+    print(f"  Meets target:         {'âœ… YES' if result['meets_target'] else 'âŒ NO'}")
     print(f"{'='*60}")
 
     for sr in scenario_results:
-        icon = "✅" if sr["status"] in ("PASS", "error") else "❌"
+        icon = "âœ…" if sr["status"] in ("PASS", "error") else "âŒ"
         print(f"  {icon} {sr['scenario']}: {sr['status']}")
         if sr.get("species_allocated"):
             for sp, count in sr["species_allocated"].items():
@@ -342,7 +342,7 @@ def run_suitability_evaluation() -> Dict:
         if sr.get("error"):
             print(f"       Error: {sr['error']}")
         for v in sr.get("violations", []):
-            print(f"       ⚠️  {v['type']}: {v['detail']}")
+            print(f"       âš ï¸  {v['type']}: {v['detail']}")
 
     print(f"{'='*60}\n")
 

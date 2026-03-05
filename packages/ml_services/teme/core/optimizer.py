@@ -1,5 +1,5 @@
-from typing import Dict, Any
-from teme.data.species_catalog import SPECIES_CATALOG
+﻿from typing import Dict, Any
+from ml_services.teme.data.species_catalog import SPECIES_CATALOG
 
 
 def select_species_rule_based(
@@ -11,7 +11,7 @@ def select_species_rule_based(
     Rule-based species selection for TEME.
 
     Selects viable species based on location, ranks by priority,
-    and allocates trees proportional to emission target — NOT just
+    and allocates trees proportional to emission target â€” NOT just
     by filling all available land.
 
     Returns species_config compatible with engine.run_teme

@@ -1,6 +1,6 @@
-import pytest
-from teme.core.engine import run_teme
-from teme.core.exceptions import InfeasiblePlanError
+﻿import pytest
+from ml_services.teme.core.engine import run_teme
+from ml_services.teme.core.exceptions import InfeasiblePlanError
 
 
 def test_land_constraint_violation():
@@ -23,3 +23,4 @@ def test_land_constraint_violation():
 
     with pytest.raises(InfeasiblePlanError):
         run_teme(payload)
+

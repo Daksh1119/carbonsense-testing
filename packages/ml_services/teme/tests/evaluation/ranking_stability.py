@@ -1,27 +1,27 @@
-"""
+﻿"""
 TEME Ranking Stability Test
 
 Perturbs input parameters slightly and checks whether the
 species ranking remains stable.
 
 Perturbations:
-  - annual_survival_rate ± 3%
-  - peak_sequestration_kg ± 5%
-  - maturity_years ± 1
+  - annual_survival_rate Â± 3%
+  - peak_sequestration_kg Â± 5%
+  - maturity_years Â± 1
 
 Metrics:
   - Top-1 consistency %  (how often rank-1 species stays the same)
   - Kendall Tau correlation (rank order similarity)
 
-If ranking flips wildly under small changes → unstable system.
+If ranking flips wildly under small changes â†’ unstable system.
 """
 
 import copy
 import random
 from typing import Dict, List
 
-from teme.core.engine import run_teme
-from teme.data.species_catalog import SPECIES_CATALOG
+from ml_services.teme.core.engine import run_teme
+from ml_services.teme.data.species_catalog import SPECIES_CATALOG
 
 
 def kendall_tau(ranking_a: List[str], ranking_b: List[str]) -> float:
@@ -61,7 +61,7 @@ def kendall_tau(ranking_a: List[str], ranking_b: List[str]) -> float:
 def extract_ranking(engine_result: Dict) -> List[str]:
     """
     Extract species ranking from engine output.
-    Ranked by contribution to total offset (count × peak_seq × survival).
+    Ranked by contribution to total offset (count Ã— peak_seq Ã— survival).
     """
     plan = engine_result["offset_plan"]
     scored = []
@@ -94,17 +94,17 @@ def create_perturbed_catalog(
     for name, data in SPECIES_CATALOG.items():
         new_data = copy.deepcopy(data)
 
-        # Perturb survival rate ± survival_pct
+        # Perturb survival rate Â± survival_pct
         surv = new_data["annual_survival_rate"]
         surv *= 1 + rng.uniform(-survival_pct, survival_pct)
         new_data["annual_survival_rate"] = max(0.50, min(0.99, surv))
 
-        # Perturb peak sequestration ± seq_pct
+        # Perturb peak sequestration Â± seq_pct
         seq = new_data["peak_sequestration_kg"]
         seq *= 1 + rng.uniform(-seq_pct, seq_pct)
         new_data["peak_sequestration_kg"] = max(1.0, seq)
 
-        # Perturb maturity ± maturity_delta
+        # Perturb maturity Â± maturity_delta
         mat = new_data["maturity_years"]
         mat += rng.randint(-maturity_delta, maturity_delta)
         new_data["maturity_years"] = max(1, mat)
@@ -140,7 +140,7 @@ def run_ranking_stability(
     base_top1 = base_ranking[0] if base_ranking else None
 
     # --- Perturbed runs ---
-    import teme.data.species_catalog as catalog_module
+    import ml_services.teme.data.species_catalog as catalog_module
     original_catalog = copy.deepcopy(SPECIES_CATALOG)
 
     top1_matches = 0
@@ -162,7 +162,7 @@ def run_ranking_stability(
             tau_scores.append(tau)
 
         except Exception:
-            # Perturbation made plan infeasible — skip
+            # Perturbation made plan infeasible â€” skip
             pass
 
     # Restore original catalog

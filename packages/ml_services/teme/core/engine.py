@@ -1,21 +1,21 @@
-from typing import Dict, Any, List
+﻿from typing import Dict, Any, List
 
-from teme.core.sequestration import generate_sequestration_curve
-from teme.core.survival import generate_survival_curve
-from teme.core.land import calculate_land_required
-from teme.core.exceptions import InfeasiblePlanError
-from teme.core.optimizer import select_species_rule_based
+from ml_services.teme.core.sequestration import generate_sequestration_curve
+from ml_services.teme.core.survival import generate_survival_curve
+from ml_services.teme.core.land import calculate_land_required
+from ml_services.teme.core.exceptions import InfeasiblePlanError
+from ml_services.teme.core.optimizer import select_species_rule_based
 
 # --- Optional ML import (safe) ---
 try:
-    from teme.ml.survival import predict_survival_adjustment
+    from ml_services.teme.ml.survival import predict_survival_adjustment
     ML_AVAILABLE = True
 except Exception:
     ML_AVAILABLE = False
 
 # --- Optional Monte Carlo import (safe) ---
 try:
-    from teme.simulation.monte_carlo import run_monte_carlo_simulation
+    from ml_services.teme.simulation.monte_carlo import run_monte_carlo_simulation
     MC_AVAILABLE = True
 except Exception:
     MC_AVAILABLE = False
@@ -49,7 +49,7 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
         - Year index t = 0 corresponds to planting year
         - time_to_neutral_years = deterministic payback (linear growth)
         - monte_carlo.risk_aware_payback_years = conservative payback (logistic + hazards)
-        - MC failure NEVER breaks the engine — falls back to deterministic only
+        - MC failure NEVER breaks the engine â€” falls back to deterministic only
     """
 
     E = input_payload["emission_kg"]

@@ -7,10 +7,10 @@ from typing import Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 
-from common.authz import ensure_user_in_org, ensure_permission
-from ocr.single_processor import process_single_receipt
-from ocr.bulk_processor import process_receipt_batch
-from ocr.org_analytics import generate_org_receipt_report
+from ml_services.common.authz import ensure_user_in_org, ensure_permission
+from ml_services.ocr.single_processor import process_single_receipt
+from ml_services.ocr.bulk_processor import process_receipt_batch
+from ml_services.ocr.org_analytics import generate_org_receipt_report
 
 router = APIRouter(prefix="/ocr", tags=["OCR"])
 
@@ -95,3 +95,4 @@ async def org_receipt_analytics_endpoint(
         end_date=end_date,
     )
     return JSONResponse(report)
+

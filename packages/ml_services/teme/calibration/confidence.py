@@ -1,4 +1,4 @@
-"""
+﻿"""
 TEME Survival Confidence Intervals
 
 Uses Beta distribution to model survival probability uncertainty.
@@ -109,7 +109,7 @@ def compute_confidence_for_species(
     Compute confidence band using ground truth sample size for a species.
     Falls back to default sample_size=100 if species not in validation data.
     """
-    from teme.calibration.validation_data import get_species_ground_truth
+    from ml_services.teme.calibration.validation_data import get_species_ground_truth
 
     ground_truth = get_species_ground_truth(species_name)
 
@@ -142,7 +142,7 @@ def get_calibration_factors() -> Dict:
     """
     global _calibration_cache
     if _calibration_cache is None:
-        from teme.calibration.reliability import run_full_calibration_report
+        from ml_services.teme.calibration.reliability import run_full_calibration_report
         report = run_full_calibration_report()
         _calibration_cache = {
             "species_factors": report["post_calibration_per_species"]["species_factors"],
@@ -162,7 +162,7 @@ def get_factor_for_species(species_name: str) -> float:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    from teme.calibration.reliability import run_full_calibration_report
+    from ml_services.teme.calibration.reliability import run_full_calibration_report
 
     report = run_full_calibration_report()
     sp_factors = report["post_calibration_per_species"]["species_factors"]

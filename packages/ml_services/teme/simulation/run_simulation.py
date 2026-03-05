@@ -1,4 +1,4 @@
-"""
+﻿"""
 TEME Monte Carlo Simulation Runner
 
 Usage:
@@ -10,9 +10,9 @@ and prints formatted results.
 
 from typing import Dict, List
 
-from teme.simulation.monte_carlo import run_monte_carlo_simulation
-from teme.core.optimizer import select_species_rule_based
-from teme.data.species_catalog import SPECIES_CATALOG
+from ml_services.teme.simulation.monte_carlo import run_monte_carlo_simulation
+from ml_services.teme.core.optimizer import select_species_rule_based
+from ml_services.teme.data.species_catalog import SPECIES_CATALOG
 
 
 # ---------------------------------------------------------------------------
@@ -112,9 +112,9 @@ def print_mc_report(name: str, result: Dict):
     print(f"  Emission: {cfg['emission_kg']} kg | "
           f"Horizon: {cfg['time_horizon']} years")
 
-    print(f"\n  {'─'*61}")
+    print(f"\n  {'â”€'*61}")
     print(f"  PAYBACK ANALYSIS:")
-    print(f"  {'─'*61}")
+    print(f"  {'â”€'*61}")
     print(f"    Deterministic payback:  "
           f"{payback['deterministic_years'] or 'NOT ACHIEVED'} years")
     print(f"    MC Mean payback:        "
@@ -131,9 +131,9 @@ def print_mc_report(name: str, result: Dict):
         print(f"      Worst case (P95): {pd['p95']} years")
         print(f"      Range:            {pd['min']}-{pd['max']} years")
 
-    print(f"\n  {'─'*61}")
+    print(f"\n  {'â”€'*61}")
     print(f"  RISK METRICS:")
-    print(f"  {'─'*61}")
+    print(f"  {'â”€'*61}")
     print(f"    Probability of offset:     "
           f"{risk['probability_of_offset']*100:.1f}%")
     print(f"    Final offset (mean):       "
@@ -146,9 +146,9 @@ def print_mc_report(name: str, result: Dict):
           f" {risk['spread_p95_p5_kg']:.0f} kg")
 
     # Cumulative curve at key years
-    print(f"\n  {'─'*61}")
+    print(f"\n  {'â”€'*61}")
     print(f"  CUMULATIVE OFFSET CURVE (kg CO2):")
-    print(f"  {'─'*61}")
+    print(f"  {'â”€'*61}")
     print(f"  {'Year':>6s} | {'Determ.':>9s} | {'MC Mean':>9s} | "
           f"{'P5':>9s} | {'P95':>9s} | {'P5 vs Em':>9s}")
     print(f"  {'-'*6}-+-{'-'*9}-+-{'-'*9}-+-{'-'*9}-+-{'-'*9}-+-{'-'*9}")
@@ -169,17 +169,17 @@ def print_mc_report(name: str, result: Dict):
               f"{p5_val:9.1f} | {p95_val:9.1f} | {p5_pct:8.1f}%")
 
     # Hazard info
-    print(f"\n  {'─'*61}")
+    print(f"\n  {'â”€'*61}")
     print(f"  HAZARD PROFILE:")
-    print(f"  {'─'*61}")
+    print(f"  {'â”€'*61}")
     for sp, info in result["species_hazard_info"].items():
         print(f"    {sp}: E[annual loss]={info['expected_annual_loss']*100:.2f}% | "
               f"Cal. factor={info['calibration_factor']}")
 
     # Transparency
-    print(f"\n  {'─'*61}")
+    print(f"\n  {'â”€'*61}")
     print(f"  TRANSPARENCY:")
-    print(f"  {'─'*61}")
+    print(f"  {'â”€'*61}")
     print(f"    Model version:     {trans['model_version']}")
     print(f"    Calibrated:        {trans['calibrated']}")
     print(f"    Growth model:      {trans['growth_model']}")
@@ -192,19 +192,19 @@ def print_mc_report(name: str, result: Dict):
 
 def run_all_simulations():
     """Run Monte Carlo for all test scenarios."""
-    print("\n" + "█" * 65)
-    print("█" + " " * 63 + "█")
-    print("█" + "  TEME MONTE CARLO SIMULATION SUITE".center(63) + "█")
-    print("█" + " " * 63 + "█")
-    print("█" * 65)
+    print("\n" + "â–ˆ" * 65)
+    print("â–ˆ" + " " * 63 + "â–ˆ")
+    print("â–ˆ" + "  TEME MONTE CARLO SIMULATION SUITE".center(63) + "â–ˆ")
+    print("â–ˆ" + " " * 63 + "â–ˆ")
+    print("â–ˆ" * 65)
 
     all_results = {}
 
     for scenario in SIMULATION_SCENARIOS:
         name = scenario["name"]
-        print(f"\n{'─'*65}")
+        print(f"\n{'â”€'*65}")
         print(f"  Preparing: {name}")
-        print(f"{'─'*65}")
+        print(f"{'â”€'*65}")
 
         try:
             plan = build_species_plan(
@@ -225,13 +225,13 @@ def run_all_simulations():
             all_results[name] = result
 
         except Exception as e:
-            print(f"  ❌ Error: {e}")
+            print(f"  âŒ Error: {e}")
             all_results[name] = {"error": str(e)}
 
     # --- Final comparison ---
-    print("\n" + "█" * 65)
-    print("█" + " SCENARIO COMPARISON".center(63) + "█")
-    print("█" * 65)
+    print("\n" + "â–ˆ" * 65)
+    print("â–ˆ" + " SCENARIO COMPARISON".center(63) + "â–ˆ")
+    print("â–ˆ" * 65)
     print(f"\n  {'Scenario':<30s} | {'Det.':>5s} | {'Mean':>5s} | "
           f"{'P5':>5s} | {'P(off)':>7s} | {'Spread':>7s}")
     print(f"  {'-'*30}-+-{'-'*5}-+-{'-'*5}-+-{'-'*5}-+-{'-'*7}-+-{'-'*7}")
@@ -255,7 +255,7 @@ def run_all_simulations():
     print(f"  P5  = Risk-aware payback (5th percentile, conservative)")
     print(f"  P(off) = Probability of achieving offset within horizon")
     print(f"  Spread = P95-P5 uncertainty at end of horizon")
-    print(f"\n{'█' * 65}\n")
+    print(f"\n{'â–ˆ' * 65}\n")
 
     return all_results
 
