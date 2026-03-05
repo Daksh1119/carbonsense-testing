@@ -1,7 +1,7 @@
-from typing import Dict, List
+﻿from typing import Dict, List
 from datetime import datetime, timedelta
 from collections import defaultdict
-from ml_services.common.supabase_client import supabase
+from common.supabase_client import supabase
 
 
 def _sum_by_category(rows: List[Dict]) -> Dict[str, float]:

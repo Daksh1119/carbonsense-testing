@@ -1,6 +1,6 @@
-"""
+﻿"""
 Quick integration test: engine.py with Monte Carlo enabled.
-Run from packages/ml-services/teme/
+Run from packages/ml_services/teme/
 """
 
 from teme.core.engine import run_teme
@@ -20,7 +20,7 @@ def test_deterministic_unchanged():
     assert "monte_carlo" not in result, "MC should not be in output when not requested"
     assert result["time_to_neutral_years"] == 7
     assert result["confidence_score"] == 0.65
-    print("✅ Deterministic unchanged — no MC in output")
+    print("âœ… Deterministic unchanged â€” no MC in output")
 
 
 def test_mc_integration():
@@ -73,7 +73,7 @@ def test_mc_integration():
     assert mc["transparency"]["payback_method"] == "5th_percentile_conservative"
     print(f"  Model version:         {mc['transparency']['model_version']}")
 
-    print("✅ MC integration verified — all fields present and correct")
+    print("âœ… MC integration verified â€” all fields present and correct")
 
 
 def test_mc_warnings():
@@ -106,9 +106,9 @@ def test_mc_warnings():
     has_risk_warning = any("Risk-aware" in w for w in result["warnings"])
     if risk and risk > det:
         assert has_risk_warning, "Should warn about risk-aware gap"
-        print("✅ Risk-aware warning correctly generated")
+        print("âœ… Risk-aware warning correctly generated")
     else:
-        print("✅ No risk gap — no warning needed (correct)")
+        print("âœ… No risk gap â€” no warning needed (correct)")
 
 
 def test_api_output_shape():
@@ -135,7 +135,7 @@ def test_api_output_shape():
         else:
             print(f"    {key}: {val}")
 
-    print("✅ API output shape documented")
+    print("âœ… API output shape documented")
 
 
 if __name__ == "__main__":

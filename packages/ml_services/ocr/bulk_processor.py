@@ -1,9 +1,9 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
+﻿from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Dict, Optional
 from collections import defaultdict
 
-from ml_services.ocr.single_processor import process_single_receipt
+from ocr.single_processor import process_single_receipt
 
 
 MAX_WORKERS = 8

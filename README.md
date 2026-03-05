@@ -1,6 +1,6 @@
-<div align="center">
+﻿<div align="center">
 
-# 🌍 CarbonSense
+# ðŸŒ CarbonSense
 
 ### Multi-Agentic Carbon Intelligence Platform
 
@@ -12,13 +12,13 @@
 
 *AI-powered carbon footprint tracking, reduction, and offset platform for individuals and SMEs*
 
-[Features](#-features) · [Architecture](#-architecture) · [Getting Started](#-getting-started) · [Project Structure](#-project-structure) · [Team](#-team)
+[Features](#-features) Â· [Architecture](#-architecture) Â· [Getting Started](#-getting-started) Â· [Project Structure](#-project-structure) Â· [Team](#-team)
 
 </div>
 
 ---
 
-## 📌 About
+## ðŸ“Œ About
 
 **CarbonSense** is a multi-agentic platform that combines 7+ specialized AI agents to provide comprehensive carbon footprint management. Unlike existing solutions that focus on single categories or offer greenwashed "plant a tree" offsets, CarbonSense provides:
 
@@ -31,99 +31,99 @@
 
 ---
 
-## ✨ Features
+## âœ¨ Features
 
-### 🔢 Carbon Calculation Engine
+### ðŸ”¢ Carbon Calculation Engine
 - Manual emission entry (transport, energy, food, waste)
 - Receipt OCR (Tesseract + EasyOCR) with NER-based carbon mapping
 - Food image recognition (EfficientNet-B4 fine-tuned on Food-101 + Indian foods)
 - Bank transaction categorization (FinBERT NLP)
 - Waste classification (YOLO v8)
 
-### 🌳 TEME — Tree-based Emission Mitigation Engine
+### ðŸŒ³ TEME â€” Tree-based Emission Mitigation Engine
 - Rule-based + ML-enhanced species recommendation
-- Survival-weighted offset projections (no instant offsets — honest time-debt curves)
+- Survival-weighted offset projections (no instant offsets â€” honest time-debt curves)
 - 20+ Indian tree species with peer-reviewed absorption data
 - Optional RandomForest survival adjustment model
-- Deterministic core guaranteed — ML failure never breaks TEME
+- Deterministic core guaranteed â€” ML failure never breaks TEME
 
-### 📜 Policy & CCUS NLP Module
+### ðŸ“œ Policy & CCUS NLP Module
 - Automated policy document ingestion (PDF/HTML)
 - BERT NER for clause entity extraction (penalties, deadlines, funding amounts)
 - Clause classification (penalty | incentive | reporting | funding | tech-mandate)
-- Budget 2026 CCUS allocation tracking (₹20,000 crore)
+- Budget 2026 CCUS allocation tracking (â‚¹20,000 crore)
 - Personalized compliance advice with actionable steps
 
-### 📈 Time-Series Forecasting
+### ðŸ“ˆ Time-Series Forecasting
 - Prophet + Temporal Fusion Transformer (TFT)
 - Emission trend prediction with confidence intervals
 - Anomaly detection for unusual emission spikes
 - What-if scenario analysis (reduction vs planting vs mixed)
 
-### 🧠 Explainable AI (XAI)
+### ðŸ§  Explainable AI (XAI)
 - SHAP explanations for all ML models
 - LIME for text-based NLP predictions
 - Attention visualization for transformer models
 - "Why was this species recommended?" waterfall charts
 
-### 🤖 Behavioral RL Nudging
+### ðŸ¤– Behavioral RL Nudging
 - DQN-based personalized intervention timing
 - Policy-aware nudging (deadline reminders, urgency-based alerts)
 - A/B testing framework for nudge optimization
 
-### ⛓️ Blockchain Integration
+### â›“ï¸ Blockchain Integration
 - Carbon credit tokenization
-- Tree planting verification (GPS-tagged photos → immutable records)
+- Tree planting verification (GPS-tagged photos â†’ immutable records)
 - NFT minting for verified plantings
 - Time-based credit vesting (credits unlock as trees grow)
 
-### 🎮 Gamification
+### ðŸŽ® Gamification
 - Achievement badges (First Planter, Forest Guardian, Carbon Warrior)
 - Leaderboards (individual, organization, city-level)
 - Monthly challenges with rewards
 
 ---
 
-## 🏗 Architecture
+## ðŸ— Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│              PRESENTATION LAYER                          │
-│     React 18 (Web)  |  React Native (Mobile)            │
-└───────────────────────────┬─────────────────────────────┘
-                            ↕
-┌───────────────────────────┴─────────────────────────────┐
-│                  API GATEWAY (Express.js)                 │
-└───────────────────────────┬─────────────────────────────┘
-                            ↕
-┌───────────────────────────┴─────────────────────────────┐
-│              MICROSERVICES LAYER                          │
-│  Carbon Calc | TEME | Policy NLP | Analytics | Blockchain│
-└───────────────────────────┬─────────────────────────────┘
-                            ↕
-┌───────────────────────────┴─────────────────────────────┐
-│              AI/ML AGENT LAYER (Python FastAPI)           │
-│  Transport | Energy | Food | Waste | TEME | Policy       │
-│  Forecasting | XAI | Behavioral RL                       │
-└───────────────────────────┬─────────────────────────────┘
-                            ↕
-┌───────────────────────────┴─────────────────────────────┐
-│                    DATA LAYER                             │
-│  PostgreSQL+PostGIS | MongoDB | Redis | TimescaleDB       │
-│  Blockchain Ledger                                        │
-└─────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚              PRESENTATION LAYER                          â”‚
+â”‚     React 18 (Web)  |  React Native (Mobile)            â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                            â†•
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                  API GATEWAY (Express.js)                 â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                            â†•
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚              MICROSERVICES LAYER                          â”‚
+â”‚  Carbon Calc | TEME | Policy NLP | Analytics | Blockchainâ”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                            â†•
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚              AI/ML AGENT LAYER (Python FastAPI)           â”‚
+â”‚  Transport | Energy | Food | Waste | TEME | Policy       â”‚
+â”‚  Forecasting | XAI | Behavioral RL                       â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                            â†•
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                    DATA LAYER                             â”‚
+â”‚  PostgreSQL+PostGIS | MongoDB | Redis | TimescaleDB       â”‚
+â”‚  Blockchain Ledger                                        â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ### Key Design Principles
-- **ML failure never crashes the platform** — every model has a deterministic fallback
-- **Microservice isolation** — services communicate via HTTP APIs only
-- **Transparency** — every ML response includes model version, confidence, and enabled status
-- **Reduction-first** — always recommend immediate reductions before long-term offsets
-- **Scientific rigor** — conservative estimates, peer-reviewed data, honest about uncertainty
+- **ML failure never crashes the platform** â€” every model has a deterministic fallback
+- **Microservice isolation** â€” services communicate via HTTP APIs only
+- **Transparency** â€” every ML response includes model version, confidence, and enabled status
+- **Reduction-first** â€” always recommend immediate reductions before long-term offsets
+- **Scientific rigor** â€” conservative estimates, peer-reviewed data, honest about uncertainty
 
 ---
 
-## 🚀 Getting Started
+## ðŸš€ Getting Started
 
 ### Prerequisites
 - Python 3.9+
@@ -140,7 +140,7 @@ git clone https://github.com/Daksh1119/CarbonSense.git
 cd CarbonSense
 
 # Navigate to TEME service
-cd packages/ml-services/teme
+cd packages/ml_services/teme
 
 # Install Python dependencies
 pip install fastapi uvicorn joblib numpy scikit-learn
@@ -178,89 +178,89 @@ Open Swagger UI at: **http://127.0.0.1:8000/docs**
 
 ---
 
-## 📁 Project Structure
+## ðŸ“ Project Structure
 
 ```
 CarbonSense/
-├── packages/
-│   ├── ml-services/
-│   │   └── teme/                    # TEME Engine
-│   │       ├── core/                # Deterministic engine (no ML deps)
-│   │       │   ├── engine.py        # run_teme() — main entry
-│   │       │   ├── optimizer.py     # Species selection
-│   │       │   ├── sequestration.py # α(t) absorption curves
-│   │       │   ├── survival.py      # σ(t) survival curves
-│   │       │   ├── land.py          # Land constraint calculator
-│   │       │   └── exceptions.py    # Custom exceptions
-│   │       ├── api/                 # FastAPI service layer
-│   │       │   └── app.py           # POST /teme/run
-│   │       ├── data/                # Species catalog
-│   │       │   └── species_catalog.py
-│   │       ├── ml/                  # Optional ML layer
-│   │       │   ├── survival.py      # RF survival adjustment
-│   │       │   └── models/          # .pkl model files
-│   │       ├── tests/               # Test suite
-│   │       └── pyproject.toml
-│   ├── backend/                     # Express.js API (planned)
-│   ├── frontend/                    # React 18 app (planned)
-│   └── mobile/                      # React Native app (planned)
-├── docs/                            # Documentation
-├── .github/                         # CI/CD workflows
-└── README.md
+â”œâ”€â”€ packages/
+â”‚   â”œâ”€â”€ ml_services/
+â”‚   â”‚   â””â”€â”€ teme/                    # TEME Engine
+â”‚   â”‚       â”œâ”€â”€ core/                # Deterministic engine (no ML deps)
+â”‚   â”‚       â”‚   â”œâ”€â”€ engine.py        # run_teme() â€” main entry
+â”‚   â”‚       â”‚   â”œâ”€â”€ optimizer.py     # Species selection
+â”‚   â”‚       â”‚   â”œâ”€â”€ sequestration.py # Î±(t) absorption curves
+â”‚   â”‚       â”‚   â”œâ”€â”€ survival.py      # Ïƒ(t) survival curves
+â”‚   â”‚       â”‚   â”œâ”€â”€ land.py          # Land constraint calculator
+â”‚   â”‚       â”‚   â””â”€â”€ exceptions.py    # Custom exceptions
+â”‚   â”‚       â”œâ”€â”€ api/                 # FastAPI service layer
+â”‚   â”‚       â”‚   â””â”€â”€ app.py           # POST /teme/run
+â”‚   â”‚       â”œâ”€â”€ data/                # Species catalog
+â”‚   â”‚       â”‚   â””â”€â”€ species_catalog.py
+â”‚   â”‚       â”œâ”€â”€ ml/                  # Optional ML layer
+â”‚   â”‚       â”‚   â”œâ”€â”€ survival.py      # RF survival adjustment
+â”‚   â”‚       â”‚   â””â”€â”€ models/          # .pkl model files
+â”‚   â”‚       â”œâ”€â”€ tests/               # Test suite
+â”‚   â”‚       â””â”€â”€ pyproject.toml
+â”‚   â”œâ”€â”€ backend/                     # Express.js API (planned)
+â”‚   â”œâ”€â”€ frontend/                    # React 18 app (planned)
+â”‚   â””â”€â”€ mobile/                      # React Native app (planned)
+â”œâ”€â”€ docs/                            # Documentation
+â”œâ”€â”€ .github/                         # CI/CD workflows
+â””â”€â”€ README.md
 ```
 
 ---
 
-## 🧪 Running Tests
+## ðŸ§ª Running Tests
 
 ```bash
-cd packages/ml-services/teme
+cd packages/ml_services/teme
 pytest -v
 ```
 
 ---
 
-## 📊 Current Status
+## ðŸ“Š Current Status
 
 | Module | Status | Progress |
 |--------|--------|----------|
-| TEME Core Engine | ✅ Complete | Deterministic engine fully functional |
-| TEME ML Layer | ✅ Complete | RF survival model trained and integrated |
-| TEME API | ✅ Complete | FastAPI + Swagger UI operational |
-| Carbon Calc Engine | 🔧 In Progress | Manual entry + OCR pipeline |
-| Policy NLP | 📋 Planned | BERT NER + clause classifier |
-| Time-Series Forecasting | 📋 Planned | Prophet + TFT |
-| XAI Layer | 📋 Planned | SHAP + LIME |
-| Behavioral RL | 📋 Planned | DQN nudging |
-| Blockchain | 📋 Planned | Carbon credits + verification |
-| Frontend | 📋 Planned | React 18 dashboard |
-| Mobile App | 📋 Planned | React Native |
+| TEME Core Engine | âœ… Complete | Deterministic engine fully functional |
+| TEME ML Layer | âœ… Complete | RF survival model trained and integrated |
+| TEME API | âœ… Complete | FastAPI + Swagger UI operational |
+| Carbon Calc Engine | ðŸ”§ In Progress | Manual entry + OCR pipeline |
+| Policy NLP | ðŸ“‹ Planned | BERT NER + clause classifier |
+| Time-Series Forecasting | ðŸ“‹ Planned | Prophet + TFT |
+| XAI Layer | ðŸ“‹ Planned | SHAP + LIME |
+| Behavioral RL | ðŸ“‹ Planned | DQN nudging |
+| Blockchain | ðŸ“‹ Planned | Carbon credits + verification |
+| Frontend | ðŸ“‹ Planned | React 18 dashboard |
+| Mobile App | ðŸ“‹ Planned | React Native |
 
 ---
 
-## 👥 Team
+## ðŸ‘¥ Team
 
 | Role | Responsibility |
 |------|---------------|
-| **Member 1** — Frontend & UI/UX Lead | React, data visualization, TEME/Policy UI, mobile app |
-| **Member 2** — Backend & Infrastructure Lead | Express.js APIs, PostgreSQL, DevOps, blockchain |
-| **Member 3** — AI/ML & Data Science Lead | All ML models, TEME engine, Policy NLP, XAI, RL |
+| **Member 1** â€” Frontend & UI/UX Lead | React, data visualization, TEME/Policy UI, mobile app |
+| **Member 2** â€” Backend & Infrastructure Lead | Express.js APIs, PostgreSQL, DevOps, blockchain |
+| **Member 3** â€” AI/ML & Data Science Lead | All ML models, TEME engine, Policy NLP, XAI, RL |
 
 ---
 
-## 📄 License
+## ðŸ“„ License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License â€” see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🔬 Research
+## ðŸ”¬ Research
 
 This project contributes to 3 research papers:
 
-1. **"Multi-Agentic AI for SME Carbon Management"** — Systems architecture
-2. **"Time-Debt Modeling for Tree-Based Carbon Offsets"** — TEME engine (Environmental Science)
-3. **"Automated Policy Compliance via NLP"** — Policy module (NLP/AI)
+1. **"Multi-Agentic AI for SME Carbon Management"** â€” Systems architecture
+2. **"Time-Debt Modeling for Tree-Based Carbon Offsets"** â€” TEME engine (Environmental Science)
+3. **"Automated Policy Compliance via NLP"** â€” Policy module (NLP/AI)
 
 ---
 
@@ -268,6 +268,6 @@ This project contributes to 3 research papers:
 
 **Built with scientific rigor. No greenwashing. Reduction-first, always.**
 
-🌍 *You're not just tracking carbon. You're making a difference.* 🌱
+ðŸŒ *You're not just tracking carbon. You're making a difference.* ðŸŒ±
 
 </div>
