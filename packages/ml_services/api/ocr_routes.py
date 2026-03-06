@@ -1,5 +1,6 @@
 ﻿from datetime import date
 from typing import List, Optional, Literal, Any
+import tempfile
 import os
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
@@ -96,20 +97,35 @@ async def process_receipt(
     if len(blob) > MAX_SINGLE_MB * 1024 * 1024:
         raise HTTPException(status_code=413, detail=f"File too large. Max {MAX_SINGLE_MB}MB")
 
+    suffix = os.path.splitext(file.filename or "")[1] or ".jpg"
+
     try:
-        result: dict[str, Any] = await process_single_receipt(
-            file_bytes=blob,
+        # Save uploaded bytes to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(blob)
+            tmp_path = tmp.name
+
+        result: dict[str, Any] = process_single_receipt(
+            file_path=tmp_path,
             file_name=file.filename or "upload",
             organization_id=organization_id,
             uploaded_by_user_id=uploaded_by,
             employee_user_id=employee_user_id,
         )
+
         return OCRReceiptResponse(**result)
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"OCR processing failed: {e}")
 
+    finally:
+        # Clean up temporary file
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
 
 @router.post("/receipts/bulk", response_model=OCRBulkResponse)
 async def process_bulk_receipts(
