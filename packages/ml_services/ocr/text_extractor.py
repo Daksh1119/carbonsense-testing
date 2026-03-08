@@ -1,20 +1,73 @@
-from typing import Dict
+"""
+text_extractor.py
+─────────────────
+Multi-pass Tesseract OCR with image pre-processing pipeline.
+
+Pre-processing steps (in order):
+  1. Convert to greyscale
+  2. Upscale if longest edge < 1500 px  (improves DPI for small scans)
+  3. Sharpen
+  4. Auto-contrast  (clips 2 % histogram outliers)
+  5. Hard-binarise at midpoint 128
+
+Tesseract is tried with PSM modes [6, 4, 3, 11].  The run with the
+highest mean per-word confidence is kept.  If best confidence < 0.50
+the raw greyscale image is also tried as a fallback.
+
+Returns a dict with keys:
+  text        – extracted string
+  method      – e.g. "tesseract-psm6"
+  success     – bool
+  confidence  – float 0.0–1.0  (mean Tesseract per-word confidence)
+  error       – str  (only present on failure)
+"""
+
+from __future__ import annotations
+
 import os
+from typing import Dict
 
 import pytesseract
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
 
+
+# ─── Image pre-processing ────────────────────────────────────────────────────
+
+def _preprocess(img: Image.Image) -> Image.Image:
+    """Return a binarised greyscale copy optimised for Tesseract."""
+    img = img.convert("L")
+    w, h = img.size
+    longest = max(w, h)
+    if longest < 1500:
+        scale = 1500.0 / longest
+        img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    img = img.filter(ImageFilter.SHARPEN)
+    img = ImageOps.autocontrast(img, cutoff=2)
+    img = img.point(lambda px: 255 if px > 128 else 0, "L")
+    return img
+
+
+# ─── Confidence helper ───────────────────────────────────────────────────────
+
+def _mean_confidence(data: dict) -> float:
+    """Mean word confidence (0–1) from pytesseract image_to_data output."""
+    confs = [
+        int(c)
+        for c in data.get("conf", [])
+        if str(c).lstrip("-").isdigit() and int(c) >= 0
+    ]
+    return (sum(confs) / len(confs) / 100.0) if confs else 0.0
+
+
+# ─── Main extractor ──────────────────────────────────────────────────────────
 
 def extract_text(image_path: str) -> Dict:
     """
-    Extract text from an image using Tesseract OCR.
+    Extract text from a receipt image using Tesseract OCR.
 
-    Production notes:
-    - Add EasyOCR fallback if pytesseract confidence is low.
-    - Add PDF pipeline (pdf2image + OCR per page) if needed.
+    Tries PSM modes 6, 4, 3, 11 on the pre-processed image and falls back
+    to raw greyscale if confidence remains below 0.50.
     """
-
-    # Optional explicit tesseract binary path (Windows-friendly)
     tesseract_cmd = os.getenv("TESSERACT_CMD")
     if tesseract_cmd:
         pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
@@ -24,17 +77,65 @@ def extract_text(image_path: str) -> Dict:
             "text": "",
             "method": "tesseract",
             "success": False,
+            "confidence": 0.0,
             "error": f"File not found: {image_path}",
         }
 
     try:
-        with Image.open(image_path) as img:
-            text = pytesseract.image_to_string(img)
+        with Image.open(image_path) as raw_pil:
+            raw_pil = raw_pil.convert("RGB")
+            preprocessed = _preprocess(raw_pil.copy())
+
+        best_text = ""
+        best_conf = 0.0
+        best_method = "tesseract-psm6"
+
+        # ── Multi-PSM sweep on pre-processed image ───────────────────────────
+        for psm in (6, 4, 3, 11):
+            cfg = f"--oem 3 --psm {psm}"
+            try:
+                data = pytesseract.image_to_data(
+                    preprocessed,
+                    output_type=pytesseract.Output.DICT,
+                    config=cfg,
+                )
+                conf = _mean_confidence(data)
+                text = pytesseract.image_to_string(preprocessed, config=cfg)
+                if conf > best_conf or (
+                    conf == best_conf and len(text) > len(best_text)
+                ):
+                    best_conf = conf
+                    best_text = text
+                    best_method = f"tesseract-psm{psm}"
+            except Exception:
+                continue
+
+        # ── Low-confidence fallback: raw greyscale ───────────────────────────
+        if best_conf < 0.50:
+            with Image.open(image_path) as raw_pil:
+                raw_gray = raw_pil.convert("L")
+            for psm in (6, 4):
+                cfg = f"--oem 3 --psm {psm}"
+                try:
+                    data = pytesseract.image_to_data(
+                        raw_gray,
+                        output_type=pytesseract.Output.DICT,
+                        config=cfg,
+                    )
+                    conf = _mean_confidence(data)
+                    text = pytesseract.image_to_string(raw_gray, config=cfg)
+                    if conf > best_conf:
+                        best_conf = conf
+                        best_text = text
+                        best_method = f"tesseract-raw-psm{psm}"
+                except Exception:
+                    continue
 
         return {
-            "text": text or "",
-            "method": "tesseract",
-            "success": True,
+            "text": best_text.strip() if best_text else "",
+            "method": best_method,
+            "success": bool(best_text.strip()),
+            "confidence": round(best_conf, 4),
         }
 
     except UnidentifiedImageError:
@@ -42,6 +143,7 @@ def extract_text(image_path: str) -> Dict:
             "text": "",
             "method": "tesseract",
             "success": False,
+            "confidence": 0.0,
             "error": "Invalid or unsupported image format.",
         }
 
@@ -50,16 +152,18 @@ def extract_text(image_path: str) -> Dict:
             "text": "",
             "method": "tesseract",
             "success": False,
+            "confidence": 0.0,
             "error": (
                 "Tesseract binary not found. Install Tesseract OCR and set "
-                "TESSERACT_CMD (e.g., C:\\Program Files\\Tesseract-OCR\\tesseract.exe)."
+                r"TESSERACT_CMD (e.g. C:\Program Files\Tesseract-OCR\tesseract.exe)."
             ),
         }
 
-    except Exception as e:
+    except Exception as exc:
         return {
             "text": "",
             "method": "tesseract",
             "success": False,
-            "error": f"OCR extraction failed: {type(e).__name__}: {e}",
+            "confidence": 0.0,
+            "error": f"OCR extraction failed: {type(exc).__name__}: {exc}",
         }
