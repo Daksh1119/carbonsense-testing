@@ -258,10 +258,12 @@ def _parse_items_per_line(text: str) -> List[Dict]:
         if not prices or not _WORD_RE.search(line):
             continue
         amount = _to_float(prices[-1]) or 0.0
+        qty_match = _QTY_LINE_RE.match(line)
+        quantity = int(qty_match.group(1)) if qty_match else 1
         name = _build_item_name(line)
         if len(name) < 3:
             continue
-        items.append({"name": name, "amount": round(amount, 2)})
+        items.append({"name": name, "amount": round(amount, 2), "quantity": quantity})
     return items
 
 

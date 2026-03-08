@@ -135,6 +135,32 @@ _KEYWORD_FACTORS: List[Dict] = [
                   "mushroom", "onion", "tomato", "pepper", "courgette",
                   "zucchini", "aubergine", "eggplant"],
      "category": "food_vegetarian", "carbon_kg": 0.15},
+    # ── Indian breakfast / snacks ─────────────────────────────────────────────
+    {"keywords": ["idli", "medu vada", "vada", "dosa", "masala dosa",
+                  "rava dosa", "uttapam", "appam", "puttu", "pesarattu"],
+     "category": "food_vegetarian", "carbon_kg": 0.25},
+    {"keywords": ["poha", "upma", "daliya", "sheera", "halwa"],
+     "category": "food_vegetarian", "carbon_kg": 0.18},
+    {"keywords": ["pav bhaji", "chole bhature", "rajma", "chana",
+                  "dal makhani", "sambhar", "sambar"],
+     "category": "food_vegetarian", "carbon_kg": 0.35},
+    {"keywords": ["aloo paratha", "paratha", "roti", "chapati", "chapatti",
+                  "naan", "kulcha", "puri", "bhatura", "thepla"],
+     "category": "food_vegetarian", "carbon_kg": 0.35},
+    {"keywords": ["samosa", "kachori", "dhokla", "pakora", "bhajiya",
+                  "bhaji", "bonda", "pani puri", "gol gappa", "sev puri",
+                  "chaat", "bhel puri"],
+     "category": "food_vegetarian", "carbon_kg": 0.30},
+    {"keywords": ["haldiram", "bikanervala", "wow momo", "fassos",
+                  "dominos", "domino's", "pizza hut", "mcdonalds",
+                  "mcdonald's", "kfc", "burger king", "subway"],
+     "category": "food_prepared", "carbon_kg": 1.50},
+    {"keywords": ["big bazaar", "dmart", "d-mart", "reliance fresh",
+                  "more supermarket", "spencers", "easyday", "star bazaar",
+                  "jiomart", "blinkit", "zepto", "bigbasket", "big basket"],
+     "category": "grocery", "carbon_kg": 2.50},
+    {"keywords": ["amul", "mother dairy", "nandini", "aavin", "milma"],
+     "category": "food_dairy", "carbon_kg": 0.55},
     # ── Transport (road) ───────────────────────────────────────────────────────
     {"keywords": ["taxi", "cab"],
      "category": "transport_road", "carbon_kg": 0.21},
@@ -254,13 +280,15 @@ def calculate_receipt_carbon(items: List[Dict], carbon_db: Dict) -> Dict:
     mapped = []
     total = 0.0
     for item in items:
-        name = item.get("name", "").strip()
-        factor = _match_item(name)
-        c = float(factor["carbon_kg"])
+        name     = item.get("name", "").strip()
+        quantity = float(item.get("quantity", 1))
+        factor   = _match_item(name)
+        c        = round(float(factor["carbon_kg"]) * quantity, 4)
         mapped.append({
-            "name": name,
-            "amount": item.get("amount", 0.0),
-            "category": factor["category"],
+            "name":      name,
+            "amount":    item.get("amount", 0.0),
+            "quantity":  quantity,
+            "category":  factor["category"],
             "carbon_kg": c,
         })
         total += c
