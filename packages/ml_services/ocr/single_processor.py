@@ -86,7 +86,8 @@ def _detect_currency(text: str) -> str:
 _NON_VENDOR_RE = re.compile(
     r"(receipt|invoice|bill|table|tisch|rech|nr\.|date|umsatz"
     r"|\bbar\b|cashier|server|order|waiter|\bpos\b|terminal|till|\breg\b"
-    r"|\bvat\b|\btax\b|www\.|http|\btel\b|\bfax\b|e-mail|@)",
+    r"|\bvat\b|\btax\b|www\.|http|\btel\b|\bfax\b|e-mail|@"
+    r"|duplicate|copy|gst|fssai|kot\b|parcel)",
     re.IGNORECASE,
 )
 
@@ -128,9 +129,15 @@ _DATE_PATTERNS: List[tuple] = [
     (re.compile(r"\b(\d{4})[./\-](\d{1,2})[./\-](\d{1,2})\b"),         "ymd"),
     # DD MMM YYYY  (e.g. 12 Jan 2024)
     (re.compile(r"\b(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})\b"),         "dmy_alpha"),
+    # DD/MM/YY  (2-digit year — common on Indian & UK receipts)
+    (re.compile(r"\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{2})\b"),         "dmy_short"),
     # MM/DD/YYYY  (US – tried last)
     (re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b"),                   "mdy"),
 ]
+
+def _expand_year(y2: int) -> int:
+    """Convert 2-digit year to 4-digit: 00-49 → 2000-2049, 50-99 → 1950-1999."""
+    return (2000 + y2) if y2 < 50 else (1900 + y2)
 
 def _extract_date(text: str) -> Optional[str]:
     # Also try with newlines collapsed
@@ -151,6 +158,8 @@ def _extract_date(text: str) -> Optional[str]:
                 d = int(a)
                 mo = _MONTH_NAMES.get(b.lower()[:3], 0)
                 y = int(c)
+            elif order == "dmy_short":
+                d, mo, y = int(a), int(b), _expand_year(int(c))
             else:
                 continue
             if 1 <= d <= 31 and 1 <= mo <= 12 and 1900 <= y <= 2100:
@@ -163,10 +172,24 @@ def _extract_date(text: str) -> Optional[str]:
 # ─── Total amount extraction ──────────────────────────────────────────────────
 
 _TOTAL_LABEL_RE = re.compile(
-    r"(?:total[es]*|grand\s*total|amount\s*due|to\s*pay|zu\s*zahlen"
+    r"(?:food\s*total|grand\s*total|amount\s*due|to\s*pay|zu\s*zahlen"
     r"|sum|gesamtbetrag|gesamt|betrag|balance\s*due|net\s*amount"
-    r"|subtotal|montant)[^0-9]*"
+    # "total" but NOT preceded by "sub" (handles "Sub Total" lines)
+    r"|(?<!sub\s)(?<!sub)total[es]*)[^0-9]*"
     r"(\d{1,6}[.,]\s*\d{2})",   # allow space between decimal and cents, e.g. '9. 00'
+    re.IGNORECASE,
+)
+# Subtotal patterns — tried only when no labeled total is found
+_SUBTOTAL_LABEL_RE = re.compile(
+    r"(?:subtotal|sub\s*total)[^0-9]*(\d{1,6}[.,]\s*\d{2})",
+    re.IGNORECASE,
+)
+# Integer-only totals (Indian/other receipts that omit the decimal point).
+# Require the integer to appear within ~20 chars of the label (no chaining across sentences).
+# "total" must not be preceded by "sub".
+_TOTAL_INT_LABEL_RE = re.compile(
+    r"(?:food\s*total|grand\s*total|(?<!sub\s)(?<!sub)total[es]*|amount\s*due)"
+    r"\s*[:\-–]?\s*(\d{3,6})\b",
     re.IGNORECASE,
 )
 _ANY_PRICE_RE = re.compile(r"\b(\d{1,6}[.,]\s*\d{2})\b")
@@ -180,12 +203,58 @@ def _to_float(raw: str) -> Optional[float]:
 
 def _extract_total(text: str) -> Optional[float]:
     flat = " ".join(text.splitlines())
+    # 1. Prefer "food total / grand total / total" with a decimal price
     matches = list(_TOTAL_LABEL_RE.finditer(flat))
     if matches:
         v = _to_float(matches[-1].group(1))
         if v is not None:
             return round(v, 2)
-    # Fallback: largest price anywhere in the text
+    # 2. Try "total" with an integer amount (Indian receipts: "Total : 1176")
+    m = _TOTAL_INT_LABEL_RE.search(flat)
+    if m:
+        try:
+            return float(m.group(1))
+        except ValueError:
+            pass
+    # 3. Try computing from sub-total + GST (Indian receipts where the final
+    #    total line is present but its number is missing from the OCR output).
+    sub_m = _SUBTOTAL_LABEL_RE.search(flat)
+    if sub_m:
+        sub = _to_float(sub_m.group(1))
+        if sub is not None:
+            # Strategy A — sum explicit GST amounts after each "CGST/SGST : <amount>"
+            gst_amounts = re.findall(
+                r"(?:cgst|sgst|igst)\s*@[\d.]+%?\s+on\s+[\d.]+\s*:\s*(\d+(?:\.\d{2})?)",
+                flat, re.IGNORECASE,
+            )
+            gst_total = sum(float(g) for g in gst_amounts)
+
+            # Strategy B — if OCR dropped some amounts, derive from the GST rates
+            if not gst_total:
+                rates = re.findall(
+                    r"(?:cgst|sgst|igst)\s*@\s*([\d.]+)%",
+                    flat, re.IGNORECASE,
+                )
+                rate_total = sum(float(r) for r in rates)
+                if rate_total:
+                    gst_total = round(sub * rate_total / 100, 2)
+
+            # Strategy C — if only one of CGST/SGST captured but both present
+            # (equal-rate split), double the found amount
+            if gst_total and len(gst_amounts) == 1:
+                has_cgst = bool(re.search(r"\bcgst\b", flat, re.IGNORECASE))
+                has_sgst = bool(re.search(r"\bsgst\b", flat, re.IGNORECASE))
+                if has_cgst and has_sgst:
+                    gst_total *= 2
+
+            if gst_total > 0:
+                return round(sub + gst_total, 2)
+    # 4. Fall back to "subtotal" with a decimal price alone
+    if sub_m:
+        v = _to_float(sub_m.group(1))
+        if v is not None:
+            return round(v, 2)
+    # 5. Last resort: largest decimal price found anywhere
     prices = [_to_float(p) for p in _ANY_PRICE_RE.findall(flat)]
     valid = [p for p in prices if p is not None]
     return round(max(valid), 2) if valid else None
@@ -204,6 +273,11 @@ _SKIP_WORDS = {
     "entspricht", "bediente", "mwst nr", "bar", "tisch",
     # Receipt header words
     "rech", "nr", "rechnung", "beleg", "quittung",
+    # Additional non-item lines (loyalty, fuel pump headers, void transactions)
+    "loyalty", "reward", "points", "void", "refund", "adjustment",
+    "surcharge", "convenience fee", "delivery fee", "packing charge",
+    "fuel", "pump", "litres", "liters", "price/litre", "price/liter",
+    "authorized", "approved", "declined", "transaction",
 }
 
 # Compile a word-boundary pattern for skip words (avoids false positives like
@@ -219,11 +293,23 @@ _STANDALONE_CURR_RE = re.compile(
 )
 # Prices may have an embedded space like "9. 00" from fragmented PSM output
 _ITEM_PRICE_RE  = re.compile(r"(\d{1,6}[.,]\s*\d{2})\b")
+# Integer-only price (e.g. "310", "255") — used as fallback when no decimal found.
+# Must be at least 2 digits to avoid matching qty/rate columns spuriously.
+_ITEM_PRICE_INT_RE = re.compile(r"\b(\d{2,6})\b")
 _WORD_RE        = re.compile(r"[A-Za-z]{3,}")
 _QTY_PREFIX_RE  = re.compile(r"^\d+\s*[xX×]\s*")
 _QTY_LINE_RE    = re.compile(r"^(\d+)\s*[xX×]\s*(.+)$")   # e.g. "2xLatte Macchiato"
 _CURR_CODE_RE   = re.compile(
     r"\b(CHF|EUR|USD|GBP|INR|AED|SGD|AUD|CAD|JPY)\b", re.IGNORECASE
+)
+# Indian receipt format: "ITEM NAME   qty   rate   amount"  (4 columns)
+# or collapsed OCR:      "ITEM NAME   qty   amount"          (3 columns, rate omitted)
+# The last integer is always the line total.
+_INDIAN_ITEM_RE = re.compile(
+    r"^(.+?)\s+(\d+)\s+(\d+)\s+(\d+)\s*$"   # 4-col: name qty rate amount
+)
+_INDIAN_ITEM_RE3 = re.compile(
+    r"^(.+?)\s+(\d+)\s+(\d+)\s*$"            # 3-col: name qty amount  (OCR collapsed)
 )
 
 
@@ -245,7 +331,10 @@ def _build_item_name(line: str) -> str:
 def _parse_items_per_line(text: str) -> List[Dict]:
     """
     Standard parsing: each item line contains both a word and a price.
-    Works well when Tesseract preserves full receipt lines (PSM 6/4).
+
+    Handles two price formats:
+      A) Decimal:  "Latte Macchiato       4.50"
+      B) Integer:  "CHEESE CHILLY TOAST   1   310   310"   (Indian: qty rate amount)
     """
     items: List[Dict] = []
     for raw_line in text.splitlines():
@@ -254,16 +343,48 @@ def _parse_items_per_line(text: str) -> List[Dict]:
             continue
         if _SKIP_PATTERN.search(line):
             continue
-        prices = _ITEM_PRICE_RE.findall(line)
-        if not prices or not _WORD_RE.search(line):
+        # Skip discount/adjustment lines: any line whose amount is negative
+        # e.g. "MEMBER DISC  -4.50"  or  "PROMO SAVE  -50"
+        if re.search(r"[-\u2212]\s*\d{1,6}(?:[.,]\d{2})?\b", line):
             continue
-        amount = _to_float(prices[-1]) or 0.0
-        qty_match = _QTY_LINE_RE.match(line)
-        quantity = int(qty_match.group(1)) if qty_match else 1
-        name = _build_item_name(line)
-        if len(name) < 3:
+        if not _WORD_RE.search(line):
             continue
-        items.append({"name": name, "amount": round(amount, 2), "quantity": quantity})
+
+        # ── Format A: line contains a decimal/comma price ──────────────────
+        decimal_prices = _ITEM_PRICE_RE.findall(line)
+        if decimal_prices:
+            amount = _to_float(decimal_prices[-1]) or 0.0
+            qty_match = _QTY_LINE_RE.match(line)
+            quantity = int(qty_match.group(1)) if qty_match else 1
+            name = _build_item_name(line)
+            if len(name) < 3:
+                continue
+            items.append({"name": name, "amount": round(amount, 2), "quantity": quantity})
+            continue
+
+        # ── Format B: Indian receipt "NAME  qty  rate  amount" (all integers) ──
+        # Try 4-column first (qty, rate, amount all present), then 3-column
+        # (OCR sometimes collapses duplicate amount columns).
+        indian_m  = _INDIAN_ITEM_RE.match(line)
+        indian_m3 = _INDIAN_ITEM_RE3.match(line) if not indian_m else None
+        if indian_m or indian_m3:
+            m = indian_m or indian_m3
+            raw_name = m.group(1).strip()
+            # Skip header/metadata lines that slipped through _SKIP_PATTERN
+            if re.match(r"^(particulars|item|description|s\.?\s*no)", raw_name, re.I):
+                continue
+            if indian_m:
+                quantity = int(indian_m.group(2))
+                amount   = int(indian_m.group(4))   # last column = line total
+            else:
+                # 3-col: group(2)=qty, group(3)=amount
+                quantity = int(indian_m3.group(2))
+                amount   = int(indian_m3.group(3))
+            name = _build_item_name(raw_name)
+            if len(name) < 3:
+                continue
+            items.append({"name": name, "amount": float(amount), "quantity": quantity})
+
     return items
 
 
@@ -394,7 +515,7 @@ def process_single_receipt(
     if employee_user_id:
         employee_department = get_user_department(employee_user_id, organization_id)
 
-    # DB row – matches existing Supabase schema columns
+    # DB row – matches receipts_ocr_results schema columns
     row = {
         "receipt_id":          receipt_id,
         "organization_id":     organization_id,
@@ -404,6 +525,11 @@ def process_single_receipt(
         "source_file_name":    file_name,
         "ocr_text":            raw_text,
         "ocr_method":          extraction.get("method", "tesseract"),
+        "vendor":              vendor,
+        "receipt_date":        receipt_date,
+        "total_amount":        total_amount,
+        "currency":            currency,
+        "ocr_confidence":      round(confidence, 4),
         "carbon_total_kg":     carbon_result["total_carbon_kg"],
         "mapped_items":        carbon_result["mapped_items"],
         "status":              "processed",
