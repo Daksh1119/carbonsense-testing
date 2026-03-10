@@ -203,12 +203,23 @@ def run_ocr_pipeline(image_path: str) -> None:
     total_kg = carbon_result["total_carbon_kg"]
     map_rate = len(mapped) / max(len(items), 1) * 100
 
+    from packages.ml_services.ocr.carbon_comparisons import build_comparisons
+    comps = build_comparisons(total_kg)
+
     print(f"  ✅  OCR confidence      : {result['confidence']:.2%}  (target > 70%)")
     print(f"  {'✅' if len(items) > 0 else '⚠️ '} Items parsed         : {len(items)}")
     print(f"  {'✅' if map_rate >= 50 else '⚠️ '} Carbon map rate      : {map_rate:.0f}%  (aim > 50%)")
     print(f"  📊  Total carbon         : {total_kg:.4f} kg CO₂e")
-    print(f"  🌳  Trees to offset      : ~{total_kg / 0.025:.1f} Neem trees (1 year)")
-    print(f"  🔥  vs. avg petrol fill  : {total_kg / 2.31:.1f}× a 10L petrol fill")
+    print()
+    print(f"  🌳  Trees to offset (1yr): {comps['trees_to_offset_1yr']:.3f} Neem trees"
+          f"  (one tree offsets this in {comps['days_1_tree_to_offset']:.0f} days)")
+    print(f"  ⛽  Petrol equivalent     : {comps['petrol_litres_equiv']:.2f} litres of petrol burned")
+    print(f"  📱  Phone charges equiv   : {comps['phone_charges_equiv']} full smartphone charges")
+    print(f"  🍽️  % of daily Indian diet: {comps['pct_of_daily_diet_india']:.0f}%")
+    print(f"  🌍  % of annual per-capita: {comps['pct_of_annual_percap_india']:.3f}%")
+    print()
+    print(f"  💬  {comps['human_summary']}")
+    print(f"  📖  {comps['methodology_note']}")
 
     # Optionally save full JSON
     output_path = REPO_ROOT / "scripts" / f"ocr_result_{p.stem}.json"

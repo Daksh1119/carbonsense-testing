@@ -139,33 +139,85 @@ def _expand_year(y2: int) -> int:
     """Convert 2-digit year to 4-digit: 00-49 → 2000-2049, 50-99 → 1950-1999."""
     return (2000 + y2) if y2 < 50 else (1900 + y2)
 
+# Regex for date-label prefix (e.g. "Date:", "Dt:", "Bill Date:", "Trans Date:")
+_DATE_LABEL_RE = re.compile(
+    r"(?:date|dated|dt|bill\s*date|invoice\s*date|trans\s*date)\s*[:\-\u2013]\s*",
+    re.IGNORECASE,
+)
+# Regulatory/historical date trap: "w.e.f DD/MM/YYYY" — always ignore these
+_WEF_RE = re.compile(
+    r"w\.?e\.?f\.?\s*\d{1,2}[/\.\-]\d{1,2}[/\.\-]\d{2,4}",
+    re.IGNORECASE,
+)
+
+
+def _parse_date_match(m: re.Match, order: str) -> Optional[str]:
+    """Parse a (group1, group2, group3) date match into YYYY-MM-DD or None."""
+    try:
+        a, b, c = m.group(1), m.group(2), m.group(3)
+        if order == "dmy":
+            d, mo, y = int(a), int(b), int(c)
+        elif order == "ymd":
+            y, mo, d = int(a), int(b), int(c)
+        elif order == "mdy":
+            mo, d, y = int(a), int(b), int(c)
+        elif order == "dmy_alpha":
+            d = int(a)
+            mo = _MONTH_NAMES.get(b.lower()[:3], 0)
+            y = int(c)
+        elif order == "dmy_short":
+            d, mo, y = int(a), int(b), _expand_year(int(c))
+        else:
+            return None
+        if 1 <= d <= 31 and 1 <= mo <= 12 and 1900 <= y <= 2100:
+            return f"{y:04d}-{mo:02d}-{d:02d}"
+    except (ValueError, TypeError):
+        pass
+    return None
+
+
 def _extract_date(text: str) -> Optional[str]:
-    # Also try with newlines collapsed
-    flat = " ".join(text.splitlines())
-    for pat, order in _DATE_PATTERNS:
+    """
+    Extract the receipt issue date.  Strategy (highest priority first):
+    1. Scan for a date immediately after a label like 'Date:', 'Dt:' etc.
+    2. Try 2-digit year formats (DD/MM/YY) — common on Indian receipts.
+    3. Fall back to full 4-digit-year formats in left-to-right order.
+    In all cases, 'w.e.f DD/MM/YYYY' footer markers are stripped first
+    because they always carry a regulatory effective date, not receipt date.
+    """
+    # Strip regulatory date traps before any matching
+    clean = _WEF_RE.sub("", text)
+    flat  = " ".join(clean.splitlines())
+
+    # ── Priority 1: date adjacent to a label ─────────────────────────────────
+    label_m = _DATE_LABEL_RE.search(flat)
+    if label_m:
+        snippet = flat[label_m.end(): label_m.end() + 30]
+        for pat, order in _DATE_PATTERNS:
+            m = pat.search(snippet)
+            if m:
+                result = _parse_date_match(m, order)
+                if result:
+                    return result
+
+    # ── Priority 2: 2-digit year (index 3 in _DATE_PATTERNS) ─────────────────
+    pat_short, order_short = _DATE_PATTERNS[3]
+    m = pat_short.search(flat)
+    if m:
+        result = _parse_date_match(m, order_short)
+        if result:
+            return result
+
+    # ── Priority 3: remaining patterns in declaration order ───────────────────
+    for idx, (pat, order) in enumerate(_DATE_PATTERNS):
+        if idx == 3:
+            continue   # already tried above
         m = pat.search(flat)
-        if not m:
-            continue
-        try:
-            a, b, c = m.group(1), m.group(2), m.group(3)
-            if order == "dmy":
-                d, mo, y = int(a), int(b), int(c)
-            elif order == "ymd":
-                y, mo, d = int(a), int(b), int(c)
-            elif order == "mdy":
-                mo, d, y = int(a), int(b), int(c)
-            elif order == "dmy_alpha":
-                d = int(a)
-                mo = _MONTH_NAMES.get(b.lower()[:3], 0)
-                y = int(c)
-            elif order == "dmy_short":
-                d, mo, y = int(a), int(b), _expand_year(int(c))
-            else:
-                continue
-            if 1 <= d <= 31 and 1 <= mo <= 12 and 1900 <= y <= 2100:
-                return f"{y:04d}-{mo:02d}-{d:02d}"
-        except (ValueError, TypeError):
-            continue
+        if m:
+            result = _parse_date_match(m, order)
+            if result:
+                return result
+
     return None
 
 
@@ -377,9 +429,12 @@ def _parse_items_per_line(text: str) -> List[Dict]:
                 quantity = int(indian_m.group(2))
                 amount   = int(indian_m.group(4))   # last column = line total
             else:
-                # 3-col: group(2)=qty, group(3)=amount
+                # 3-col: group(2)=qty, group(3)=could be rate OR total.
+                # When qty > 1 the OCR dropped the duplicate amount column,
+                # so group(3) is the *rate* — multiply to get the line total.
                 quantity = int(indian_m3.group(2))
-                amount   = int(indian_m3.group(3))
+                col3     = int(indian_m3.group(3))
+                amount   = col3 * quantity if quantity > 1 else col3
             name = _build_item_name(raw_name)
             if len(name) < 3:
                 continue

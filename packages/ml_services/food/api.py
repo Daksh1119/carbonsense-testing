@@ -210,13 +210,11 @@ async def log_cafeteria_meal(
             "carbon_kg": round(carbon_item, 4),
         })
 
+    from packages.ml_services.ocr.carbon_comparisons import build_comparisons
     return JSONResponse({
         "success":         True,
         "transaction_id":  str(uuid4()),
         "total_carbon_kg": round(total_carbon, 4),
         "items":           meal_items,
-        "comparison": {
-            "vs_avg_nonveg_meal_kg": round(1.5 - total_carbon, 3),
-            "trees_to_offset":       round(total_carbon / 0.025, 1),
-        },
+        "comparison":      build_comparisons(total_carbon),
     })

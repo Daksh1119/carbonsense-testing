@@ -103,11 +103,14 @@ _KEYWORD_FACTORS: List[Dict] = [
     # vegetables/sauce; [IPCC6] §12.4 rice cultivation CH₄ emissions
     {"keywords": ["biryani", "fried rice", "pilaf", "paella",
                   "noodles", "ramen", "pho", "pad thai", "lo mein",
-                  "manchu", "manchow", "hakka"],
+                  "manchu", "manchow", "manchurian", "hakka",
+                  "chilli", "chili", "schezwan", "szechuan"],
      "category": "food_prepared", "carbon_kg": 1.0},
-    # 0.4 kg CO₂e/serving: plain steamed rice 100 g × ~4 kg CO₂e/kg
-    {"keywords": ["rice", "khichdi", "khichadi", "khichri"],
-     "category": "food_prepared", "carbon_kg": 0.4},
+    # 0.4 kg CO₂e/serving: plain rice or lentil-rice dish; [OWID] rice+lentil composite
+    # OCR variants for 'khichadi': KHICHADT (Tesseract misread), KHICHARI
+    {"keywords": ["rice", "khichdi", "khichadi", "khichri", "khichadt", "khichari",
+                  "dal rice", "lentil rice"],
+     "category": "food_vegetarian", "carbon_kg": 0.4},
     # ── Sandwiches & wraps ─────────────────────────────────────────────────────
     # 0.7 kg CO₂e: [DEFRA23] §7 mixed sandwich (bread + filling) ~0.6–0.9; midpoint 0.7
     {"keywords": ["sandwich", "wrap", "sub", "panini", "baguette",
@@ -124,10 +127,20 @@ _KEYWORD_FACTORS: List[Dict] = [
     {"keywords": ["soup", "suppe", "broth", "stew", "chowder", "bisque",
                   "minestrone", "tom yum"],
      "category": "food_prepared", "carbon_kg": 0.5},
+    # ── Dal (lentil) dishes — must be matched BEFORE the generic curry group ─────
+    # Compound "dal X" names are resolved here so they never reach curry (1.1 kg).
+    # 0.35 kg CO₂e: legume dominant; [OWID] pulses ~1.8 kg/kg × 200 g serving
+    {"keywords": ["dal makhani", "dal tadka", "dal tadkewali", "dal fry",
+                  "dal khichdi", "dal khichadi", "dal khichadt"],
+     "category": "food_vegetarian", "carbon_kg": 0.35},
+    # Standalone dal/dhal (plain lentil soup / side dish on menu)
+    {"keywords": ["dal", "dhal", "lentil soup", "lentil curry"],
+     "category": "food_vegetarian", "carbon_kg": 0.35},
     # ── Curries ────────────────────────────────────────────────────────────────
     # 1.1 kg CO₂e/serving: [OWID] legumes ~1 kg/kg; paneer ~3.5 kg/kg;
     # vegetable curry ~0.6, with dairy ~1.1–1.3; conservative midpoint used
-    {"keywords": ["curry", "korma", "tikka", "masala", "dal", "dhal",
+    # dal/dhal removed from here — it now has its own dedicated entry above
+    {"keywords": ["curry", "korma", "tikka", "masala",
                   "saag", "vindaloo", "paneer"],
      "category": "food_prepared", "carbon_kg": 1.1},
     # ── Döner / kebab ──────────────────────────────────────────────────────────

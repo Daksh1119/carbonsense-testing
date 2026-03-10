@@ -3,11 +3,11 @@
   "ocr_method": "tesseract-psm3",
   "confidence": 0.7822,
   "vendor": "MIRA HOSPITALITY",
-  "date": "2017-07-01",
+  "date": "2026-03-08",
   "total_amount": 1176.0,
   "currency": "INR",
   "items_parsed": 3,
-  "carbon_total_kg": 3.9,
+  "carbon_total_kg": 2.5,
   "carbon_mapped_items": [
     {
       "name": "CHEESE CHILLY TOAST",
@@ -25,10 +25,10 @@
     },
     {
       "name": "DAL KHICHADT TADKEWALI",
-      "amount": 255.0,
+      "amount": 510.0,
       "quantity": 2.0,
-      "category": "food_prepared",
-      "carbon_kg": 2.2
+      "category": "food_vegetarian",
+      "carbon_kg": 0.8
     }
   ],
   "raw_text_preview": "eet DUPLICATE 44+\nMIRA HOSPITALITY\nMIRA'S VEG RESTAURANT\nKrishna Palace,A Wing\nShop No.1 To 4,Ashia Nagér\nKandivli(E) Mumbai 400101\nPh:28709977/8877/0707, 9833222737\n#4 DUPLICATE #*#\n\n-- Jax Invoice\n\nDate: 08/03/26 Bill No. : 05068\nPBoy: PARCEL COUNTER\n\nCHEESE CHILLY TOAST 1 310\nVEG MANCHURTAN DRY 1"
