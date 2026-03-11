@@ -101,20 +101,32 @@ _KEYWORD_FACTORS: List[Dict] = [
     # ── Asian / rice dishes ────────────────────────────────────────────────────
     # 1.0 kg CO₂e/serving: [OWID] rice ~4 kg CO₂e/kg (methane from paddies) × 250 g +
     # vegetables/sauce; [IPCC6] §12.4 rice cultivation CH₄ emissions
+    # NOTE: standalone "chilli"/"chili" removed — too generic (would match "chilli toast").
+    # Chilli-sauce dishes are caught by compound terms below.
     {"keywords": ["biryani", "fried rice", "pilaf", "paella",
                   "noodles", "ramen", "pho", "pad thai", "lo mein",
-                  "manchu", "manchow", "manchurian", "hakka",
-                  "chilli", "chili", "schezwan", "szechuan"],
+                  "manchurian", "manchow", "manchu", "hakka noodles",
+                  "chilli sauce", "chili sauce", "schezwan", "szechuan",
+                  "indo chinese", "indo-chinese"],
      "category": "food_prepared", "carbon_kg": 1.0},
-    # 0.4 kg CO₂e/serving: plain rice or lentil-rice dish; [OWID] rice+lentil composite
-    # OCR variants for 'khichadi': KHICHADT (Tesseract misread), KHICHARI
-    {"keywords": ["rice", "khichdi", "khichadi", "khichri", "khichadt", "khichari",
-                  "dal rice", "lentil rice"],
+    # 0.4 kg CO₂e/serving: plain steamed/boiled rice only; [OWID] rice+lentil composite
+    # NOTE: All khichadi/khichdi variants intentionally removed — they belong to the
+    # dedicated Dal group below (0.35 kg) which must be declared AFTER this entry.
+    # The OCR normaliser in single_processor._clean() converts KHICHADT→KHICHADI
+    # before matching, so only the canonical spelling appears here.
+    {"keywords": ["plain rice", "steamed rice", "boiled rice", "dal rice", "lentil rice",
+                  "rice"],
      "category": "food_vegetarian", "carbon_kg": 0.4},
     # ── Sandwiches & wraps ─────────────────────────────────────────────────────
     # 0.7 kg CO₂e: [DEFRA23] §7 mixed sandwich (bread + filling) ~0.6–0.9; midpoint 0.7
+    # "chilli toast" and "cheese toast" are intentionally matched here (NOT in the dairy
+    # group at 1.9 kg) because the cheese is a topping (~30–40 g), not a standalone
+    # dairy serving. This group MUST be declared before the dairy group to ensure
+    # first-match-wins produces the correct category.
+    # After OCR normalisation: CHILLY→CHILLI, so both spellings are covered by "chilli toast".
     {"keywords": ["sandwich", "wrap", "sub", "panini", "baguette",
-                  "toast", "chilly toast", "cheese toast", "roll",
+                  "toast", "chilli toast", "chilly toast", "cheese toast",
+                  "cheese chilli toast", "cheese chilly toast", "roll",
                   "hoagie", "club sandwich"],
      "category": "food_prepared", "carbon_kg": 0.7},
     # ── Salads ─────────────────────────────────────────────────────────────────
@@ -127,11 +139,13 @@ _KEYWORD_FACTORS: List[Dict] = [
     {"keywords": ["soup", "suppe", "broth", "stew", "chowder", "bisque",
                   "minestrone", "tom yum"],
      "category": "food_prepared", "carbon_kg": 0.5},
-    # ── Dal (lentil) dishes — must be matched BEFORE the generic curry group ─────
-    # Compound "dal X" names are resolved here so they never reach curry (1.1 kg).
+    # ── Dal (lentil) dishes — declared AFTER the plain-rice group ─────────────
     # 0.35 kg CO₂e: legume dominant; [OWID] pulses ~1.8 kg/kg × 200 g serving
-    {"keywords": ["dal makhani", "dal tadka", "dal tadkewali", "dal fry",
-                  "dal khichdi", "dal khichadi", "dal khichadt"],
+    # Compound "dal X" names are matched here so they never reach curry (1.1 kg).
+    # After OCR normalisation: KHICHADT→KHICHADI, TADKEWALI→TADKA WALI, MANCHURTAN→MANCHURIAN
+    {"keywords": ["dal makhani", "dal tadka", "dal tadka wali", "dal tadkewali", "dal fry",
+                  "dal khichdi", "dal khichadi", "dal khichri", "dal khichari",
+                  "khichdi", "khichadi", "khichri", "khichari"],
      "category": "food_vegetarian", "carbon_kg": 0.35},
     # Standalone dal/dhal (plain lentil soup / side dish on menu)
     {"keywords": ["dal", "dhal", "lentil soup", "lentil curry"],

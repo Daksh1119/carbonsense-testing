@@ -42,14 +42,21 @@ _NEEM_KG_PER_YEAR: float = 10.0
 # DEFRA 2023 §1 — exact value for petrol combustion
 _PETROL_KG_PER_LITRE: float = 2.31
 
-# DEFRA 2023 UK grid × 15 Wh smartphone battery
-_PHONE_CHARGE_KG: float = 0.003
+# India grid emission factor: CEA (Central Electricity Authority) Annual Report 2023
+# Grid intensity: 0.716 kg CO₂e/kWh (coal-heavy; consistent with IEA India data)
+# Smartphone battery: 15 Wh = 0.015 kWh per full charge
+# 0.015 kWh × 0.716 kg/kWh = 0.01074 kg CO₂e per charge
+_PHONE_CHARGE_KG: float = 0.0107   # India grid, CEA 2023
 
 # ICMR / Audsley et al. Indian average daily food footprint
 _INDIA_DAILY_DIET_KG: float = 1.25
 
 # IEA / World Bank 2023 India per-capita annual CO₂
 _INDIA_ANNUAL_PERCAPITA_KG: float = 2100.0
+
+# India typical petrol car: SIAM 2023 average fuel economy ~15 km/litre urban
+# DEFRA 2023 §1 petrol: 2.31 kg CO₂e/litre → 2.31 / 15 = 0.154 kg CO₂e/km
+_INDIA_CAR_KG_PER_KM: float = 0.154
 
 
 # ─── Public API ───────────────────────────────────────────────────────────────
@@ -71,19 +78,29 @@ def build_comparisons(carbon_kg: float) -> Dict:
     pct_daily    = (carbon_kg / _INDIA_DAILY_DIET_KG) * 100.0
     pct_annual   = (carbon_kg / _INDIA_ANNUAL_PERCAPITA_KG) * 100.0
 
+    import math as _math
+    car_km = carbon_kg / _INDIA_CAR_KG_PER_KM
+
     return {
-        "carbon_kg":                   round(carbon_kg, 3),
+        "carbon_kg":                   round(carbon_kg, 4),
+        # trees_decimal_raw: internal use only — display logic in test script uses this
+        "trees_decimal_raw":           round(trees_needed, 4),
+        # trees_to_offset_1yr kept for API backward-compat (rounded to 3dp)
         "trees_to_offset_1yr":         round(trees_needed, 3),
         "days_1_tree_to_offset":       round(days_1tree, 1),
         "petrol_litres_equiv":         round(petrol_l, 3),
         "phone_charges_equiv":         int(charges),
+        "car_km_equiv":                round(car_km, 1),
         "pct_of_daily_diet_india":     round(pct_daily, 1),
-        "pct_of_annual_percap_india":  round(pct_annual, 4),
+        # Rounded to 2dp — 4dp implies false precision beyond source uncertainty
+        "pct_of_annual_percap_india":  round(pct_annual, 2),
         "human_summary":               _build_summary(carbon_kg, trees_needed, pct_daily),
         "methodology_note": (
             "Tree offset: young Neem (Azadirachta indica) ~10 kg CO₂/yr "
             "[Noor et al. 2020, Indian J. Agroforestry; IPCC LULUCF conservative]. "
             "Petrol: DEFRA 2023 §1 (2.31 kg CO₂e/litre). "
+            "Phone charge: India grid 0.716 kg CO₂e/kWh [CEA 2023] × 15 Wh = 0.0107 kg/charge. "
+            "Car: SIAM India fuel economy (15 km/litre) × DEFRA 2023 §1 = 0.154 kg CO₂e/km. "
             "Daily diet: ICMR/Audsley et al. Indian average ~1.25 kg CO₂e/day. "
             "Annual per-capita: IEA/World Bank 2023 India ~2 100 kg CO₂e/yr."
         ),
@@ -107,8 +124,8 @@ def _build_summary(carbon_kg: float, trees: float, pct_daily: float) -> str:
         )
     if carbon_kg < 5.0:
         return (
-            f"{carbon_kg:.2f} kg CO₂e — equivalent to driving ~{carbon_kg / 0.21:.0f} km "
-            f"in a typical car, or {pct_daily:.0f}% of a full day's average Indian "
+            f"{carbon_kg:.2f} kg CO₂e — equivalent to driving ~{carbon_kg / _INDIA_CAR_KG_PER_KM:.0f} km "
+            f"in a typical Indian car, or {pct_daily:.0f}% of a full day's average Indian "
             f"food footprint. One Neem tree takes {trees * 365:.0f} days to offset this."
         )
     return (
@@ -121,10 +138,12 @@ def _build_summary(carbon_kg: float, trees: float, pct_daily: float) -> str:
 def _zero_result() -> Dict:
     return {
         "carbon_kg":                   0.0,
+        "trees_decimal_raw":           0.0,
         "trees_to_offset_1yr":         0.0,
         "days_1_tree_to_offset":       0.0,
         "petrol_litres_equiv":         0.0,
         "phone_charges_equiv":         0,
+        "car_km_equiv":                0.0,
         "pct_of_daily_diet_india":     0.0,
         "pct_of_annual_percap_india":  0.0,
         "human_summary":               "No carbon emissions detected.",

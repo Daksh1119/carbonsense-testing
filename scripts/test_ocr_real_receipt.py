@@ -211,12 +211,28 @@ def run_ocr_pipeline(image_path: str) -> None:
     print(f"  {'✅' if map_rate >= 50 else '⚠️ '} Carbon map rate      : {map_rate:.0f}%  (aim > 50%)")
     print(f"  📊  Total carbon         : {total_kg:.4f} kg CO₂e")
     print()
-    print(f"  🌳  Trees to offset (1yr): {comps['trees_to_offset_1yr']:.3f} Neem trees"
-          f"  (one tree offsets this in {comps['days_1_tree_to_offset']:.0f} days)")
+    import math as _math
+    _trees_raw = comps["trees_decimal_raw"]
+    _days = comps["days_1_tree_to_offset"]
+    if _trees_raw < 1.0:
+        _tree_str = f"1 Neem tree for {_days:.0f} days fully offsets this"
+    else:
+        _n = _math.ceil(_trees_raw)
+        _tree_str = f"{_n} Neem {'tree' if _n == 1 else 'trees'} growing for 1 year"
+    print(f"  🌳  Trees to offset       : {_tree_str}")
     print(f"  ⛽  Petrol equivalent     : {comps['petrol_litres_equiv']:.2f} litres of petrol burned")
-    print(f"  📱  Phone charges equiv   : {comps['phone_charges_equiv']} full smartphone charges")
-    print(f"  🍽️  % of daily Indian diet: {comps['pct_of_daily_diet_india']:.0f}%")
-    print(f"  🌍  % of annual per-capita: {comps['pct_of_annual_percap_india']:.3f}%")
+    print(f"  🚗  Car distance equiv     : ~{comps['car_km_equiv']:.0f} km in a typical Indian car  (0.154 kg CO₂e/km)")
+    print(f"  📱  Phone charges equiv   : {comps['phone_charges_equiv']} full smartphone charges  (India grid, CEA 2023)")
+    _pct_diet = comps["pct_of_daily_diet_india"]
+    if _pct_diet > 100:
+        _meals = _pct_diet / 100
+        _diet_str = f"{_pct_diet:.0f}% of avg Indian daily food budget (≈ {_meals:.1f} person-meals)"
+    else:
+        _diet_str = f"{_pct_diet:.0f}% of avg Indian daily food budget"
+    print(f"  🍽️  Daily diet equiv        : {_diet_str}")
+    _pct_annual = comps["pct_of_annual_percap_india"]
+    _one_in_n = int(round(100 / _pct_annual)) if _pct_annual > 0 else 0
+    print(f"  🌍  Annual per-capita share : {_pct_annual:.2f}%  (1/{_one_in_n} of avg Indian's yearly CO₂)")
     print()
     print(f"  💬  {comps['human_summary']}")
     print(f"  📖  {comps['methodology_note']}")
