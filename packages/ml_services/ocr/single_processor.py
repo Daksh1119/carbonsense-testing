@@ -52,6 +52,17 @@ _OCR_SUBS = [
     (re.compile(r"\b0([a-zA-Z])"),                   r"O\1"),  # 0x → Ox (OCR 0/O swap)
     (re.compile(u"[\u2018\u2019\u201a]"),             "'"),     # curly single quotes
     (re.compile(u"[\u201c\u201d\u201e]"),             '"'),     # curly double quotes
+    # Indian restaurant OCR corrections
+    # Tesseract frequently confuses vowel sequences in transliterated Hindi text:
+    #   MANCHURTAN → MANCHURIAN  (AN → IAN ending confusion)
+    #   KHICHADT   → KHICHADI    (DT suffix → DI)
+    #   TADKEWALI  → TADKA WALI  (compound word run-together)
+    (re.compile(r"\bMANCHURTAN\b",   re.IGNORECASE), "MANCHURIAN"),
+    (re.compile(r"\bMANCHURITAN\b",  re.IGNORECASE), "MANCHURIAN"),
+    (re.compile(r"\bKHICHADT\b",     re.IGNORECASE), "KHICHADI"),
+    (re.compile(r"\bKHICHARI\b",     re.IGNORECASE), "KHICHADI"),
+    (re.compile(r"\bTADKEWALI\b",    re.IGNORECASE), "TADKA WALI"),
+    (re.compile(r"\bCHILLY\b",       re.IGNORECASE), "CHILLI"),   # CHILLY → CHILLI (Indian menu spelling)
 ]
 
 def _clean(line: str) -> str:
