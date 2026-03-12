@@ -36,6 +36,10 @@ warnings.filterwarnings("ignore")
 DEVICE      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DATA_DIR    = Path("data/raw/food")
 MODEL_DIR   = Path("models/food_recognition")
+# Google Drive path — set to None to skip Drive mounting (local Colab only).
+# When set, best checkpoint and history are mirrored here so they survive
+# runtime resets.  Example: Path("/content/drive/MyDrive/carbonsense_models")
+DRIVE_DIR   = Path("/content/drive/MyDrive/carbonsense_models")
 BATCH_SIZE  = 32
 # num_workers=0 avoids "can only test a child process" AssertionErrors that
 # Python 3.12 raises in Colab's fork-based multiprocessing environment when
@@ -76,6 +80,99 @@ WARMUP_VAL_TRANSFORM = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
 ])
+
+
+# ─── Checkpoint helpers ───────────────────────────────────────────────────────
+
+def _ckpt_path() -> Path:
+    """Return the checkpoint path, preferring Drive if available."""
+    if DRIVE_DIR is not None and DRIVE_DIR.exists():
+        return DRIVE_DIR / "food101_best.pt"
+    return MODEL_DIR / "food101_best.pt"
+
+
+def _save_checkpoint(model, opt, sched, epoch: int, best_top1: float,
+                     phase: str, history: list) -> None:
+    """Save full training state so we can resume after a runtime reset."""
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "epoch":            epoch,
+        "phase":            phase,        # "warmup" | "finetune"
+        "model_state_dict": model.state_dict(),
+        "opt_state_dict":   opt.state_dict(),
+        "sched_state_dict": sched.state_dict(),
+        "val_top1":         best_top1,
+        "num_classes":      101,
+        "history":          history,
+    }
+    local = MODEL_DIR / "food101_best.pt"
+    torch.save(payload, local)
+    if DRIVE_DIR is not None and DRIVE_DIR.exists():
+        import shutil
+        shutil.copy2(local, DRIVE_DIR / "food101_best.pt")
+        print(f"    ✅  Checkpoint mirrored to Drive  (epoch {epoch+1}, val top1 {best_top1:.1f}%)")
+
+
+def _try_mount_drive() -> bool:
+    """Mount Google Drive if running in Colab. Returns True on success."""
+    try:
+        from google.colab import drive  # type: ignore
+        if not Path("/content/drive/MyDrive").exists():
+            print("📂  Mounting Google Drive for checkpoint persistence…")
+            drive.mount("/content/drive")
+        DRIVE_DIR.mkdir(parents=True, exist_ok=True)
+        print(f"✅  Drive mounted — checkpoints will be saved to {DRIVE_DIR}")
+        return True
+    except ImportError:
+        print("ℹ️   Not running in Colab — Drive mount skipped.")
+        return False
+    except Exception as e:
+        print(f"⚠️   Drive mount failed ({e}) — saving locally only.")
+        return False
+
+
+def _load_checkpoint(model, opt_warmup=None, opt_finetune=None,
+                     sched_warmup=None, sched_finetune=None):
+    """
+    Load the best checkpoint if one exists (Drive preferred over local).
+    Returns (start_phase, start_epoch, best_top1, history) where:
+      start_phase  "warmup" | "finetune"
+      start_epoch  0-based epoch index to resume from within that phase
+    """
+    ckpt = _ckpt_path()
+    if not ckpt.exists():
+        # Also check local path when Drive path was tried first
+        local = MODEL_DIR / "food101_best.pt"
+        if local.exists():
+            ckpt = local
+        else:
+            print("  No checkpoint found — starting from scratch.")
+            return "warmup", 0, 0.0, []
+
+    print(f"  Loading checkpoint: {ckpt}")
+    state = torch.load(ckpt, map_location=DEVICE)
+    model.load_state_dict(state["model_state_dict"])
+
+    phase      = state.get("phase", "finetune")
+    epoch      = state.get("epoch", 0)
+    best_top1  = state.get("val_top1", 0.0)
+    history    = state.get("history", [])
+
+    # Restore optimiser + scheduler only if we're resuming mid-phase
+    if phase == "warmup" and opt_warmup is not None:
+        opt_warmup.load_state_dict(state["opt_state_dict"])
+        if sched_warmup is not None:
+            sched_warmup.load_state_dict(state["sched_state_dict"])
+    elif phase == "finetune" and opt_finetune is not None:
+        opt_finetune.load_state_dict(state["opt_state_dict"])
+        if sched_finetune is not None:
+            sched_finetune.load_state_dict(state["sched_state_dict"])
+
+    # epoch is the LAST COMPLETED epoch (0-based), so resume from epoch+1
+    resume_from = epoch + 1
+    print(f"  Resumed: phase={phase}, next epoch={resume_from + 1}, "
+          f"best val top1={best_top1:.1f}%")
+    return phase, resume_from, best_top1, history
 
 
 # ─── Model ───────────────────────────────────────────────────────────────────
@@ -161,6 +258,7 @@ def main():
             "In Colab: Runtime → Change runtime type → T4 GPU, then rerun.\n"
         )
 
+    _try_mount_drive()
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
     # Load Food-101 (downloads ~5 GB on first run)
@@ -174,13 +272,9 @@ def main():
 
     print(f"Train: {len(train_ds)} | Val: {len(val_ds)} | Test: {len(test_ds)}")
 
-    pin = DEVICE.type == "cuda"  # pin_memory only beneficial with CUDA
-    # persistent_workers=False (default) — workers shut down after each epoch.
-    # persistent_workers=True would keep them alive after main() returns and
-    # cause the Colab cell to never terminate.
+    pin = DEVICE.type == "cuda"
     dl_kwargs = dict(num_workers=NUM_WORKERS, pin_memory=pin, persistent_workers=False)
 
-    # Warmup loaders use the faster 224-crop transform (Phase A only)
     warmup_train_ds = datasets.Food101(DATA_DIR, split="train", download=False,
                                        transform=WARMUP_TRAIN_TRANSFORM)
     warmup_val_ds   = datasets.Food101(DATA_DIR, split="test",  download=False,
@@ -188,7 +282,6 @@ def main():
     warmup_train_loader = DataLoader(warmup_train_ds, BATCH_SIZE, shuffle=True,  **dl_kwargs)
     warmup_val_loader   = DataLoader(warmup_val_ds,   BATCH_SIZE, shuffle=False, **dl_kwargs)
 
-    # Full-resolution loaders for Phase B fine-tuning
     train_loader = DataLoader(train_ds, BATCH_SIZE, shuffle=True,  **dl_kwargs)
     val_loader   = DataLoader(val_ds,   BATCH_SIZE, shuffle=False, **dl_kwargs)
     test_loader  = DataLoader(test_ds,  BATCH_SIZE, shuffle=False, **dl_kwargs)
@@ -196,63 +289,89 @@ def main():
     model     = build_model(101)
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
     scaler    = GradScaler(enabled=DEVICE.type == "cuda")
-    history   = []
-    best_top1 = 0.0
 
-    # Phase A — warmup (classifier only, 3 epochs @ 224px — ~3× faster than 380px)
-    print("\n--- Warmup: classifier only (3 epochs @ 224px) ---")
+    # Build both optimisers/schedulers before loading checkpoint so their
+    # state dicts can be restored in _load_checkpoint.
     freeze_backbone(model)
-    opt = torch.optim.AdamW(
+    opt_warmup = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=1e-3, weight_decay=1e-4,
     )
-    sched = torch.optim.lr_scheduler.OneCycleLR(
-        opt, max_lr=1e-3, epochs=3, steps_per_epoch=len(warmup_train_loader),
+    sched_warmup = torch.optim.lr_scheduler.OneCycleLR(
+        opt_warmup, max_lr=1e-3, epochs=3, steps_per_epoch=len(warmup_train_loader),
     )
-    for epoch in range(3):
-        desc = f"WU {epoch+1}/3"
-        # OneCycleLR must step once per BATCH, not per epoch
-        tl, ta = train_epoch(model, warmup_train_loader, opt, criterion, scaler,
-                             desc=desc, sched=sched, sched_per_batch=True)
-        vm = evaluate(model, warmup_val_loader, criterion, desc="val")
-        print(f"  {desc} | train {ta:.1f}% | val {vm['top1']:.1f}%")
 
-    # Phase B — full fine-tune (15 epochs)
-    print("\n--- Full fine-tune (15 epochs) ---")
     unfreeze_all(model)
-    opt = torch.optim.AdamW([
+    opt_finetune = torch.optim.AdamW([
         {"params": model.features.parameters(),   "lr": 5e-5},
         {"params": model.classifier.parameters(), "lr": 5e-4},
     ], weight_decay=1e-4)
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=15, eta_min=1e-6)
+    sched_finetune = torch.optim.lr_scheduler.CosineAnnealingLR(
+        opt_finetune, T_max=15, eta_min=1e-6,
+    )
 
-    for epoch in range(15):
+    # ── Resume from checkpoint if one exists ─────────────────────────────────
+    print("\n--- Checkpoint check ---")
+    start_phase, start_epoch, best_top1, history = _load_checkpoint(
+        model,
+        opt_warmup=opt_warmup,   sched_warmup=sched_warmup,
+        opt_finetune=opt_finetune, sched_finetune=sched_finetune,
+    )
+
+    # Phase A — warmup (classifier only, 3 epochs @ 224px)
+    if start_phase == "warmup":
+        print(f"\n--- Warmup: classifier only (3 epochs @ 224px) ---")
+        if start_epoch > 0:
+            print(f"    Resuming warmup from epoch {start_epoch + 1}/3")
+        freeze_backbone(model)
+        for epoch in range(start_epoch, 3):
+            desc = f"WU {epoch+1}/3"
+            tl, ta = train_epoch(model, warmup_train_loader, opt_warmup, criterion,
+                                 scaler, desc=desc, sched=sched_warmup,
+                                 sched_per_batch=True)
+            vm = evaluate(model, warmup_val_loader, criterion, desc="val")
+            print(f"  {desc} | train {ta:.1f}% | val {vm['top1']:.1f}%")
+            if vm["top1"] > best_top1:
+                best_top1 = vm["top1"]
+            _save_checkpoint(model, opt_warmup, sched_warmup, epoch, best_top1,
+                             "warmup", history)
+        # Warmup complete — Phase B will start from epoch 0
+        start_phase = "finetune"
+        start_epoch = 0
+
+    # Phase B — full fine-tune (15 epochs)
+    print(f"\n--- Full fine-tune (15 epochs) ---")
+    if start_epoch > 0:
+        print(f"    Resuming fine-tune from epoch {start_epoch + 1}/15")
+    unfreeze_all(model)
+
+    for epoch in range(start_epoch, 15):
         t0   = time.time()
         desc = f"Ep {epoch+1:02d}/15"
-        tl, ta = train_epoch(model, train_loader, opt, criterion, scaler, desc=desc)
-        sched.step()
+        tl, ta = train_epoch(model, train_loader, opt_finetune, criterion,
+                             scaler, desc=desc)
+        sched_finetune.step()
         vm      = evaluate(model, val_loader, criterion, desc="val")
         elapsed = time.time() - t0
 
         print(f"  Epoch {epoch+1:02d}/15 | train {ta:.1f}% | "
               f"val top1 {vm['top1']:.1f}% top5 {vm['top5']:.1f}% | {elapsed:.0f}s")
 
+        history.append({"epoch": epoch + 1, **vm, "train_acc": ta})
+
         if vm["top1"] > best_top1:
             best_top1 = vm["top1"]
-            torch.save({
-                "epoch":            epoch,
-                "model_state_dict": model.state_dict(),
-                "val_top1":         best_top1,
-                "num_classes":      101,
-            }, MODEL_DIR / "food101_best.pt")
-            print(f"    Saved checkpoint (val top1 = {best_top1:.1f}%)")
-
-        history.append({"epoch": epoch + 1, **vm, "train_acc": ta})
+            _save_checkpoint(model, opt_finetune, sched_finetune, epoch,
+                             best_top1, "finetune", history)
 
     # Save class list
     classes = datasets.Food101(DATA_DIR, split="train").classes
-    with open(MODEL_DIR / "food101_classes.json", "w") as f:
+    classes_path = MODEL_DIR / "food101_classes.json"
+    with open(classes_path, "w") as f:
         json.dump(classes, f)
+    if DRIVE_DIR is not None and DRIVE_DIR.exists():
+        import shutil
+        shutil.copy2(classes_path, DRIVE_DIR / "food101_classes.json")
 
     # Final test evaluation
     print("\n=== Final Test Evaluation ===")
@@ -261,18 +380,20 @@ def main():
     print(f"Test Top-5: {test_m['top5']:.1f}%")
     print(f"\nTarget: Top-1 > 85%, Top-5 > 95%")
 
-    with open(MODEL_DIR / "food101_history.json", "w") as f:
+    history_path = MODEL_DIR / "food101_history.json"
+    with open(history_path, "w") as f:
         json.dump(history, f, indent=2)
+    if DRIVE_DIR is not None and DRIVE_DIR.exists():
+        import shutil
+        shutil.copy2(history_path, DRIVE_DIR / "food101_history.json")
 
-    # Explicitly release DataLoader workers before exit — without this, worker
-    # processes keep running and the Colab cell never terminates.
     del train_loader, val_loader, test_loader
     del warmup_train_loader, warmup_val_loader
     if DEVICE.type == "cuda":
         torch.cuda.empty_cache()
 
     print("\nTraining complete.")
-    print(f"  Checkpoint: {MODEL_DIR / 'food101_best.pt'}")
+    print(f"  Checkpoint: {_ckpt_path()}")
     print(f"  Classes:    {MODEL_DIR / 'food101_classes.json'}")
 
 

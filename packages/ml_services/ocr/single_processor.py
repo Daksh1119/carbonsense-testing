@@ -364,6 +364,37 @@ _INDIAN_ITEM_RE3 = re.compile(
     r"^(.+?)\s+(\d+)\s+(\d+)\s*$"            # 3-col: name qty amount  (OCR collapsed)
 )
 
+# ─── OCR spelling corrections ─────────────────────────────────────────────────
+# Pairs of (ocr_garbled_pattern, corrected_text).  Applied to item names before
+# display and carbon matching.  This repairs the most common Tesseract misreads
+# on Indian restaurant receipts printed in all-caps.
+_OCR_CORRECTIONS: List[tuple] = [
+    # Specific OCR misread variants seen on real receipts
+    (re.compile(r"\bKHICHADT\b", re.I),    "KHICHADI"),
+    (re.compile(r"\bKHICHARI\b", re.I),    "KHICHADI"),
+    (re.compile(r"\bKHICHRI\b",  re.I),    "KHICHDI"),
+    (re.compile(r"\bMANCHURTAN\b", re.I),  "MANCHURIAN"),
+    (re.compile(r"\bMANCHURIAN\b", re.I),  "MANCHURIAN"),   # normalise casing
+    (re.compile(r"\bCHILLY\b",   re.I),    "CHILLI"),       # UK/Indian spelling
+    (re.compile(r"\bTADKEWALI\b", re.I),   "TADKA WALI"),   # split compound
+    (re.compile(r"\bVEG\.?\b",   re.I),    "VEG"),          # strip errant period
+    (re.compile(r"\bSPL\.?\b",   re.I),    "SPECIAL"),      # "SPL" abbreviation
+    (re.compile(r"\bMSLA\b",     re.I),    "MASALA"),       # truncated
+    (re.compile(r"\bPNR\b",      re.I),    "PANEER"),       # truncated
+    (re.compile(r"\bCHKN\b",     re.I),    "CHICKEN"),      # abbreviated
+    (re.compile(r"\bMTN\b",      re.I),    "MUTTON"),       # abbreviated
+    # Common OCR noise on caps-printed receipts
+    (re.compile(r"\bJAX\b",      re.I),    ""),             # stray token
+    (re.compile(r"\bINVOICE\b",  re.I),    ""),             # stray "Jax Invoice" header
+]
+
+
+def _correct_ocr(name: str) -> str:
+    """Apply receipt-domain OCR spelling corrections to an item name."""
+    for pat, replacement in _OCR_CORRECTIONS:
+        name = pat.sub(replacement, name)
+    return re.sub(r"\s{2,}", " ", name).strip()
+
 
 def _build_item_name(line: str) -> str:
     """Strip prices, currency codes, quantities, and punctuation from a line."""
@@ -375,7 +406,7 @@ def _build_item_name(line: str) -> str:
     name = name.replace("à", " ").replace("ä", "a") \
                .replace("ö", "o").replace("ü", "u")
     name = re.sub(r"\s{2,}", " ", name).strip(" ,-.:@/()|[]")
-    return name
+    return _correct_ocr(name)
 
 
 # ─── Strategy A: per-line parsing (clear receipts) ───────────────────────────

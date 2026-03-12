@@ -25,6 +25,7 @@ import json
 import os
 import sys
 from pathlib import Path
+import math
 
 # ─── Path setup ──────────────────────────────────────────────────────────────
 # Allow running from repo root OR from scripts/ folder
@@ -211,12 +212,35 @@ def run_ocr_pipeline(image_path: str) -> None:
     print(f"  {'✅' if map_rate >= 50 else '⚠️ '} Carbon map rate      : {map_rate:.0f}%  (aim > 50%)")
     print(f"  📊  Total carbon         : {total_kg:.4f} kg CO₂e")
     print()
-    print(f"  🌳  Trees to offset (1yr): {comps['trees_to_offset_1yr']:.3f} Neem trees"
-          f"  (one tree offsets this in {comps['days_1_tree_to_offset']:.0f} days)")
-    print(f"  ⛽  Petrol equivalent     : {comps['petrol_litres_equiv']:.2f} litres of petrol burned")
-    print(f"  📱  Phone charges equiv   : {comps['phone_charges_equiv']} full smartphone charges")
-    print(f"  🍽️  % of daily Indian diet: {comps['pct_of_daily_diet_india']:.0f}%")
-    print(f"  🌍  % of annual per-capita: {comps['pct_of_annual_percap_india']:.3f}%")
+
+    # Issue 1: never show decimal trees — use natural language
+    trees_raw  = comps["trees_decimal_raw"]
+    days_1tree = comps["days_1_tree_to_offset"]
+    if trees_raw < 1.0:
+        tree_str = f"1 Neem tree for {days_1tree:.0f} days fully offsets this"
+    else:
+        n = comps["trees_whole_number"]
+        tree_str = f"{n} Neem {'tree' if n == 1 else 'trees'} growing for 1 year"
+
+    # Issue 4: show person-meals context when > 100%
+    pct_daily = comps["pct_of_daily_diet_india"]
+    if pct_daily > 100:
+        meals_equiv = pct_daily / 100
+        diet_str = (f"{pct_daily:.0f}% of avg Indian daily food budget "
+                    f"(≈ {meals_equiv:.1f} person-meals)")
+    else:
+        diet_str = f"{pct_daily:.0f}% of avg Indian daily food budget"
+
+    # Issue 5: show annual share as 1/N fraction instead of tiny decimal
+    pct_annual = comps["pct_of_annual_percap_india"]
+    one_in_n   = int(round(100 / pct_annual)) if pct_annual > 0 else 0
+    annual_str = f"{pct_annual:.2f}%  (1/{one_in_n} of avg Indian's yearly CO₂)"
+
+    print(f"  🌳  Trees to offset       : {tree_str}")
+    print(f"  ⛽  Petrol equivalent      : {comps['petrol_litres_equiv']:.2f} litres of petrol burned")
+    print(f"  📱  Phone charges equiv    : {comps['phone_charges_equiv']} full smartphone charges  (India grid, CEA 2023)")
+    print(f"  🍽️  Daily diet equiv        : {diet_str}")
+    print(f"  🌍  Annual per-capita share : {annual_str}")
     print()
     print(f"  💬  {comps['human_summary']}")
     print(f"  📖  {comps['methodology_note']}")
