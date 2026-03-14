@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+  }
+
+  body {
+    @apply bg-background-light dark:bg-background-dark text-slate-800 dark:text-slate-100;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-navy-muted/60 backdrop-blur-xl border border-primary/10;
+  }
+
+  .glass-panel {
+    @apply bg-navy-card/60 backdrop-blur-xl border border-primary/10;
+  }
+
+  .chart-glow {
+    filter: drop-shadow(0 0 8px rgba(11, 213, 176, 0.4));
+  }
+
+  .glow-primary {
+    box-shadow: 0 0 15px rgba(11, 213, 176, 0.4);
+  }
+
+  .glow-teal {
+    box-shadow: 0 0 20px rgba(11, 213, 176, 0.15);
+  }
+
+  .sidebar-active {
+    @apply bg-primary/10 border-r-4 border-primary;
+  }
+
+  .fill-icon {
+    font-variation-settings: 'FILL' 1;
+  }
+
+  .chart-gradient {
+    background: linear-gradient(180deg, rgba(11, 213, 176, 0.1) 0%, rgba(11, 213, 176, 0) 100%);
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}

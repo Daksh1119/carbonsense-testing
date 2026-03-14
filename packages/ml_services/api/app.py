@@ -1,4 +1,5 @@
-﻿from fastapi import FastAPI, HTTPException
+﻿from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 
@@ -9,6 +10,21 @@ app = FastAPI(
     title="CarbonSense ML Service",
     version="1.1.0",
     description="Time-based Ecological Mitigation Engine (TEME) + OCR APIs",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -61,63 +77,6 @@ def health():
     return {"status": "ok", "service": "carbonsense-ml"}
 
 
-# --- TEME Endpoint ---
-
-@app.post("/teme/run", response_model=TEMEOutput)
-def run_teme_api(payload: TEMEInput):
-    """Execute TEME using rule-based optimization."""
-    try:
-        input_dict = payload.model_dump()
-
-        # Normalize constraints: convert None to [] for list fields
-        constraints = input_dict.get("constraints", {})
-        if constraints.get("preferred_species") is None:
-            constraints["preferred_species"] = []
-        if constraints.get("exclude_species") is None:
-            constraints["exclude_species"] = []
-
-        # Normalize ml config: convert None to {"enabled": false}
-        if input_dict.get("ml") is None:
-            input_dict["ml"] = {"enabled": False}
-
-        print(
-            f"[TEME API] Received request: emission_kg={input_dict['emission_kg']}, "
-            f"location={input_dict['location']}, "
-            f"time_horizon={input_dict['time_horizon_years']} years, "
-            f"ml_enabled={input_dict['ml']['enabled']}"
-        )
-
-        result = run_teme(input_dict)
-
-        print(
-            f"[TEME API] Success: {result['total_trees']} trees, "
-            f"neutrality in {result['time_to_neutral_years']} years, "
-            f"confidence={result['confidence_score']}, "
-            f"ml_active={result.get('ml_metadata', {}).get('enabled', False)}"
-        )
-
-        return result
-
-    except InfeasiblePlanError as e:
-        print(f"[TEME API] Infeasible plan: {e}")
-        raise HTTPException(status_code=422, detail=f"Infeasible plan: {e}")
-
-    except ValueError as e:
-        print(f"[TEME API] Validation error: {e}")
-        raise HTTPException(status_code=400, detail=f"Input validation error: {e}")
-
-    except TypeError as e:
-        print(f"[TEME API] Type error: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal TEME error: {e}")
-
-    except KeyError as e:
-        print(f"[TEME API] Missing key: {e}")
-        raise HTTPException(status_code=500, detail=f"Missing configuration key: {e}")
-
-    except Exception as e:
-        print(f"[TEME API] Unexpected error: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal TEME error: {e}")
-
-
-# --- Mount OCR routes under /ocr/* ---
+# --- Mount routers ---
+app.include_router(teme_router)
 app.include_router(ocr_router)
