@@ -33,19 +33,16 @@ from tqdm.auto import tqdm
 warnings.filterwarnings("ignore")
 
 # ─── Config ──────────────────────────────────────────────────────────────────
-DEVICE      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-DATA_DIR    = Path("data/raw/food")
-MODEL_DIR   = Path("models/food_recognition")
+DEVICE          = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DATA_DIR        = Path("data/raw/food")
+MODEL_DIR       = Path("models/food_recognition")
 # Google Drive path — set to None to skip Drive mounting (local Colab only).
 # When set, best checkpoint and history are mirrored here so they survive
 # runtime resets.  Example: Path("/content/drive/MyDrive/carbonsense_models")
-DRIVE_DIR   = Path("/content/drive/MyDrive/carbonsense_models")
-BATCH_SIZE  = 32
-# num_workers=0 avoids "can only test a child process" AssertionErrors that
-# Python 3.12 raises in Colab's fork-based multiprocessing environment when
-# DataLoader workers are torn down.  Single-process loading is only ~10% slower
-# on T4 because the GPU is the bottleneck, not data loading.
-NUM_WORKERS = 0
+DRIVE_DIR       = Path("/content/drive/MyDrive/carbonsense_models")
+BATCH_SIZE      = 32
+NUM_WORKERS     = 2   # 2 async prefetch workers; safe on Colab T4, ~30–40% faster
+FINETUNE_EPOCHS = 12  # 12 × ~38 min ≈ 7.6 h, fits a single 9-hour free Colab session
 
 # Full-resolution transforms used for Phase B fine-tuning
 TRAIN_TRANSFORM = transforms.Compose([
@@ -84,15 +81,16 @@ WARMUP_VAL_TRANSFORM = transforms.Compose([
 
 # ─── Checkpoint helpers ───────────────────────────────────────────────────────
 
-def _ckpt_path() -> Path:
+def _ckpt_path(filename: str = "food101_resume.pt") -> Path:
     """Return the checkpoint path, preferring Drive if available."""
     if DRIVE_DIR is not None and DRIVE_DIR.exists():
-        return DRIVE_DIR / "food101_best.pt"
-    return MODEL_DIR / "food101_best.pt"
+        return DRIVE_DIR / filename
+    return MODEL_DIR / filename
 
 
 def _save_checkpoint(model, opt, sched, epoch: int, best_top1: float,
-                     phase: str, history: list) -> None:
+                     phase: str, history: list,
+                     filename: str = "food101_resume.pt") -> None:
     """Save full training state so we can resume after a runtime reset."""
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -105,12 +103,12 @@ def _save_checkpoint(model, opt, sched, epoch: int, best_top1: float,
         "num_classes":      101,
         "history":          history,
     }
-    local = MODEL_DIR / "food101_best.pt"
+    local = MODEL_DIR / filename
     torch.save(payload, local)
     if DRIVE_DIR is not None and DRIVE_DIR.exists():
         import shutil
-        shutil.copy2(local, DRIVE_DIR / "food101_best.pt")
-        print(f"    ✅  Checkpoint mirrored to Drive  (epoch {epoch+1}, val top1 {best_top1:.1f}%)")
+        shutil.copy2(local, DRIVE_DIR / filename)
+        print(f"    ✅  Checkpoint mirrored to Drive  ({filename}, epoch {epoch+1}, val top1 {best_top1:.1f}%)")
 
 
 def _try_mount_drive() -> bool:
@@ -135,19 +133,27 @@ def _load_checkpoint(model, opt_warmup=None, opt_finetune=None,
                      sched_warmup=None, sched_finetune=None):
     """
     Load the best checkpoint if one exists (Drive preferred over local).
+    Prefers food101_resume.pt (most recent epoch) over food101_best.pt.
     Returns (start_phase, start_epoch, best_top1, history) where:
       start_phase  "warmup" | "finetune"
       start_epoch  0-based epoch index to resume from within that phase
     """
-    ckpt = _ckpt_path()
-    if not ckpt.exists():
+    # Prefer resume checkpoint (latest epoch) over best checkpoint (best accuracy)
+    ckpt = None
+    for fname in ("food101_resume.pt", "food101_best.pt"):
+        candidate = _ckpt_path(fname)
+        if candidate.exists():
+            ckpt = candidate
+            break
         # Also check local path when Drive path was tried first
-        local = MODEL_DIR / "food101_best.pt"
+        local = MODEL_DIR / fname
         if local.exists():
             ckpt = local
-        else:
-            print("  No checkpoint found — starting from scratch.")
-            return "warmup", 0, 0.0, []
+            break
+
+    if ckpt is None:
+        print("  No checkpoint found — starting from scratch.")
+        return "warmup", 0, 0.0, []
 
     print(f"  Loading checkpoint: {ckpt}")
     state = torch.load(ckpt, map_location=DEVICE)
@@ -251,6 +257,9 @@ def evaluate(model, loader, criterion, desc: str = "val") -> dict:
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 def main():
+    # Mount Drive FIRST — before any DRIVE_DIR.exists() check
+    _try_mount_drive()
+
     print(f"Device: {DEVICE}")
     if DEVICE.type != "cuda":
         print(
@@ -258,7 +267,6 @@ def main():
             "In Colab: Runtime → Change runtime type → T4 GPU, then rerun.\n"
         )
 
-    _try_mount_drive()
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
     # Load Food-101 (downloads ~5 GB on first run)
@@ -273,7 +281,9 @@ def main():
     print(f"Train: {len(train_ds)} | Val: {len(val_ds)} | Test: {len(test_ds)}")
 
     pin = DEVICE.type == "cuda"
-    dl_kwargs = dict(num_workers=NUM_WORKERS, pin_memory=pin, persistent_workers=False)
+    # persistent_workers keeps workers alive across epochs (no respawn overhead)
+    dl_kwargs = dict(num_workers=NUM_WORKERS, pin_memory=pin,
+                     persistent_workers=NUM_WORKERS > 0)
 
     warmup_train_ds = datasets.Food101(DATA_DIR, split="train", download=False,
                                        transform=WARMUP_TRAIN_TRANSFORM)
@@ -307,18 +317,19 @@ def main():
         {"params": model.classifier.parameters(), "lr": 5e-4},
     ], weight_decay=1e-4)
     sched_finetune = torch.optim.lr_scheduler.CosineAnnealingLR(
-        opt_finetune, T_max=15, eta_min=1e-6,
+        opt_finetune, T_max=FINETUNE_EPOCHS, eta_min=1e-6,
     )
 
-    # ── Resume from checkpoint if one exists ─────────────────────────────────
+    # ── Resume from checkpoint if one exists ─────────────────────���───────────
     print("\n--- Checkpoint check ---")
     start_phase, start_epoch, best_top1, history = _load_checkpoint(
         model,
-        opt_warmup=opt_warmup,   sched_warmup=sched_warmup,
+        opt_warmup=opt_warmup,     sched_warmup=sched_warmup,
         opt_finetune=opt_finetune, sched_finetune=sched_finetune,
     )
 
     # Phase A — warmup (classifier only, 3 epochs @ 224px)
+    # Skipped entirely if checkpoint already says phase == "finetune"
     if start_phase == "warmup":
         print(f"\n--- Warmup: classifier only (3 epochs @ 224px) ---")
         if start_epoch > 0:
@@ -334,35 +345,42 @@ def main():
             if vm["top1"] > best_top1:
                 best_top1 = vm["top1"]
             _save_checkpoint(model, opt_warmup, sched_warmup, epoch, best_top1,
-                             "warmup", history)
+                             "warmup", history, filename="food101_resume.pt")
         # Warmup complete — Phase B will start from epoch 0
         start_phase = "finetune"
         start_epoch = 0
 
-    # Phase B — full fine-tune (15 epochs)
-    print(f"\n--- Full fine-tune (15 epochs) ---")
+    # Phase B — full fine-tune (FINETUNE_EPOCHS epochs)
+    print(f"\n--- Full fine-tune ({FINETUNE_EPOCHS} epochs) ---")
     if start_epoch > 0:
-        print(f"    Resuming fine-tune from epoch {start_epoch + 1}/15")
+        print(f"    Resuming fine-tune from epoch {start_epoch + 1}/{FINETUNE_EPOCHS}")
     unfreeze_all(model)
 
-    for epoch in range(start_epoch, 15):
+    for epoch in range(start_epoch, FINETUNE_EPOCHS):
         t0   = time.time()
-        desc = f"Ep {epoch+1:02d}/15"
+        desc = f"Ep {epoch+1:02d}/{FINETUNE_EPOCHS}"
         tl, ta = train_epoch(model, train_loader, opt_finetune, criterion,
                              scaler, desc=desc)
         sched_finetune.step()
         vm      = evaluate(model, val_loader, criterion, desc="val")
         elapsed = time.time() - t0
 
-        print(f"  Epoch {epoch+1:02d}/15 | train {ta:.1f}% | "
+        print(f"  Epoch {epoch+1:02d}/{FINETUNE_EPOCHS} | train {ta:.1f}% | "
               f"val top1 {vm['top1']:.1f}% top5 {vm['top5']:.1f}% | {elapsed:.0f}s")
 
         history.append({"epoch": epoch + 1, **vm, "train_acc": ta})
 
+        # Save resume checkpoint every epoch — no progress lost on runtime reset
+        _save_checkpoint(model, opt_finetune, sched_finetune, epoch,
+                         best_top1, "finetune", history,
+                         filename="food101_resume.pt")
+
+        # Save best-accuracy checkpoint only on improvement — clean inference artifact
         if vm["top1"] > best_top1:
             best_top1 = vm["top1"]
             _save_checkpoint(model, opt_finetune, sched_finetune, epoch,
-                             best_top1, "finetune", history)
+                             best_top1, "finetune", history,
+                             filename="food101_best.pt")
 
     # Save class list
     classes = datasets.Food101(DATA_DIR, split="train").classes
@@ -393,8 +411,9 @@ def main():
         torch.cuda.empty_cache()
 
     print("\nTraining complete.")
-    print(f"  Checkpoint: {_ckpt_path()}")
-    print(f"  Classes:    {MODEL_DIR / 'food101_classes.json'}")
+    print(f"  Resume checkpoint : {_ckpt_path('food101_resume.pt')}")
+    print(f"  Best checkpoint   : {_ckpt_path('food101_best.pt')}")
+    print(f"  Classes           : {MODEL_DIR / 'food101_classes.json'}")
 
 
 if __name__ == "__main__":
