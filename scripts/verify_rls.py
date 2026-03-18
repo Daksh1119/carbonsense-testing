@@ -19,6 +19,9 @@ ADMIN_A_PASSWORD = os.environ["ADMIN_A_PASSWORD"]
 ANALYST_A_EMAIL = os.environ["ANALYST_A_EMAIL"]
 ANALYST_A_PASSWORD = os.environ["ANALYST_A_PASSWORD"]
 
+MANAGER_A_EMAIL = os.environ["MANAGER_A_EMAIL"]
+MANAGER_A_PASSWORD = os.environ["MANAGER_A_PASSWORD"]
+
 VIEWER_A_EMAIL = os.environ["VIEWER_A_EMAIL"]
 VIEWER_A_PASSWORD = os.environ["VIEWER_A_PASSWORD"]
 
@@ -120,6 +123,7 @@ def check(name: str, cond: bool, detail=""):
 
 def main():
     admin = sign_in(ADMIN_A_EMAIL, ADMIN_A_PASSWORD)
+    manager = sign_in(MANAGER_A_EMAIL, MANAGER_A_PASSWORD)
     analyst = sign_in(ANALYST_A_EMAIL, ANALYST_A_PASSWORD)
     viewer = sign_in(VIEWER_A_EMAIL, VIEWER_A_PASSWORD)
 
@@ -135,11 +139,19 @@ def main():
     code, body = insert_receipt(admin.access_token, ORG_A, admin.user_id, "admin-a-ok.jpg")
     check("Admin A insert ORG_A", code in (200, 201), f"(status={code})")
 
-    # 4) analyst A insert should fail (no edit permission)
+    # 4) manager A can read org A data
+    code, rows = select_receipts(manager.access_token, ORG_A)
+    check("Manager A reads ORG_A", code == 200, f"(rows={len(rows) if isinstance(rows, list) else 'n/a'})")
+
+    # 5) manager A insert should fail (manager can approve/report, not edit raw entries)
+    code, body = insert_receipt(manager.access_token, ORG_A, manager.user_id, "manager-a-deny.jpg")
+    check("Manager A insert denied", code in (401, 403), f"(status={code})")
+
+    # 6) analyst A insert should fail (no edit permission)
     code, body = insert_receipt(analyst.access_token, ORG_A, analyst.user_id, "analyst-a-deny.jpg")
     check("Analyst A insert denied", code in (401, 403), f"(status={code})")
 
-    # 5) viewer A delete should fail
+    # 7) viewer A delete should fail
     code, body = delete_one_receipt(viewer.access_token, ORG_A)
     # pass if denied explicitly OR deleted zero rows
     check("Viewer A delete denied", (code in (401, 403)) or (code == 200 and isinstance(body, list) and len(body) == 0), f"(status={code})")
