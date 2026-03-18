@@ -157,7 +157,7 @@ export default function BulkImportPage() {
             <div className="flex items-start gap-2">
               <CheckCircle className="size-4 text-emerald-400 mt-0.5 flex-shrink-0" />
               <p className="text-sm text-slate-300">
-                <strong>Role:</strong> One of: Admin, Manager, Analyst, Data Entry, Viewer
+                <strong>Role:</strong> One of: Admin, Manager, Analyst, Viewer
               </p>
             </div>
             <div className="flex items-start gap-2">

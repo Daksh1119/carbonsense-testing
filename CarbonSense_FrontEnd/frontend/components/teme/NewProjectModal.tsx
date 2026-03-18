@@ -10,6 +10,7 @@ import {
 	TEMERequest,
 	VALID_LOCATIONS,
 	VALID_SPECIES,
+	PROJECT_GOALS,
 } from "@/lib/teme-types";
 
 interface NewProjectModalProps {
@@ -22,6 +23,7 @@ const timeHorizons: Array<5 | 10 | 15 | 20 | 25 | 30> = [5, 10, 15, 20, 25, 30];
 export default function NewProjectModal({ onSuccess, onClose }: NewProjectModalProps) {
 	const [projectName, setProjectName] = useState("");
 	const [location, setLocation] = useState<string>(VALID_LOCATIONS[0]);
+	const [projectGoal, setProjectGoal] = useState<string>("");
 	const [emissionKg, setEmissionKg] = useState<number>(1000);
 	const [startYear, setStartYear] = useState<number>(new Date().getFullYear());
 
@@ -87,6 +89,7 @@ export default function NewProjectModal({ onSuccess, onClose }: NewProjectModalP
 			location,
 			emission_kg: Number(emissionKg),
 			start_year: Number(startYear),
+			project_goal: projectGoal || undefined,
 			activity_breakdown: showActivityBreakdown ? activityBreakdown : undefined,
 			constraints: {
 				max_land_area_hectare: Number(landArea),
@@ -171,6 +174,32 @@ export default function NewProjectModal({ onSuccess, onClose }: NewProjectModalP
 									))}
 								</select>
 							</div>
+						</div>
+
+						<div>
+							<label className="mb-1 block text-xs text-slate-400">
+								Optimisation Goal
+								<span className="ml-1 text-slate-600">(optional)</span>
+							</label>
+							<div className="flex flex-wrap gap-2">
+								{PROJECT_GOALS.map((goal) => (
+									<button
+										type="button"
+										key={goal.value}
+										onClick={() => setProjectGoal(goal.value)}
+										className={`rounded-lg px-3 py-1.5 text-xs border ${
+											projectGoal === goal.value
+												? "border-primary bg-primary/20 text-primary"
+												: "border-slate-700 bg-slate-800 text-slate-300"
+										}`}
+									>
+										{goal.label}
+									</button>
+								))}
+							</div>
+							<p className="mt-1 text-xs text-slate-600">
+								Influences species ranking and portfolio composition.
+							</p>
 						</div>
 					</section>
 

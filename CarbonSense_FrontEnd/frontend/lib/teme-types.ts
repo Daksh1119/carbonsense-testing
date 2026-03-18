@@ -15,6 +15,7 @@ export interface TEMERequest {
 	location: string;
 	emission_kg: number;
 	start_year: number;
+	project_goal?: string;
 	activity_breakdown?: {
 		transport?: number;
 		food?: number;
@@ -83,17 +84,59 @@ export const VALID_SPECIES = [
 	"Acacia",
 	"Teak",
 	"Pongamia",
+	"Jamun",
+	"Tamarind",
+	"Arjuna",
+	"Moringa",
+	"Casuarina",
+	"Sheesham",
+	"Amla",
+	"Mahua",
+	"Sal",
+	"Eucalyptus",
 ] as const;
 
 export const VALID_LOCATIONS = [
+	// Tropical belt
 	"Maharashtra",
 	"Karnataka",
 	"Tamil Nadu",
+	"West Bengal",
+	"Andhra Pradesh",
+	"Odisha",
+	"Chhattisgarh",
+	"Jharkhand",
+	// Semi-arid / Deccan
+	"Telangana",
+	// Arid
 	"Gujarat",
 	"Rajasthan",
+	// Coastal
+	"Kerala",
+	"Goa",
+	// Subtropical plains
 	"Delhi NCR",
 	"Uttar Pradesh",
-	"West Bengal",
+	"Madhya Pradesh",
+	"Bihar",
+	"Punjab",
+	"Haryana",
+	// Himalayan
+	"Himachal Pradesh",
+	"Uttarakhand",
+	"Jammu and Kashmir",
+	// Northeastern
+	"Assam",
+	"Meghalaya",
+] as const;
+
+export const PROJECT_GOALS = [
+	{ value: "", label: "No preference (balanced)" },
+	{ value: "fastest_offset", label: "Fastest Carbon Offset" },
+	{ value: "lowest_cost", label: "Lowest Planting Cost" },
+	{ value: "drought_resilient", label: "Drought-Resilient Portfolio" },
+	{ value: "native_species", label: "Native Species Only" },
+	{ value: "biodiversity", label: "Maximum Biodiversity" },
 ] as const;
 
 export const TEME_VALIDATION = {

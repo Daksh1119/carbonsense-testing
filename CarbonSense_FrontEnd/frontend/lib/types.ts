@@ -9,7 +9,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'manager' | 'member' | 'viewer';
+  role: 'admin' | 'manager' | 'analyst' | 'viewer' | 'member';
   organization?: string;
   organizationId?: string;
   createdAt: string;
@@ -147,7 +147,7 @@ export interface Notification {
 
 // ==================== Team & Permissions ====================
 
-export type UserRole = 'admin' | 'manager' | 'member' | 'viewer';
+export type UserRole = 'admin' | 'manager' | 'analyst' | 'viewer' | 'member';
 
 export interface TeamMember {
   id: string;

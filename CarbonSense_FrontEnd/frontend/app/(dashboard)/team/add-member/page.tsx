@@ -103,7 +103,6 @@ export default function AddMemberPage() {
                 <option>Admin</option>
                 <option>Manager</option>
                 <option>Analyst</option>
-                <option>Data Entry Specialist</option>
                 <option>Viewer</option>
               </select>
             </div>

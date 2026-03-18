@@ -10,7 +10,7 @@ import { useUserStore } from '@/store';
  * Usage: export default withAuth(YourPage, { requiredRole: 'admin' });
  */
 export interface WithAuthOptions {
-  requiredRole?: 'admin' | 'manager' | 'member' | 'viewer';
+  requiredRole?: 'admin' | 'manager' | 'analyst' | 'viewer' | 'member';
   redirectTo?: string;
 }
 
@@ -36,6 +36,7 @@ export default function withAuth<P extends object>(
       if (requiredRole && user) {
         const roleHierarchy: Record<string, number> = {
           viewer: 1,
+          analyst: 2,
           member: 2,
           manager: 3,
           admin: 4,
@@ -49,7 +50,7 @@ export default function withAuth<P extends object>(
           return;
         }
       }
-    }, [isAuthenticated, user, requiredRole, isLoading, router]);
+    }, [isAuthenticated, user, isLoading, router]);
 
     if (isLoading || !isAuthenticated) {
       return (
@@ -65,6 +66,7 @@ export default function withAuth<P extends object>(
     if (requiredRole && user) {
       const roleHierarchy: Record<string, number> = {
         viewer: 1,
+        analyst: 2,
         member: 2,
         manager: 3,
         admin: 4,

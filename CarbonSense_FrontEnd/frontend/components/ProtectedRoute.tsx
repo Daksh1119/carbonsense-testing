@@ -7,7 +7,7 @@ import LoadingState from '@/components/ui/LoadingState';
 
 export interface ProtectedRouteProps {
   children: React.ReactNode;
-  requiredRole?: 'admin' | 'manager' | 'member' | 'viewer';
+  requiredRole?: 'admin' | 'manager' | 'analyst' | 'viewer' | 'member';
   redirectTo?: string;
   fallback?: React.ReactNode;
 }
@@ -44,6 +44,7 @@ export default function ProtectedRoute({
       if (requiredRole && user) {
         const roleHierarchy: Record<string, number> = {
           viewer: 1,
+          analyst: 2,
           member: 2,
           manager: 3,
           admin: 4,
@@ -74,6 +75,7 @@ export default function ProtectedRoute({
   if (requiredRole && user) {
     const roleHierarchy: Record<string, number> = {
       viewer: 1,
+      analyst: 2,
       member: 2,
       manager: 3,
       admin: 4,
