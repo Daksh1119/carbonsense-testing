@@ -61,6 +61,7 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
     mc_enabled = mc_config.get("enabled", False)
 
     # --- Select species (rule-based optimizer) or use provided config ---
+    project_goal = input_payload.get("project_goal")
     if "species_config" in input_payload:
         species_config = input_payload["species_config"]
     else:
@@ -68,6 +69,8 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
             emission_kg=E,
             location=input_payload["location"],
             constraints=constraints,
+            time_horizon_years=T,
+            project_goal=project_goal,
         )
 
     cumulative = [0.0] * (T + 1)

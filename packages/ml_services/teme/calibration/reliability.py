@@ -50,6 +50,16 @@ SPECIES_ANNUAL_RATES = {
     "Jamun": 0.94,
     "Tamarind": 0.93,
     "Arjuna": 0.94,
+    # New catalog species (added in TEME v2 expansion)
+    "Pongamia": 0.92,
+    "Moringa": 0.88,
+    "Casuarina": 0.88,
+    "Sheesham": 0.92,
+    "Khejri": 0.93,
+    "Amla": 0.93,
+    "Mahua": 0.92,
+    "Sal": 0.91,
+    "Chir Pine": 0.90,
 }
 
 

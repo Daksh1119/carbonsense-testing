@@ -2,14 +2,27 @@ import joblib
 import numpy as np
 from pathlib import Path
 
-MODEL_PATH = Path(__file__).parent / "models" / "rf_survival_v1_1.pkl"
+MODEL_DIR = Path(__file__).parent / "models"
+MODEL_CANDIDATES = [
+    MODEL_DIR / "rf_survival_v1_2.pkl",
+    MODEL_DIR / "rf_survival_v1_1.pkl",
+]
 
 _model = None
+
+
+def _resolve_model_path() -> Path:
+    for path in MODEL_CANDIDATES:
+        if path.exists():
+            return path
+    # Preserve current failure mode with a clearer path if none exists.
+    return MODEL_CANDIDATES[0]
+
 
 def load_model():
     global _model
     if _model is None:
-        _model = joblib.load(MODEL_PATH)
+        _model = joblib.load(_resolve_model_path())
     return _model
 
 

@@ -1,18 +1,28 @@
-﻿from typing import Dict, Any
+﻿from typing import Dict, Any, Optional
 from ml_services.teme.data.species_catalog import SPECIES_CATALOG
 
 
 def select_species_rule_based(
     emission_kg: float,
     location: str,
-    constraints: Dict[str, Any]
+    constraints: Dict[str, Any],
+    time_horizon_years: int = 15,
+    project_goal: Optional[str] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """
     Rule-based species selection for TEME.
 
     Selects viable species based on location, ranks by priority,
-    and allocates trees proportional to emission target â€” NOT just
-    by filling all available land.
+    and allocates trees proportional to emission target.
+
+    Args:
+        emission_kg: CO2 emission to offset (kg)
+        location: planting region string
+        constraints: dict with max_land_area_hectare, preferred_species, exclude_species
+        time_horizon_years: projection years (used for calibrated tree estimate)
+        project_goal: optional goal key — one of:
+            'fastest_offset', 'lowest_cost', 'drought_resilient',
+            'native_species', 'biodiversity'
 
     Returns species_config compatible with engine.run_teme
     """
@@ -41,7 +51,29 @@ def select_species_rule_based(
         name, data = item
         base = data["priority"]
         if name in preferred:
-            base += 0.1
+            base += 0.15
+        # Project goal adjustments
+        if project_goal == "fastest_offset":
+            # Reward fast-maturing + fast-growing species
+            maturity_factor = max(0.0, (15 - data["maturity_years"]) / 15)
+            base += 0.15 * maturity_factor + 0.05 * (data["growth_rate_class"] / 10)
+        elif project_goal == "lowest_cost":
+            # Reward lowest planting cost per tree
+            cost = data.get("cost_per_tree_total_inr", 500)
+            cost_factor = max(0.0, (800 - cost) / 800)
+            base += 0.20 * cost_factor
+        elif project_goal == "drought_resilient":
+            # Reward drought-tolerant species
+            base += 0.20 * (data["drought_score"] / 10)
+        elif project_goal == "native_species":
+            # Penalise introduced/invasive species
+            non_native = {"Eucalyptus", "Casuarina", "Acacia"}
+            if name in non_native:
+                base -= 0.30
+        elif project_goal == "biodiversity":
+            # Reward species with broader ecological value
+            eco_score = (data["drought_score"] + data["disease_score"]) / 20
+            base += 0.08 * eco_score
         return base
 
     ranked = sorted(
@@ -55,20 +87,44 @@ def select_species_rule_based(
 
     # --- Estimate trees needed based on emission amount ---
     top_species = ranked[0][1]
-    avg_annual_per_tree = top_species["peak_sequestration_kg"] * 0.5
+    maturity = top_species["maturity_years"]
+    peak = top_species["peak_sequestration_kg"]
+    survival = top_species["annual_survival_rate"]
 
-    if avg_annual_per_tree > 0:
-        estimated_trees_needed = int(
-            (emission_kg / (avg_annual_per_tree * 10)) * 1.5
-        )
-        estimated_trees_needed = max(estimated_trees_needed, 10)
+    # Time-horizon-aware tree estimation:
+    # Integrate approximate offset per tree over the actual planning horizon,
+    # discounted by mid-horizon compound survival, with 2.0x safety buffer.
+    ramp_years = min(time_horizon_years, maturity)
+    plateau_years = max(0, time_horizon_years - maturity)
+    raw_per_tree = peak * ramp_years / 2.0 + peak * plateau_years
+    mid_survival = survival ** (time_horizon_years / 2.0)
+    effective_per_tree = raw_per_tree * mid_survival
+
+    if effective_per_tree > 0:
+        estimated_trees_needed = int((emission_kg / effective_per_tree) * 2.0)
+        estimated_trees_needed = max(estimated_trees_needed, 5)
     else:
         estimated_trees_needed = 10000
 
+    # Portfolio diversification cap: limit first species to preserve ecological mix.
+    # E.g. 3+ viable species → top species gets at most 60% of tree budget.
+    n_viable = len(viable_species)
+    if n_viable >= 3:
+        max_single_species_trees = max(2, int(estimated_trees_needed * 0.60))
+    elif n_viable == 2:
+        max_single_species_trees = max(2, int(estimated_trees_needed * 0.75))
+    else:
+        max_single_species_trees = estimated_trees_needed  # no cap for single species
+
     print(f"[TEME OPTIMIZER] Emission target: {emission_kg} kg CO2")
-    print(f"[TEME OPTIMIZER] Avg annual per tree (est): {avg_annual_per_tree} kg")
-    print(f"[TEME OPTIMIZER] Estimated trees needed (1.5x margin): "
-          f"{estimated_trees_needed}")
+    print(
+        "[TEME OPTIMIZER] Effective per-tree horizon offset (est): "
+        f"{effective_per_tree:.2f} kg over {time_horizon_years} years"
+    )
+    print(
+        "[TEME OPTIMIZER] Estimated trees needed "
+        f"(2.0x safety): {estimated_trees_needed}"
+    )
 
     # --- Allocate land greedily (capped by emission need) ---
     remaining_land = max_land
@@ -91,7 +147,10 @@ def select_species_rule_based(
             print(f"[TEME OPTIMIZER] No land left for '{name}', skipping")
             continue
 
-        allocated = min(max_trees_by_land, remaining_trees)
+        # Apply diversification cap only to the first allocated species
+        is_first = len(species_config) == 0
+        allocation_cap = max_single_species_trees if is_first else remaining_trees
+        allocated = min(max_trees_by_land, allocation_cap)
 
         species_config[name] = {
             "count": allocated,
