@@ -96,38 +96,42 @@ def _section(title: str):
     print(DIVIDER)
 
 
+def _status(ok: bool, label: str) -> str:
+    return f"{'PASS' if ok else 'CHECK'}  {label}"
+
+
 def run_ocr_pipeline(image_path: str) -> None:
     p = Path(image_path)
     if not p.exists():
-        print(f"\n❌  File not found: {image_path}")
+        print(f"\nERROR: File not found: {image_path}")
         print("    Usage: python scripts/test_ocr_real_receipt.py path\\to\\receipt.jpg")
         sys.exit(1)
 
-    print(f"\n🧾  Testing OCR Pipeline on: {p.name}")
+    print(f"\nReceipt OCR Test: {p.name}")
     print(f"    Full path : {p.resolve()}")
     print(f"    File size : {p.stat().st_size / 1024:.1f} KB")
 
     # ── Stage 1: Text Extraction ──────────────────────────────────────────────
-    _section("STAGE 1 — Text Extraction (text_extractor.py)")
+    _section("STAGE 1 - Text Extraction")
     result = extract_text(str(p))
 
     if not result.get("success"):
-        print(f"❌  Extraction failed: {result.get('error', 'unknown error')}")
+        print(f"ERROR: Extraction failed: {result.get('error', 'unknown error')}")
         if "TesseractNotFoundError" in str(result.get("error", "")):
             print("\n  Fix: Set TESSERACT_CMD env variable, e.g.")
             print(r'  $env:TESSERACT_CMD = "C:\Program Files\Tesseract-OCR\tesseract.exe"')
         sys.exit(1)
 
     raw_text = result["text"]
-    print(f"✅  OCR method    : {result['method']}")
+    print(f"Method         : {result['method']}")
     print(f"    Confidence   : {result['confidence']:.2%}")
     print(f"    Words found  : {len(raw_text.split())}")
     if result["confidence"] < 0.5:
-        print("⚠️   Low confidence — image may be blurry or low-res")
+        print("Quality note   : Low confidence. Image may be blurry or low resolution.")
     elif result["confidence"] < 0.7:
-        print("⚠️   Moderate confidence — review output carefully")
+        print("Quality note   : Moderate confidence. Please review key extracted fields.")
     else:
-        print("✅  Confidence looks good")
+        print("Quality note   : Confidence is in a good range.")
 
     print(f"\n--- Raw OCR Text (first 800 chars) ---")
     print(raw_text[:800])
@@ -135,7 +139,7 @@ def run_ocr_pipeline(image_path: str) -> None:
         print(f"  ... [{len(raw_text) - 800} more chars]")
 
     # ── Stage 2: Metadata Extraction ─────────────────────────────────────────
-    _section("STAGE 2 — Metadata Extraction (single_processor.py)")
+    _section("STAGE 2 - Metadata Extraction")
     vendor   = _extract_vendor(raw_text)
     date     = _extract_date(raw_text)
     total    = _extract_total(raw_text)
@@ -147,7 +151,7 @@ def run_ocr_pipeline(image_path: str) -> None:
     print(f"  Currency : {currency}")
 
     # ── Stage 3: Line Item Parsing ────────────────────────────────────────────
-    _section("STAGE 3 — Line Item Parsing (single_processor.py)")
+    _section("STAGE 3 - Line Item Parsing")
     items = _parse_items(raw_text)
     print(f"  Items parsed: {len(items)}")
 
@@ -158,22 +162,24 @@ def run_ocr_pipeline(image_path: str) -> None:
             qty_str = f"  ×{qty}" if qty > 1 else ""
             print(f"    {i:2}. {item['name']:<35}  {item.get('amount', 0.0):>8.2f} {currency}{qty_str}")
     else:
-        print("\n  ⚠️  No items parsed.")
+        print("\n  CHECK: No items parsed.")
         print("  Possible reasons:")
         print("    • Receipt has no price-like patterns (XX.XX)")
         print("    • Items and prices are on completely separate lines with no blank-line grouping")
         print("    • OCR quality too low — check confidence above")
 
     # ── Stage 4: Carbon Mapping ───────────────────────────────────────────────
-    _section("STAGE 4 — Carbon Mapping (carbon_mapper.py)")
+    _section("STAGE 4 - Carbon Mapping")
     carbon_db     = load_carbon_database()
     carbon_result = calculate_receipt_carbon(items, carbon_db)
 
-    mapped   = carbon_result["mapped_items"]
-    unmapped_count = len(items) - len(mapped)
+    mapped = carbon_result["mapped_items"]
+    known_mapped = [m for m in mapped if m.get("category") != "unknown"]
+    unknown_mapped = [m for m in mapped if m.get("category") == "unknown"]
 
-    print(f"  Items mapped     : {len(mapped)}")
-    print(f"  Items unmapped   : {unmapped_count}  (carbon_kg = 0 for these)")
+    print(f"  Items parsed      : {len(items)}")
+    print(f"  Known mappings    : {len(known_mapped)}")
+    print(f"  Unknown mappings  : {len(unknown_mapped)}")
     print(f"  Total carbon     : {carbon_result['total_carbon_kg']:.4f} kg CO₂e")
 
     if mapped:
@@ -202,15 +208,15 @@ def run_ocr_pipeline(image_path: str) -> None:
     _section("SUMMARY")
 
     total_kg = carbon_result["total_carbon_kg"]
-    map_rate = len(mapped) / max(len(items), 1) * 100
+    map_rate = len(known_mapped) / max(len(items), 1)
 
     from packages.ml_services.ocr.carbon_comparisons import build_comparisons
     comps = build_comparisons(total_kg)
 
-    print(f"  ✅  OCR confidence      : {result['confidence']:.2%}  (target > 70%)")
-    print(f"  {'✅' if len(items) > 0 else '⚠️ '} Items parsed         : {len(items)}")
-    print(f"  {'✅' if map_rate >= 50 else '⚠️ '} Carbon map rate      : {map_rate:.0f}%  (aim > 50%)")
-    print(f"  📊  Total carbon         : {total_kg:.4f} kg CO₂e")
+    print(f"  {_status(result['confidence'] >= 0.70, 'OCR confidence')} : {result['confidence']:.2%}  (target > 70%)")
+    print(f"  {_status(len(items) > 0, 'Items parsed')} : {len(items)}")
+    print(f"  {_status(map_rate >= 0.50, 'Known carbon mapping coverage')} : {map_rate:.0%}  (target > 50%)")
+    print(f"  Carbon total            : {total_kg:.4f} kg CO₂e")
     print()
 
     # Issue 1: never show decimal trees — use natural language
@@ -236,14 +242,14 @@ def run_ocr_pipeline(image_path: str) -> None:
     one_in_n   = int(round(100 / pct_annual)) if pct_annual > 0 else 0
     annual_str = f"{pct_annual:.2f}%  (1/{one_in_n} of avg Indian's yearly CO₂)"
 
-    print(f"  🌳  Trees to offset       : {tree_str}")
-    print(f"  ⛽  Petrol equivalent      : {comps['petrol_litres_equiv']:.2f} litres of petrol burned")
-    print(f"  📱  Phone charges equiv    : {comps['phone_charges_equiv']} full smartphone charges  (India grid, CEA 2023)")
-    print(f"  🍽️  Daily diet equiv        : {diet_str}")
-    print(f"  🌍  Annual per-capita share : {annual_str}")
+    print(f"  Tree offset equivalent   : {tree_str}")
+    print(f"  Petrol equivalent        : {comps['petrol_litres_equiv']:.2f} litres of petrol")
+    print(f"  Phone charge equivalent  : {comps['phone_charges_equiv']} full smartphone charges")
+    print(f"  Daily diet equivalent    : {diet_str}")
+    print(f"  Annual per-capita share  : {annual_str}")
     print()
-    print(f"  💬  {comps['human_summary']}")
-    print(f"  📖  {comps['methodology_note']}")
+    print(f"  Interpretation           : {comps['human_summary']}")
+    print(f"  Methodology              : {comps['methodology_note']}")
 
     # Optionally save full JSON
     output_path = REPO_ROOT / "scripts" / f"ocr_result_{p.stem}.json"
@@ -263,7 +269,7 @@ def run_ocr_pipeline(image_path: str) -> None:
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(full_result, f, indent=2, ensure_ascii=False)
 
-    print(f"\n  💾  Full result saved to: {output_path.relative_to(REPO_ROOT)}")
+    print(f"\n  Full result saved to: {output_path.relative_to(REPO_ROOT)}")
     print(f"\n{'═' * 60}")
 
 
@@ -278,7 +284,7 @@ if __name__ == "__main__":
             found = list(Path(SCRIPT_DIR).glob(ext))
             if found:
                 image_arg = str(found[0])
-                print(f"ℹ️  No path given — using: {found[0].name}")
+                print(f"INFO: No path given - using: {found[0].name}")
                 break
         else:
             print("Usage: python scripts/test_ocr_real_receipt.py path\\to\\receipt.jpg")

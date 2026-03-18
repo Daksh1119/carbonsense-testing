@@ -31,6 +31,55 @@ import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps, UnidentifiedImageError
 
 
+def _easyocr_enabled() -> bool:
+    return os.getenv("OCR_ENABLE_EASYOCR_FALLBACK", "false").strip().lower() == "true"
+
+
+def _easyocr_min_gain() -> float:
+    try:
+        return float(os.getenv("OCR_EASYOCR_MIN_GAIN", "0.05"))
+    except ValueError:
+        return 0.05
+
+
+def _run_easyocr(image_path: str) -> Dict:
+    """
+    Optional EasyOCR fallback. Returns the same shape as extract_text snippets.
+    Import is local to keep startup lightweight when EasyOCR is not installed.
+    """
+    try:
+        import easyocr  # type: ignore
+    except Exception as e:
+        return {
+            "text": "",
+            "method": "easyocr",
+            "success": False,
+            "confidence": 0.0,
+            "error": f"EasyOCR unavailable: {e}",
+        }
+
+    try:
+        reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+        chunks = reader.readtext(image_path, detail=1)
+        texts = [str(row[1]).strip() for row in chunks if len(row) >= 2 and str(row[1]).strip()]
+        confs = [float(row[2]) for row in chunks if len(row) >= 3]
+        mean_conf = (sum(confs) / len(confs)) if confs else 0.0
+        return {
+            "text": "\n".join(texts).strip(),
+            "method": "easyocr",
+            "success": bool(texts),
+            "confidence": round(mean_conf, 4),
+        }
+    except Exception as e:
+        return {
+            "text": "",
+            "method": "easyocr",
+            "success": False,
+            "confidence": 0.0,
+            "error": f"EasyOCR failed: {type(e).__name__}: {e}",
+        }
+
+
 # ─── Image pre-processing ────────────────────────────────────────────────────
 
 def _preprocess(img: Image.Image) -> Image.Image:
@@ -130,6 +179,16 @@ def extract_text(image_path: str) -> Dict:
                         best_method = f"tesseract-raw-psm{psm}"
                 except Exception:
                     continue
+
+        # ── Optional low-confidence fallback: EasyOCR ────────────────────────
+        # Opt-in only, so existing deployments stay unchanged unless enabled.
+        if _easyocr_enabled() and best_conf < 0.50:
+            easy = _run_easyocr(image_path)
+            gain = easy.get("confidence", 0.0) - best_conf
+            if easy.get("success") and gain >= _easyocr_min_gain():
+                best_conf = float(easy.get("confidence", best_conf))
+                best_text = str(easy.get("text", best_text))
+                best_method = str(easy.get("method", "easyocr"))
 
         return {
             "text": best_text.strip() if best_text else "",

@@ -17,12 +17,13 @@ Handles two OCR output formats:
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from uuid import uuid4
 
 from ml_services.ocr.text_extractor import extract_text
 from ml_services.ocr.carbon_mapper import calculate_receipt_carbon, load_carbon_database
+from ml_services.ocr.food_assist import apply_food101_assist
 from ml_services.common.supabase_client import supabase
 from ml_services.common.authz import get_user_department
 
@@ -73,11 +74,35 @@ _CURRENCY_MAP = {
 }
 
 def _detect_currency(text: str) -> str:
+    # India-specific bias: if fiscal markers are present, default toward INR.
+    # This avoids OCR artefacts like stray '£' from E.&O.E lines causing GBP.
+    india_markers = re.search(
+        r"\b(gst|cgst|sgst|igst|fssai|rs\.?|rupees?|india|mumbai|delhi|bengaluru|karnataka|maharashtra)\b",
+        text,
+        re.IGNORECASE,
+    )
+
     counts: dict[str, int] = {}
     for sym, code in _CURRENCY_MAP.items():
         n = len(re.findall(re.escape(sym), text))
         if n:
             counts[code] = counts.get(code, 0) + n
+
+    # Explicit INR textual forms
+    rs_count = len(re.findall(r"\bRs\.?\b", text, re.IGNORECASE))
+    rupee_count = len(re.findall(r"\bRupees?\b", text, re.IGNORECASE))
+    if rs_count or rupee_count:
+        counts["INR"] = counts.get("INR", 0) + rs_count + rupee_count
+
+    # If we saw Indian fiscal markers but no decisive symbol, prefer INR.
+    if india_markers and counts.get("INR", 0) == 0:
+        counts["INR"] = 1
+
+    # If only weak GBP evidence (single stray symbol) appears with India markers,
+    # down-weight it as likely OCR punctuation noise.
+    if india_markers and counts.get("GBP", 0) == 1 and counts.get("INR", 0) >= 1:
+        counts["GBP"] = 0
+
     return max(counts, key=lambda k: counts[k]) if counts else "INR"
 
 
@@ -135,13 +160,43 @@ _DATE_PATTERNS: List[tuple] = [
     (re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b"),                   "mdy"),
 ]
 
+_PARTIAL_DATE_RE = re.compile(r"\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{1,3})\b")
+_DATE_CONTEXT_RE = re.compile(r"\b(date|dated|dt|bill|invoice|total|rs|am|pm)\b", re.IGNORECASE)
+
 def _expand_year(y2: int) -> int:
     """Convert 2-digit year to 4-digit: 00-49 → 2000-2049, 50-99 → 1950-1999."""
     return (2000 + y2) if y2 < 50 else (1900 + y2)
 
+
+def _expand_year_fragment(raw: str) -> Optional[int]:
+    """Expand a partially-read OCR year fragment (1-4 digits) into a plausible year."""
+    if not raw.isdigit() or len(raw) > 4:
+        return None
+
+    if len(raw) == 4:
+        year = int(raw)
+        return year if 1900 <= year <= 2100 else None
+
+    current_year = datetime.now(timezone.utc).year
+
+    if len(raw) == 3:
+        y2 = int(raw[-2:])
+        candidates = [1900 + y2, 2000 + y2]
+    elif len(raw) == 2:
+        return _expand_year(int(raw))
+    else:  # len(raw) == 1
+        digit = int(raw)
+        candidates = [2000 + digit, 2010 + digit, 2020 + digit]
+
+    # Prefer years near present, and avoid far-future artefacts.
+    bounded = [y for y in candidates if 1900 <= y <= current_year + 1]
+    if not bounded:
+        bounded = [y for y in candidates if 1900 <= y <= 2100]
+    return min(bounded, key=lambda y: abs(y - current_year)) if bounded else None
+
 # Regex for date-label prefix (e.g. "Date:", "Dt:", "Bill Date:", "Trans Date:")
 _DATE_LABEL_RE = re.compile(
-    r"(?:date|dated|dt|bill\s*date|invoice\s*date|trans\s*date)\s*[:\-\u2013]\s*",
+    r"(?:date|dated|dt|bill\s*date|invoice\s*date|trans\s*date)\s*(?:[:\-\u2013]\s*)?",
     re.IGNORECASE,
 )
 # Regulatory/historical date trap: "w.e.f DD/MM/YYYY" — always ignore these
@@ -149,6 +204,21 @@ _WEF_RE = re.compile(
     r"w\.?e\.?f\.?\s*\d{1,2}[/\.\-]\d{1,2}[/\.\-]\d{2,4}",
     re.IGNORECASE,
 )
+
+_DATE_OCR_CHAR_MAP = str.maketrans({
+    "O": "0", "o": "0", "Q": "0", "D": "0",
+    "I": "1", "l": "1", "|": "1",
+    "S": "5", "s": "5", "B": "8",
+})
+
+
+def _normalize_date_candidate(text: str) -> str:
+    """Normalize common OCR confusions in date-like strings."""
+    text = text.translate(_DATE_OCR_CHAR_MAP)
+    text = re.sub(r"[\u2012\u2013\u2014\u2015]", "-", text)
+    text = re.sub(r"[,;]", "/", text)
+    text = re.sub(r"\s*([./\-])\s*", r"\1", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _parse_date_match(m: re.Match, order: str) -> Optional[str]:
@@ -167,6 +237,16 @@ def _parse_date_match(m: re.Match, order: str) -> Optional[str]:
             y = int(c)
         elif order == "dmy_short":
             d, mo, y = int(a), int(b), _expand_year(int(c))
+        elif order == "dmy_partial":
+            d, mo = int(a), int(b)
+            y = _expand_year_fragment(c)
+            if y is None:
+                return None
+        elif order == "mdy_partial":
+            mo, d = int(a), int(b)
+            y = _expand_year_fragment(c)
+            if y is None:
+                return None
         else:
             return None
         if 1 <= d <= 31 and 1 <= mo <= 12 and 1900 <= y <= 2100:
@@ -187,23 +267,29 @@ def _extract_date(text: str) -> Optional[str]:
     """
     # Strip regulatory date traps before any matching
     clean = _WEF_RE.sub("", text)
-    flat  = " ".join(clean.splitlines())
+    flat = " ".join(clean.splitlines())
+    flat_norm = _normalize_date_candidate(flat)
 
     # ── Priority 1: date adjacent to a label ─────────────────────────────────
     label_m = _DATE_LABEL_RE.search(flat)
     if label_m:
         snippet = flat[label_m.end(): label_m.end() + 30]
+        snippet_norm = _normalize_date_candidate(snippet)
         for pat, order in _DATE_PATTERNS:
-            m = pat.search(snippet)
-            if m:
+            for candidate in (snippet_norm, snippet):
+                m = pat.search(candidate)
+                if not m:
+                    continue
                 result = _parse_date_match(m, order)
                 if result:
                     return result
 
     # ── Priority 2: 2-digit year (index 3 in _DATE_PATTERNS) ─────────────────
     pat_short, order_short = _DATE_PATTERNS[3]
-    m = pat_short.search(flat)
-    if m:
+    for candidate in (flat_norm, flat):
+        m = pat_short.search(candidate)
+        if not m:
+            continue
         result = _parse_date_match(m, order_short)
         if result:
             return result
@@ -212,8 +298,24 @@ def _extract_date(text: str) -> Optional[str]:
     for idx, (pat, order) in enumerate(_DATE_PATTERNS):
         if idx == 3:
             continue   # already tried above
-        m = pat.search(flat)
-        if m:
+        for candidate in (flat_norm, flat):
+            m = pat.search(candidate)
+            if not m:
+                continue
+            result = _parse_date_match(m, order)
+            if result:
+                return result
+
+    # ── Priority 4: partial OCR-clipped dates in date-like context lines ─────
+    # Example: "12/18/2 Total Rs" where the year is partially unreadable.
+    for raw_line in clean.splitlines():
+        if not _DATE_CONTEXT_RE.search(raw_line):
+            continue
+        line = _normalize_date_candidate(raw_line)
+        m = _PARTIAL_DATE_RE.search(line)
+        if not m:
+            continue
+        for order in ("dmy_partial", "mdy_partial"):
             result = _parse_date_match(m, order)
             if result:
                 return result
@@ -330,6 +432,10 @@ _SKIP_WORDS = {
     "surcharge", "convenience fee", "delivery fee", "packing charge",
     "fuel", "pump", "litres", "liters", "price/litre", "price/liter",
     "authorized", "approved", "declined", "transaction",
+    # India receipt fiscal/compliance lines (never line items)
+    "gst", "cgst", "sgst", "igst", "fssai", "hsn", "sac",
+    "round off", "rnd", "e&o.e", "eod", "tax invoice",
+    "bill no", "table no", "emp no", "mob", "phone",
 }
 
 # Compile a word-boundary pattern for skip words (avoids false positives like
@@ -362,6 +468,15 @@ _INDIAN_ITEM_RE = re.compile(
 )
 _INDIAN_ITEM_RE3 = re.compile(
     r"^(.+?)\s+(\d+)\s+(\d+)\s*$"            # 3-col: name qty amount  (OCR collapsed)
+)
+
+_NON_ITEM_PREFIX_RE = re.compile(
+    r"^(?:"
+    r"sub\s*total|food\s*total|grand\s*total|total|tax|cgst|sgst|igst|gst|"
+    r"fssai|gst\s*no|hsn|sac|rnd\s*amt|round\s*off|bill\s*no|table\s*no|"
+    r"emp\s*no|date|time|mob|phone|e\.?\s*&\s*o\.?\s*e\.?"
+    r")\b",
+    re.IGNORECASE,
 )
 
 # ─── OCR spelling corrections ─────────────────────────────────────────────────
@@ -424,6 +539,16 @@ def _parse_items_per_line(text: str) -> List[Dict]:
         line = _clean(raw_line)
         if not line:
             continue
+        # Skip GST-like tax lines even when OCR mutates letters (e.g. CGST -> CEST).
+        if re.search(r"\b(?:cgst|sgst|igst|gst|cest)\b", line, re.IGNORECASE):
+            continue
+        if re.search(r"\bon\s+\d+(?:[.,]\d+)?\s*:\s*\d+(?:[.,]\d+)?", line, re.IGNORECASE):
+            continue
+        # Skip lines with very long identifier-like numbers (e.g. FSSAI/GST IDs).
+        if re.search(r"\b\d{8,}\b", line):
+            continue
+        if _NON_ITEM_PREFIX_RE.search(line):
+            continue
         if _SKIP_PATTERN.search(line):
             continue
         # Skip discount/adjustment lines: any line whose amount is negative
@@ -455,6 +580,8 @@ def _parse_items_per_line(text: str) -> List[Dict]:
             raw_name = m.group(1).strip()
             # Skip header/metadata lines that slipped through _SKIP_PATTERN
             if re.match(r"^(particulars|item|description|s\.?\s*no)", raw_name, re.I):
+                continue
+            if _NON_ITEM_PREFIX_RE.search(raw_name):
                 continue
             if indian_m:
                 quantity = int(indian_m.group(2))
@@ -592,6 +719,17 @@ def process_single_receipt(
     carbon_db     = load_carbon_database()
     carbon_result = calculate_receipt_carbon(items, carbon_db)
 
+    # Optional, conservative Food101-assisted fallback for low-confidence OCR.
+    # Disabled by default and only changes unknown/empty mappings when confident.
+    food_assist = apply_food101_assist(
+        file_path=file_path,
+        is_pdf=is_pdf,
+        ocr_confidence=confidence,
+        mapped_items=carbon_result.get("mapped_items", []),
+    )
+    carbon_result["mapped_items"] = food_assist["mapped_items"]
+    carbon_result["total_carbon_kg"] = food_assist["total_carbon_kg"]
+
     vendor       = _extract_vendor(raw_text)
     receipt_date = _extract_date(raw_text)
     total_amount = _extract_total(raw_text)
@@ -640,6 +778,10 @@ def process_single_receipt(
         warnings.append(extraction.get("error", "OCR extraction failed"))
     if confidence < 0.5:
         warnings.append("Low OCR confidence – manual review recommended")
+    if food_assist["assist"].get("triggered") and not food_assist["assist"].get("applied"):
+        warnings.append("Food model assist triggered but not applied")
+    if food_assist["assist"].get("applied"):
+        warnings.append("Food model assist applied to unknown OCR item mapping")
 
     return {
         **row,
@@ -656,5 +798,6 @@ def process_single_receipt(
             "total_carbon_kg": row["carbon_total_kg"],
             "mapped_items":    row["mapped_items"],
         },
+        "food_model_assist": food_assist["assist"],
         "warnings": warnings,
     }

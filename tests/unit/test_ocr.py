@@ -85,6 +85,10 @@ class TestDetectCurrency:
     def test_mixed_favours_most_frequent(self):
         assert _detect_currency("$1.00 $2.00 $3.00 €1.00") == "USD"
 
+    def test_indian_receipt_markers_bias_to_inr(self):
+        text = "GST NO 27AAHHN6997C1ZQ FSSAI NO 11523011000098 Total Rs 3434 E.&O.E."
+        assert _detect_currency(text) == "INR"
+
 
 # ─── _extract_vendor ─────────────────────────────────────────────────────────
 
@@ -145,6 +149,19 @@ class TestExtractDate:
 
     def test_in_surrounding_text(self):
         assert _extract_date("Date: 30, 07, 2007\nTotal: CHF 94.50") == "2007-07-30"
+
+    def test_label_without_colon(self):
+        assert _extract_date("Bill Date 30/07/2007") == "2007-07-30"
+
+    def test_ocr_digit_confusion_normalised(self):
+        assert _extract_date("Date: 3O/O7/2O24") == "2024-07-30"
+
+    def test_ocr_ones_confusion_normalised(self):
+        assert _extract_date("Dt I5/O1/24") == "2024-01-15"
+
+    def test_partial_year_recovered_in_total_context(self):
+        text = "12/18/2 Total Rs : 3434 GST NO 27AAHHN"
+        assert _extract_date(text) == "2022-12-18"
 
     def test_returns_none_for_no_date(self):
         assert _extract_date("No date info here") is None
@@ -219,6 +236,17 @@ class TestParseItemsPerLine:
     def test_single_item_quantity_defaults_to_one(self):
         items = _parse_items_per_line("Espresso 2.50")
         assert items[0].get("quantity", 1) == 1
+
+    def test_skips_gst_and_compliance_lines(self):
+        text = (
+            "VEG MANCHOW SOUP 3 160 480\n"
+            "CGST @2.5% On 3270 : 81.75\n"
+            "Rnd Amt : 0.50\n"
+            "FSSAI NO 11523011000098\n"
+        )
+        items = _parse_items_per_line(text)
+        assert len(items) == 1
+        assert "VEG MANCHOW" in items[0]["name"]
 
 
 # ─── _parse_items_fragmented ─────────────────────────────────────────────────

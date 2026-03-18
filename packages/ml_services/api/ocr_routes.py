@@ -19,6 +19,36 @@ MAX_SINGLE_MB = 10
 MAX_BULK_MB = 50
 
 
+@router.get("/health")
+async def ocr_health():
+    return {
+        "status": "ok",
+        "service": "ocr",
+        "version": "1.0",
+    }
+
+
+@router.get("/capabilities")
+async def ocr_capabilities():
+    return {
+        "single_receipt": {
+            "route": "/ocr/receipt",
+            "allowed_extensions": sorted(ALLOWED_SINGLE_EXT),
+            "max_upload_mb": MAX_SINGLE_MB,
+        },
+        "bulk_receipts": {
+            "route": "/ocr/receipts/bulk",
+            "allowed_extensions": sorted(ALLOWED_BULK_EXT),
+            "max_upload_mb": MAX_BULK_MB,
+            "supported_inner_extensions": [".jpg", ".jpeg", ".png", ".pdf"],
+        },
+        "analytics": {
+            "route": "/ocr/analytics/organization",
+            "required_permission": "view_analytics",
+        },
+    }
+
+
 class OCRLineItem(BaseModel):
     description: str
     amount: float
@@ -41,6 +71,7 @@ class OCRReceiptResponse(BaseModel):
     requires_review: bool
     line_items: List[OCRLineItem] = Field(default_factory=list)
     raw_text: Optional[str] = None
+    food_model_assist: Optional[dict] = None
     warnings: List[str] = Field(default_factory=list)
 
 
@@ -99,6 +130,8 @@ async def process_receipt(
 
     suffix = os.path.splitext(file.filename or "")[1] or ".jpg"
 
+    tmp_path: Optional[str] = None
+
     try:
         # Save uploaded bytes to temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -123,7 +156,8 @@ async def process_receipt(
     finally:
         # Clean up temporary file
         try:
-            os.remove(tmp_path)
+            if tmp_path:
+                os.remove(tmp_path)
         except Exception:
             pass
 
@@ -144,13 +178,15 @@ async def process_bulk_receipts(
         raise HTTPException(status_code=413, detail=f"Zip too large. Max {MAX_BULK_MB}MB")
 
     try:
-        result = await process_receipt_batch(
+        result = process_receipt_batch(
             zip_bytes=blob,
             zip_name=zip_file.filename or "batch.zip",
             organization_id=organization_id,
             uploaded_by=uploaded_by,
         )
         return OCRBulkResponse(**result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Bulk OCR failed: {e}")
 

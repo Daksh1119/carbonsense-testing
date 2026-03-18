@@ -29,7 +29,34 @@ from torchvision import models, transforms
 from ml_services.food.food_carbon_db import get_carbon
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-MODEL_DIR = Path(os.getenv("FOOD_MODEL_DIR", "models/food_recognition"))
+
+
+def _resolve_model_dir() -> Path:
+    """
+    Resolve model directory robustly.
+
+    Priority:
+      1) FOOD_MODEL_DIR env override
+      2) models/food_recognition (preferred structure)
+      3) models/ (fallback for flat uploads)
+    """
+    env_dir = os.getenv("FOOD_MODEL_DIR")
+    if env_dir:
+        return Path(env_dir)
+
+    preferred = Path("models/food_recognition")
+    if (preferred / "food101_best.pt").exists() and (preferred / "food101_classes.json").exists():
+        return preferred
+
+    fallback = Path("models")
+    if (fallback / "food101_best.pt").exists() and (fallback / "food101_classes.json").exists():
+        return fallback
+
+    # Default for first-time training environments
+    return preferred
+
+
+MODEL_DIR = _resolve_model_dir()
 
 # ─── Inference-time transform (no augmentation) ──────────────────────────────
 _INFER_TRANSFORM = transforms.Compose([
