@@ -21,3 +21,10 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local training artifacts (kept outside git; used in Colab/external training)
+models/*.pt
+models/*.pth
+
+# Local generated OCR debug outputs
+scripts/ocr_result_*.json
