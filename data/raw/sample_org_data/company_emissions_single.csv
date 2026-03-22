@@ -1,0 +1,11 @@
+record_id,organization_id,employee_id,employee_name,department,date,source_category,activity_type,quantity,unit,spend_inr,vendor,location,scope,notes
+rec-001,11111111-1111-1111-1111-111111111111,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa,Sarah Chen,Operations,2026-01-05,Energy,electricity_grid_kwh,1200,kWh,0,State Grid,Mumbai,Scope 2,Monthly office electricity
+rec-002,11111111-1111-1111-1111-111111111111,bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb,Ravi Kumar,Logistics,2026-01-07,Transport,diesel_liter,280,liter,0,HP Fuel,Pune,Scope 1,Fleet diesel consumption
+rec-003,11111111-1111-1111-1111-111111111111,bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb,Ravi Kumar,Logistics,2026-01-09,Transport,flight_km_economy,1750,km,0,Airline,Delhi,Scope 3,Domestic business travel
+rec-004,11111111-1111-1111-1111-111111111111,cccccccc-cccc-cccc-cccc-cccccccccccc,Anita Shah,Facilities,2026-01-10,Waste,landfill_waste_kg,620,kg,0,City Waste,Mumbai,Scope 3,General waste to landfill
+rec-005,11111111-1111-1111-1111-111111111111,cccccccc-cccc-cccc-cccc-cccccccccccc,Anita Shah,Facilities,2026-01-10,Waste,recycled_waste_kg,340,kg,0,Recycler Co,Mumbai,Scope 3,Recycled waste stream
+rec-006,11111111-1111-1111-1111-111111111111,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa,Sarah Chen,Procurement,2026-01-12,Purchases,purchased_goods_inr,185000,INR,185000,Supplier A,Mumbai,Scope 3,Office procurement spend
+rec-007,11111111-1111-1111-1111-111111111111,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa,Sarah Chen,Operations,2026-01-15,Transport,rail_km,420,km,0,Indian Railways,Mumbai,Scope 3,Intercity train travel
+rec-008,11111111-1111-1111-1111-111111111111,bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb,Ravi Kumar,Logistics,2026-01-18,Transport,petrol_liter,95,liter,0,Shell,Pune,Scope 1,Pool car petrol usage
+rec-009,11111111-1111-1111-1111-111111111111,cccccccc-cccc-cccc-cccc-cccccccccccc,Anita Shah,Facilities,2026-01-19,Waste,paper_kg,180,kg,0,Paper Vendor,Mumbai,Scope 3,Paper consumption equivalent
+rec-010,11111111-1111-1111-1111-111111111111,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa,Sarah Chen,Travel,2026-01-20,Purchases,hotel_night,12,night,0,Hotel Group,Bengaluru,Scope 3,Business accommodation

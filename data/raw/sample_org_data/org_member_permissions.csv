@@ -1,0 +1,6 @@
+organization_id,user_id,permission_key,enabled
+11111111-1111-1111-1111-111111111111,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa,recommendations.generate,true
+11111111-1111-1111-1111-111111111111,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa,recommendations.approve,true
+11111111-1111-1111-1111-111111111111,bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb,recommendations.generate,true
+11111111-1111-1111-1111-111111111111,bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb,recommendations.approve,false
+11111111-1111-1111-1111-111111111111,cccccccc-cccc-cccc-cccc-cccccccccccc,recommendations.generate,false
