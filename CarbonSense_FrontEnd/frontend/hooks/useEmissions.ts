@@ -31,6 +31,59 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
       setIsLoading(true);
       setError(null);
 
+      // Use latest uploaded CSV result when available.
+      const latestCsv = typeof window !== 'undefined'
+        ? window.sessionStorage.getItem('latest_csv_emissions_summary')
+        : null;
+
+      if (latestCsv) {
+        const parsed = JSON.parse(latestCsv) as {
+          computed_rows?: Array<{
+            record_id?: string;
+            date?: string;
+            category?: string;
+            activity_type?: string;
+            quantity?: number;
+            unit?: string;
+            emissions_kg_co2e?: number;
+          }>;
+          totals?: { total_kg_co2e?: number };
+        };
+
+        const csvRows = parsed.computed_rows || [];
+        const mapped: EmissionEntry[] = csvRows.map((row, index) => {
+          const categoryKey = String(row.category || 'purchases').toLowerCase();
+          const category =
+            categoryKey === 'transport' ||
+            categoryKey === 'energy' ||
+            categoryKey === 'food' ||
+            categoryKey === 'waste' ||
+            categoryKey === 'purchases'
+              ? categoryKey
+              : 'purchases';
+
+          return {
+            id: String(row.record_id || `csv-${index + 1}`),
+            date: String(row.date || new Date().toISOString().slice(0, 10)),
+            category,
+            activity: String(row.activity_type || 'Uploaded Activity'),
+            amount: Number(row.quantity || 0),
+            unit: String(row.unit || ''),
+            co2Amount: Number(row.emissions_kg_co2e || 0),
+            createdAt: new Date().toISOString(),
+          };
+        });
+
+        setEmissions(mapped);
+        if (parsed.totals?.total_kg_co2e !== undefined) {
+          setTotal(Number(parsed.totals.total_kg_co2e));
+        } else {
+          setTotal(mapped.reduce((sum, e) => sum + e.co2Amount, 0));
+        }
+        setIsLoading(false);
+        return;
+      }
+
       // TODO: Replace with actual API call
       // const queryParams = new URLSearchParams(params as any);
       // const response = await fetch(`/api/emissions?${queryParams}`);

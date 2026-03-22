@@ -3,9 +3,12 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import DashboardCard from '@/components/DashboardCard';
+import Button from '@/components/Button';
 import FileUpload from '@/components/ui/FileUpload';
 import { Breadcrumb, BackButton } from '@/components/navigation';
 import { showSuccessToast, showErrorToast, showInfoToast } from '@/lib/toast';
+import { calculateEmissionsFromCSV } from '@/lib/ingestion-api';
+import { getCurrentUserContext } from '@/lib/recommendations-api';
 import {
   Upload,
   FileText,
@@ -19,28 +22,63 @@ export default function DataIngestionPage() {
   const router = useRouter();
   const [uploadingType, setUploadingType] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [csvProcessed, setCsvProcessed] = useState(false);
 
   const handleFilesAccepted = async (files: File[], type: string) => {
     setUploadingType(type);
+    setCsvProcessed(false);
     showInfoToast(`Uploading ${files.length} file(s)...`);
 
-    // Simulate upload progress
-    for (let i = 0; i <= 100; i += 10) {
-      setUploadProgress(i);
-      await new Promise((resolve) => setTimeout(resolve, 200));
+    try {
+      if (type === 'csv' && files.length > 0) {
+        const { userId, organizationId } = getCurrentUserContext();
+        if (!userId || !organizationId) {
+          throw new Error('Missing logged-in user/organization context. Please login again.');
+        }
+
+        for (let i = 0; i <= 45; i += 15) {
+          setUploadProgress(i);
+          await new Promise((resolve) => setTimeout(resolve, 120));
+        }
+
+        showInfoToast('Processing emissions data...');
+        const summary = await calculateEmissionsFromCSV(files[0], organizationId, userId);
+
+        for (let i = 60; i <= 100; i += 10) {
+          setUploadProgress(i);
+          await new Promise((resolve) => setTimeout(resolve, 80));
+        }
+
+        sessionStorage.setItem('latest_csv_emissions_summary', JSON.stringify(summary));
+        showSuccessToast(`Successfully uploaded ${files[0].name}`);
+        setCsvProcessed(true);
+      } else {
+        for (let i = 0; i <= 100; i += 10) {
+          setUploadProgress(i);
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        showSuccessToast(`Successfully uploaded ${files.length} file(s)`);
+      }
+
+      setUploadingType(null);
+      setUploadProgress(0);
+
+      if (type !== 'csv') {
+        setTimeout(() => {
+          router.push('/detailed-log');
+        }, 1200);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Upload failed';
+      if (message.toLowerCase().includes('not found')) {
+        showErrorToast('Upload API route not found. Restart backend server and try again.');
+      } else {
+        showErrorToast(`Failed to process files: ${message}`);
+      }
+      setUploadingType(null);
+      setUploadProgress(0);
     }
-
-    // Simulate processing
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    showSuccessToast(`Successfully uploaded ${files.length} file(s)`);
-    setUploadingType(null);
-    setUploadProgress(0);
-
-    // Navigate to detailed log to see results
-    setTimeout(() => {
-      router.push('/detailed-log');
-    }, 1500);
   };
 
   const handleFilesRejected = (rejections: any[]) => {
@@ -66,6 +104,19 @@ export default function DataIngestionPage() {
         </div>
         <BackButton href="/dashboard" label="Back to Dashboard" variant="outline" />
       </div>
+
+      {csvProcessed && (
+        <DashboardCard title="CSV Processed Successfully" subtitle="Choose where you want to continue">
+          <div className="flex flex-wrap gap-3">
+            <Button onClick={() => router.push('/detailed-log')}>
+              View Detailed Log
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/analytics')}>
+              View Analytics
+            </Button>
+          </div>
+        </DashboardCard>
+      )}
 
       {/* Upload Options Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

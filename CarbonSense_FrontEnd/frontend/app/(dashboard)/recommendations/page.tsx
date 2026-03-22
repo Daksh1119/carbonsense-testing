@@ -1,9 +1,12 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import DashboardCard from "@/components/DashboardCard";
 import Badge from "@/components/Badge";
 import Button from "@/components/Button";
 import { Breadcrumb, BackButton } from "@/components/navigation";
+import { useRecommendations } from "@/hooks";
+import { showInfoToast, showSuccessToast } from "@/lib/toast";
 import {
   Sparkles,
   Zap,
@@ -15,86 +18,82 @@ import {
   Target,
 } from "lucide-react";
 
-const recommendations = [
-  {
-    title: "Switch to Renewable Energy Grid",
-    impact: "High",
-    certainty: 98,
-    timeToImpact: "Immediate",
-    cost: "₹2.5M–₹4.2M",
-    savings: "380 tCO₂e/year",
-    category: "Energy",
-    icon: Zap,
-    priority: 1,
-    description:
-      "Transition 60% of facility power to solar + wind hybrid system. ROI: 3.2 years.",
-    steps: [
-      "Conduct energy audit",
-      "Select renewable provider",
-      "Install infrastructure",
-      "Monitor performance",
-    ],
-  },
-  {
-    title: "Optimize Supply Chain Logistics",
-    impact: "High",
-    certainty: 95,
-    timeToImpact: "3–6 months",
-    cost: "₹800K–₹1.5M",
-    savings: "285 tCO₂e/year",
-    category: "Transport",
-    icon: Factory,
-    priority: 2,
-    description:
-      "Route optimization + EV fleet transition for last-mile delivery.",
-    steps: [
-      "Analyze current routes",
-      "Implement AI routing",
-      "Pilot EV vehicles",
-      "Scale fleet transition",
-    ],
-  },
-  {
-    title: "Employee Behavioral Program",
-    impact: "Medium",
-    certainty: 75,
-    timeToImpact: "6–12 months",
-    cost: "₹200K–₹400K",
-    savings: "120 tCO₂e/year",
-    category: "Behavioral",
-    icon: Users,
-    priority: 3,
-    description:
-      "Gamified carbon awareness program + remote work policy expansion.",
-    steps: [
-      "Launch awareness campaign",
-      "Implement tracking app",
-      "Introduce incentives",
-      "Measure impact",
-    ],
-  },
-  {
-    title: "Tree Planting Initiative (Neem + Bamboo)",
-    impact: "Medium",
-    certainty: 70,
-    timeToImpact: "10–15 years",
-    cost: "₹450K–₹680K",
-    savings: "Delayed offset potential",
-    category: "Offset",
-    icon: Leaf,
-    priority: 4,
-    description:
-      "Plant 2,000 trees with survival-weighted modeling. Secondary to reduction.",
-    steps: [
-      "Select planting sites",
-      "Procure saplings",
-      "Conduct plantation drive",
-      "Monitor growth annually",
-    ],
-  },
-];
-
 export default function RecommendationsPage() {
+  const router = useRouter();
+  const { recommendations: liveRecommendations, isLoading, error, llmUsed, llmWarning, refetch } = useRecommendations();
+
+  const recommendations = liveRecommendations.map((rec, idx) => ({
+        title: rec.title,
+        impact: rec.impact >= 150 ? "High" : rec.impact >= 70 ? "Medium" : "Low",
+        certainty: rec.certainty,
+        timeToImpact: rec.timeToImpact,
+        cost: rec.cost > 0
+          ? new Intl.NumberFormat("en-IN", {
+              style: "currency",
+              currency: "INR",
+              notation: "compact",
+              maximumFractionDigits: 1,
+            }).format(rec.cost)
+          : "TBD",
+        savings: `${Math.round(rec.impact)} kgCO₂e`,
+        category: rec.category,
+        icon: rec.type === "offset" ? Leaf : rec.category.toLowerCase().includes("energy") ? Zap : rec.category.toLowerCase().includes("transport") ? Factory : Users,
+        priority: idx + 1,
+        description: rec.description,
+        steps: rec.steps,
+      }));
+
+  const totalPotential = recommendations
+    .map((r) => r.savings)
+    .map((s) => Number((String(s).match(/[\d.]+/) || ["0"])[0]))
+    .reduce((a, b) => a + b, 0);
+  const highImpactCount = recommendations.filter((r) => r.impact === "High").length;
+  const avgCertainty =
+    recommendations.length > 0
+      ? recommendations.reduce((sum, r) => sum + Number(r.certainty || 0), 0) / recommendations.length
+      : 0;
+
+  const topTwoTitles = recommendations.slice(0, 2).map((r) => r.title);
+
+  const handleGenerateRoadmap = () => {
+    const lines: string[] = [];
+    lines.push("# CarbonSense Custom Roadmap");
+    lines.push("");
+    lines.push(`Generated On: ${new Date().toISOString()}`);
+    lines.push(`Recommendation Count: ${recommendations.length}`);
+    lines.push(`LLM Mode: ${llmUsed ? "LLM Live" : "Fallback"}`);
+    lines.push("");
+
+    recommendations.forEach((rec, idx) => {
+      lines.push(`## ${idx + 1}. ${rec.title}`);
+      lines.push(`- Impact: ${rec.impact}`);
+      lines.push(`- Certainty: ${rec.certainty}%`);
+      lines.push(`- Time To Impact: ${rec.timeToImpact}`);
+      lines.push(`- Cost: ${rec.cost}`);
+      lines.push(`- Category: ${rec.category}`);
+      lines.push(`- Description: ${rec.description}`);
+      lines.push("- Steps:");
+      rec.steps.forEach((step, stepIdx) => lines.push(`  ${stepIdx + 1}. ${step}`));
+      lines.push("");
+    });
+
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `carbonsense-roadmap-${new Date().toISOString().slice(0, 10)}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    showSuccessToast("Custom roadmap downloaded");
+  };
+
+  const handleLearnAboutAI = () => {
+    showInfoToast("Opening AI policy intelligence...");
+    router.push("/policy-intelligence");
+  };
+
   return (
     <div className="space-y-6">
       {/* Breadcrumb */}
@@ -120,7 +119,7 @@ export default function RecommendationsPage() {
             <Target className="size-5 text-primary" />
             <p className="text-sm text-slate-400">Total Potential Savings</p>
           </div>
-          <p className="text-3xl font-bold text-primary">785 tCO₂e</p>
+          <p className="text-3xl font-bold text-primary">{Math.round(totalPotential)} kgCO₂e</p>
           <p className="text-xs text-slate-500 mt-1">per year</p>
         </div>
         <div className="glass-card p-5 rounded-xl">
@@ -128,7 +127,7 @@ export default function RecommendationsPage() {
             <Zap className="size-5 text-amber-400" />
             <p className="text-sm text-slate-400">High Impact Actions</p>
           </div>
-          <p className="text-3xl font-bold text-white">2</p>
+          <p className="text-3xl font-bold text-white">{highImpactCount}</p>
           <p className="text-xs text-slate-500 mt-1">immediate priority</p>
         </div>
         <div className="glass-card p-5 rounded-xl">
@@ -136,18 +135,64 @@ export default function RecommendationsPage() {
             <TrendingDown className="size-5 text-emerald-400" />
             <p className="text-sm text-slate-400">Avg Certainty</p>
           </div>
-          <p className="text-3xl font-bold text-white">84.5%</p>
+          <p className="text-3xl font-bold text-white">{avgCertainty.toFixed(1)}%</p>
           <p className="text-xs text-slate-500 mt-1">confidence level</p>
         </div>
         <div className="glass-card p-5 rounded-xl">
-          <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="size-5 text-blue-400" />
-            <p className="text-sm text-slate-400">AI Recommendations</p>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="size-5 text-blue-400" />
+              <p className="text-sm text-slate-400">AI Recommendations</p>
+            </div>
+            <Badge
+              size="sm"
+              variant={
+                isLoading || llmUsed === null
+                  ? "default"
+                  : llmUsed
+                  ? "success"
+                  : "warning"
+              }
+            >
+              {isLoading || llmUsed === null
+                ? "Checking"
+                : llmUsed
+                ? "LLM Live"
+                : "Fallback"}
+            </Badge>
           </div>
-          <p className="text-3xl font-bold text-white">4</p>
+          <p className="text-3xl font-bold text-white">{recommendations.length}</p>
           <p className="text-xs text-slate-500 mt-1">personalized actions</p>
         </div>
       </div>
+
+      {error && (
+        <div className="border border-rose-500/40 bg-rose-500/10 rounded-xl p-4 text-sm text-rose-200">
+          {error}
+          <div className="mt-3">
+            <Button variant="outline" size="sm" onClick={refetch}>Retry Recommendations</Button>
+          </div>
+        </div>
+      )}
+
+      {!error && !isLoading && llmUsed === false && (
+        <div className="border border-amber-500/40 bg-amber-500/10 rounded-xl p-4 text-sm text-amber-100">
+          AI model is not configured right now, so fallback recommendation logic was used.
+          {llmWarning ? ` (${llmWarning})` : ""}
+        </div>
+      )}
+
+      {isLoading && (
+        <div className="border border-primary/30 bg-primary/10 rounded-xl p-4 text-sm text-primary">
+          Generating AI-powered recommendations from your latest emissions data. Please wait...
+        </div>
+      )}
+
+      {!isLoading && !error && recommendations.length === 0 && (
+        <div className="border border-slate-700 bg-navy-muted/40 rounded-xl p-4 text-sm text-slate-300">
+          No AI recommendations are available yet. Upload data and retry generation.
+        </div>
+      )}
 
       {/* Recommendations Grid */}
       <div className="space-y-4">
@@ -259,17 +304,17 @@ export default function RecommendationsPage() {
             <p className="text-slate-300 text-sm mb-3">
               Our multi-agent AI system recommends prioritizing{" "}
               <strong className="text-primary">
-                renewable energy transition
+                {topTwoTitles[0] || "renewable energy transition"}
               </strong>{" "}
-              and <strong className="text-primary">supply chain optimization</strong>{" "}
+              and <strong className="text-primary">{topTwoTitles[1] || "supply chain optimization"}</strong>{" "}
               for maximum immediate impact. Tree planting should complement, not
               replace, reduction strategies.
             </p>
             <div className="flex gap-3">
-              <Button variant="primary" size="sm">
+              <Button variant="primary" size="sm" onClick={handleGenerateRoadmap}>
                 Generate Custom Roadmap
               </Button>
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" onClick={handleLearnAboutAI}>
                 Learn About Our AI
               </Button>
             </div>

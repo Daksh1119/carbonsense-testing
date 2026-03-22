@@ -1,8 +1,11 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import DashboardCard from "@/components/DashboardCard";
 import StatsCard from "@/components/StatsCard";
 import Badge from "@/components/Badge";
+import Button from "@/components/Button";
 import { Breadcrumb, BackButton } from "@/components/navigation";
 import {
   BarChart3,
@@ -10,6 +13,7 @@ import {
   PieChart,
   Activity,
   Calendar,
+  ArrowRight,
 } from "lucide-react";
 import {
   BarChart,
@@ -27,7 +31,7 @@ import {
   Legend,
 } from "recharts";
 
-const categoryData = [
+const defaultCategoryData = [
   { category: "Transport", value: 420, percentage: 34 },
   { category: "Energy", value: 380, percentage: 31 },
   { category: "Food & Waste", value: 280, percentage: 22 },
@@ -36,7 +40,7 @@ const categoryData = [
 
 const COLORS = ["#0bd5b0", "#3b82f6", "#f59e0b", "#ef4444"];
 
-const monthlyTrend = [
+const defaultMonthlyTrend = [
   { month: "Aug", emissions: 1150 },
   { month: "Sep", emissions: 1280 },
   { month: "Oct", emissions: 1190 },
@@ -45,13 +49,97 @@ const monthlyTrend = [
   { month: "Jan", emissions: 1180 },
 ];
 
-const scopeData = [
+const defaultScopeData = [
   { name: "Scope 1", value: 450 },
   { name: "Scope 2", value: 380 },
   { name: "Scope 3", value: 410 },
 ];
 
+type CsvSummary = {
+  totals?: {
+    total_kg_co2e?: number;
+  };
+  breakdown?: {
+    by_category_kg_co2e?: Record<string, number>;
+    by_scope_kg_co2e?: Record<string, number>;
+  };
+  computed_rows?: Array<{
+    date?: string;
+    emissions_kg_co2e?: number;
+  }>;
+};
+
 export default function AnalyticsPage() {
+  const router = useRouter();
+  const [csvSummary, setCsvSummary] = useState<CsvSummary | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = window.sessionStorage.getItem("latest_csv_emissions_summary");
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as CsvSummary;
+      setCsvSummary(parsed);
+    } catch {
+      setCsvSummary(null);
+    }
+  }, []);
+
+  const categoryData = useMemo(() => {
+    const byCategory = csvSummary?.breakdown?.by_category_kg_co2e;
+    if (!byCategory || Object.keys(byCategory).length === 0) {
+      return defaultCategoryData;
+    }
+
+    const total = Object.values(byCategory).reduce((sum, val) => sum + Number(val || 0), 0) || 1;
+    return Object.entries(byCategory).map(([category, value]) => ({
+      category,
+      value: Math.round(Number(value)),
+      percentage: Math.round((Number(value) / total) * 100),
+    }));
+  }, [csvSummary]);
+
+  const scopeData = useMemo(() => {
+    const byScope = csvSummary?.breakdown?.by_scope_kg_co2e;
+    if (!byScope || Object.keys(byScope).length === 0) {
+      return defaultScopeData;
+    }
+    return Object.entries(byScope).map(([name, value]) => ({
+      name,
+      value: Math.round(Number(value)),
+    }));
+  }, [csvSummary]);
+
+  const monthlyTrend = useMemo(() => {
+    const rows = csvSummary?.computed_rows;
+    if (!rows || rows.length === 0) {
+      return defaultMonthlyTrend;
+    }
+
+    const map: Record<string, number> = {};
+    for (const row of rows) {
+      const date = new Date(String(row.date || ""));
+      if (Number.isNaN(date.getTime())) continue;
+      const key = date.toLocaleString("en-US", { month: "short" });
+      map[key] = (map[key] || 0) + Number(row.emissions_kg_co2e || 0);
+    }
+
+    const series = Object.entries(map).map(([month, emissions]) => ({
+      month,
+      emissions: Math.round(emissions),
+    }));
+
+    return series.length > 0 ? series : defaultMonthlyTrend;
+  }, [csvSummary]);
+
+  const totalKg = Math.round(csvSummary?.totals?.total_kg_co2e || 1240);
+  const monthlyAvgKg = Math.round(totalKg / Math.max(monthlyTrend.length, 1));
+  const topCategory = categoryData.reduce((prev, curr) => (curr.value > prev.value ? curr : prev), categoryData[0]);
+  const highestMonth = monthlyTrend.reduce((prev, curr) => (curr.emissions > prev.emissions ? curr : prev), monthlyTrend[0]);
+  const lowestMonth = monthlyTrend.reduce((prev, curr) => (curr.emissions < prev.emissions ? curr : prev), monthlyTrend[0]);
+  const averageTrend = Math.round(
+    monthlyTrend.reduce((sum, item) => sum + item.emissions, 0) / Math.max(monthlyTrend.length, 1)
+  );
+
   return (
     <div className="space-y-6">
       {/* Breadcrumb */}
@@ -67,14 +155,23 @@ export default function AnalyticsPage() {
             Deep insights into emissions patterns and forecasting
           </p>
         </div>
-        <BackButton href="/dashboard" label="Back to Dashboard" variant="outline" />
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            icon={<ArrowRight className="size-4" />}
+            onClick={() => router.push("/recommendations")}
+          >
+            View Recommendations
+          </Button>
+          <BackButton href="/dashboard" label="Back to Dashboard" variant="outline" />
+        </div>
       </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatsCard
           title="Total Emissions (YTD)"
-          value="1,240"
+          value={totalKg.toLocaleString()}
           unit="tCO₂e"
           change="-5.2% vs last year"
           changeType="positive"
@@ -82,7 +179,7 @@ export default function AnalyticsPage() {
         />
         <StatsCard
           title="Monthly Average"
-          value="206"
+          value={monthlyAvgKg.toLocaleString()}
           unit="tCO₂e"
           change="+2.1% this month"
           changeType="negative"
@@ -90,8 +187,8 @@ export default function AnalyticsPage() {
         />
         <StatsCard
           title="Highest Category"
-          value="Transport"
-          unit="34% of total"
+          value={topCategory?.category || "Transport"}
+          unit={`${topCategory?.percentage || 34}% of total`}
           icon={<PieChart className="size-6" />}
         />
         <StatsCard
@@ -117,7 +214,7 @@ export default function AnalyticsPage() {
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, percentage }) => `${name} ${percentage}%`}
+                  label={({ category, percentage }) => `${category} ${percentage}%`}
                   outerRadius={100}
                   fill="#8884d8"
                   dataKey="value"
@@ -201,7 +298,7 @@ export default function AnalyticsPage() {
                     {scope.value} tCO₂e
                   </span>
                   <Badge variant="info">
-                    {Math.round((scope.value / 1240) * 100)}%
+                    {Math.round((scope.value / Math.max(totalKg, 1)) * 100)}%
                   </Badge>
                 </div>
               </div>
@@ -247,15 +344,15 @@ export default function AnalyticsPage() {
         <div className="mt-4 grid grid-cols-3 gap-4">
           <div className="p-4 bg-navy-muted/50 rounded-lg text-center">
             <p className="text-xs text-slate-400 mb-1">Highest Month</p>
-            <p className="text-lg font-bold text-rose-400">Nov - 1,320</p>
+            <p className="text-lg font-bold text-rose-400">{highestMonth?.month} - {highestMonth?.emissions}</p>
           </div>
           <div className="p-4 bg-navy-muted/50 rounded-lg text-center">
             <p className="text-xs text-slate-400 mb-1">Lowest Month</p>
-            <p className="text-lg font-bold text-emerald-400">Aug - 1,150</p>
+            <p className="text-lg font-bold text-emerald-400">{lowestMonth?.month} - {lowestMonth?.emissions}</p>
           </div>
           <div className="p-4 bg-navy-muted/50 rounded-lg text-center">
             <p className="text-xs text-slate-400 mb-1">Average</p>
-            <p className="text-lg font-bold text-white">1,227 tCO₂e</p>
+            <p className="text-lg font-bold text-white">{averageTrend.toLocaleString()} tCO₂e</p>
           </div>
         </div>
       </DashboardCard>
