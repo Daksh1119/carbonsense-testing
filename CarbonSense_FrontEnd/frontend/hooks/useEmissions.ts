@@ -51,6 +51,7 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
     try {
       setIsLoading(true);
       setError(null);
+
       const { organizationId } = getCurrentUserContext();
       if (organizationId && params?.uploadId) {
         const entries = await fetchEmissionsForUpload(organizationId, params.uploadId);
@@ -62,7 +63,6 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
         return;
       }
 
->>>>>>> ee2c3e4 (Align emissions ingestion, edit, and log with platform-calculated CO₂; replace prompt-based UI with modal forms; update factor mapping and Supabase SQL; add docs and test data; production-ready for backup)
       // Use latest uploaded CSV result when available.
       const latestCsv = typeof window !== 'undefined'
         ? window.sessionStorage.getItem('latest_csv_emissions_summary')

@@ -56,6 +56,8 @@ export interface TEMEResult {
 			curves?: MonteCarloResult;
 			enabled?: boolean;
 			trials?: number;
+			probability_of_offset?: number;
+			risk_aware_payback_years?: number;
 		};
 	};
 }

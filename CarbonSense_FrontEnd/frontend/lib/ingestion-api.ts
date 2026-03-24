@@ -65,15 +65,13 @@ export interface IngestionRecommendationsResponse extends IngestionCalculateResp
   recommendation_result?: GenerateRecommendationsResponse;
 }
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export async function calculateEmissionsFromCSV(
   csvFile: File,
   _organizationId: string,
   _userId: string
-=======
-): Promise<IngestionCalculateResponse> {
->>>>>>> ee2c3e4 (Align emissions ingestion, edit, and log with platform-calculated CO₂; replace prompt-based UI with modal forms; update factor mapping and Supabase SQL; add docs and test data; production-ready for backup)
+): Promise<EmissionsSummary> {
   const formData = new FormData();
   formData.append('file', csvFile);
 

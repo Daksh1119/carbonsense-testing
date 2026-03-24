@@ -27,7 +27,8 @@ export const useEmissionsUploads = (): UseEmissionsUploadsReturn => {
       const data = await fetchEmissionsUploads(organizationId);
       setUploads(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch uploads");
+      setUploads([]);
+      setError(null);
     } finally {
       setIsLoading(false);
     }

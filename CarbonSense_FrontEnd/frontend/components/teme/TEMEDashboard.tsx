@@ -128,7 +128,7 @@ function buildRecommendation(result: TEMEResult | null, simulationEnabled: boole
 }
 
 export default function TEMEDashboard() {
-	type TopCardKey = "active-projects" | "trees-planted" | "current-absorption" | "payback-period";
+	type TopCardKey = "active-projects" | "trees-planned" | "current-absorption" | "payback-period";
 
 	const [showModal, setShowModal] = useState(false);
 	const [projects, setProjects] = useState<TEMERunRecord[]>([]);
@@ -216,12 +216,12 @@ export default function TEMEDashboard() {
 					f2: `Latest selected: ${selectedProject?.project_name || "N/A"}`,
 					f3: "Tip: Use this card anytime to jump to the project list.",
 				};
-			case "trees-planted":
+			case "trees-planned":
 				return {
-					title: "Trees Planted Detail",
-					description: `Across all active projects, your current plan includes ${formatNumber(totalTrees)} trees. This reflects total planned plantation volume, not survival-adjusted count.`,
+					title: "Trees to Plant Detail",
+					description: `Across all active projects, your current plans recommend planting ${formatNumber(totalTrees)} trees. This is a projected plan volume, not a verified planted count.`,
 					f1: `Projects counted: ${projects.length}`,
-					f2: `Selected project trees: ${formatNumber(selectedProject?.total_trees || 0)}`,
+					f2: `Selected project planned trees: ${formatNumber(selectedProject?.total_trees || 0)}`,
 					f3: `Top species in selected plan: ${focusedResult?.offset_plan?.[0]?.species || "N/A"}`,
 				};
 			case "current-absorption":
@@ -269,7 +269,7 @@ export default function TEMEDashboard() {
 
 		const sectionMap: Record<TopCardKey, { current: HTMLDivElement | null }> = {
 			"active-projects": activeProjectsSectionRef,
-			"trees-planted": speciesSectionRef,
+			"trees-planned": speciesSectionRef,
 			"current-absorption": timeDebtSectionRef,
 			"payback-period": timeDebtSectionRef,
 		};
@@ -312,11 +312,11 @@ export default function TEMEDashboard() {
 				</button>
 				<button
 					type="button"
-					onClick={() => handleTopCardClick("trees-planted")}
-					className={`text-left rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/70 ${selectedTopCard === "trees-planted" ? "ring-2 ring-primary/60" : ""}`}
+					onClick={() => handleTopCardClick("trees-planned")}
+					className={`text-left rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/70 ${selectedTopCard === "trees-planned" ? "ring-2 ring-primary/60" : ""}`}
 				>
 					<StatsCard
-						title="Trees Planted"
+						title="Trees to Plant"
 						value={historyLoading ? "..." : formatNumber(totalTrees)}
 						icon={<Leaf className="size-6" />}
 					/>
@@ -417,7 +417,7 @@ export default function TEMEDashboard() {
 				title="Species Recommendations"
 				subtitle="Generated from latest TEME offset plan"
 				icon={<TreePine className="size-5" />}
-				className={selectedTopCard === "trees-planted" ? "ring-2 ring-primary/40" : undefined}
+				className={selectedTopCard === "trees-planned" ? "ring-2 ring-primary/40" : undefined}
 			>
 				<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 					{(focusedResult?.offset_plan || []).map((item, index) => {
@@ -438,7 +438,7 @@ export default function TEMEDashboard() {
 									<div>
 										<h4 className="text-sm font-bold text-white">{item.species}</h4>
 										<p className="text-xs text-slate-400 mt-1">
-											{formatNumber(item.tree_count)} trees
+											{formatNumber(item.tree_count)} planned trees
 										</p>
 									</div>
 									<CheckCircle2 className="size-5 text-primary" />
@@ -501,7 +501,7 @@ export default function TEMEDashboard() {
 								<div>
 									<h4 className="text-sm font-semibold text-white">{project.project_name}</h4>
 									<div className="flex items-center gap-4 mt-1 text-xs text-slate-400">
-										<span>{formatNumber(project.total_trees)} trees</span>
+										<span>{formatNumber(project.total_trees)} planned trees</span>
 										<span>{getSpeciesList(project)}</span>
 									</div>
 								</div>
@@ -561,7 +561,7 @@ export default function TEMEDashboard() {
 									{(selectedProject.result?.offset_plan || []).map((item, idx) => (
 										<div key={`${item.species}-${idx}`} className="flex items-center justify-between text-xs">
 											<span className="text-slate-300">{item.species}</span>
-											<span className="text-white">{formatNumber(item.tree_count)} trees</span>
+											<span className="text-white">{formatNumber(item.tree_count)} planned trees</span>
 										</div>
 									))}
 								</div>
