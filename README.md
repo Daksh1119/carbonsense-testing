@@ -1,4 +1,4 @@
-﻿# CarbonSense
+# CarbonSense
 
 CarbonSense is a carbon intelligence platform that combines enterprise emissions operations with AI-assisted analytics, recommendation generation, OCR-assisted receipt processing, and TEME (Tree-Emission Matching Engine) scenario planning.
 
@@ -444,9 +444,9 @@ Roadmap and expansion themes (tracked in docs):
 
 This repository is licensed under the MIT License.
 
-1. **"Multi-Agentic AI for SME Carbon Management"** â€” Systems architecture
-2. **"Time-Debt Modeling for Tree-Based Carbon Offsets"** â€” TEME engine (Environmental Science)
-3. **"Automated Policy Compliance via NLP"** â€” Policy module (NLP/AI)
+1. **"Multi-Agentic AI for SME Carbon Management"** - Systems architecture
+2. **"Time-Debt Modeling for Tree-Based Carbon Offsets"** - TEME engine (Environmental Science)
+3. **"Automated Policy Compliance via NLP"** - Policy module (NLP/AI)
 
 ---
 
@@ -454,6 +454,6 @@ This repository is licensed under the MIT License.
 
 **Built with scientific rigor. No greenwashing. Reduction-first, always.**
 
-ðŸŒ *You're not just tracking carbon. You're making a difference.* ðŸŒ±
+You are not just tracking carbon. You are making a difference.
 
 </div>
