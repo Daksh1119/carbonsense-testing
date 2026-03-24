@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import DashboardCard from "@/components/DashboardCard";
 import Button from "@/components/Button";
 import { Breadcrumb, BackButton } from "@/components/navigation";
-import { showSuccessToast, showErrorToast } from "@/lib/toast";
+import { showSuccessToast } from "@/lib/toast";
+import { wasteFactors, getFactorOption } from "@/lib/emissions-factors";
+import { useEmissionsDraftStore } from "@/store";
 import {
   Trash2,
   ArrowRight,
@@ -15,23 +17,45 @@ import {
 
 export default function WastePage() {
   const router = useRouter();
+  const { setEntry, entries } = useEmissionsDraftStore();
 
-  const [wasteType, setWasteType] = useState("General Waste");
-  const [disposalMethod, setDisposalMethod] = useState("Landfill");
-  const [weight, setWeight] = useState("");
-  const [date, setDate] = useState("");
+  const defaultOption = entries.waste?.activityType
+    ? wasteFactors.find((option) => option.label === entries.waste?.activityType)?.value || wasteFactors[0].value
+    : wasteFactors[0].value;
 
-  const estimatedImpact = weight ? (parseFloat(weight) * 0.584).toFixed(2) : "0.00";
+  const [wasteType, setWasteType] = useState(defaultOption);
+  const [disposalMethod, setDisposalMethod] = useState(entries.waste?.meta?.disposalMethod || "Landfill");
+  const [weight, setWeight] = useState(entries.waste?.amount?.toString() || "");
+  const [date, setDate] = useState(entries.waste?.date || "");
+
+  const option = getFactorOption(wasteFactors, wasteType);
+  const weightValue = Number(weight || 0);
+
+  const estimatedImpact = weightValue > 0
+    ? (weightValue * option.factorKgPerUnit).toFixed(2)
+    : "0.00";
   const trend = "+1.5%";
 
   const handleNext = () => {
-    if (!weight || !date) {
-      showErrorToast("Please fill in all required fields");
-      return;
+    if (weight && date) {
+      setEntry("waste", {
+        category: "waste",
+        activityType: option.label,
+        detail: `${weightValue.toLocaleString()} ${option.unit} • ${disposalMethod}`,
+        amount: weightValue,
+        unit: option.unit,
+        date,
+        estimatedCo2Kg: Number(estimatedImpact),
+        meta: {
+          disposalMethod,
+          activity_key: option.value,
+        },
+      });
+
+      showSuccessToast("Waste data saved!");
     }
 
-    showSuccessToast("Waste data saved!");
-    router.push("/emissions/review");
+    router.push("/emissions/purchases");
   };
 
   const handlePrevious = () => {
@@ -72,30 +96,31 @@ export default function WastePage() {
         icon={<Trash2 className="size-5" />}
       >
         <div className="space-y-6">
+          <p className="text-xs text-slate-500">
+            Optional fields — add what you have now, or skip and return later.
+          </p>
           {/* Waste Type & Disposal Method */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Waste Type <span className="text-red-400">*</span>
+                Waste Type
               </label>
               <select
                 value={wasteType}
                 onChange={(e) => setWasteType(e.target.value)}
                 className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                <option>General Waste</option>
-                <option>Organic Waste</option>
-                <option>Plastic Waste</option>
-                <option>Paper & Cardboard</option>
-                <option>Metal Waste</option>
-                <option>Glass</option>
-                <option>Electronic Waste</option>
+                {wasteFactors.map((factor) => (
+                  <option key={factor.value} value={factor.value}>
+                    {factor.label}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Disposal Method <span className="text-red-400">*</span>
+                Disposal Method
               </label>
               <select
                 value={disposalMethod}
@@ -115,7 +140,7 @@ export default function WastePage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Weight <span className="text-red-400">*</span>
+                Weight
               </label>
               <div className="relative">
                 <input
@@ -126,14 +151,14 @@ export default function WastePage() {
                   placeholder="0.00"
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">
-                  KG
+                  {option.unit}
                 </span>
               </div>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Disposal Date <span className="text-red-400">*</span>
+                Disposal Date
               </label>
               <input
                 type="date"
@@ -201,13 +226,21 @@ export default function WastePage() {
         >
           Previous: Energy
         </Button>
-        <Button
-          variant="primary"
-          icon={<ArrowRight className="size-4" />}
-          onClick={handleNext}
-        >
-          Next: Review & Submit
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            onClick={() => router.push("/emissions/review")}
+          >
+            Review Now
+          </Button>
+          <Button
+            variant="primary"
+            icon={<ArrowRight className="size-4" />}
+            onClick={handleNext}
+          >
+            Next: Purchases
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -6,60 +6,51 @@ import DashboardCard from "@/components/DashboardCard";
 import Button from "@/components/Button";
 import { Breadcrumb, BackButton } from "@/components/navigation";
 import { showSuccessToast } from "@/lib/toast";
-import { energyFactors, getFactorOption } from "@/lib/emissions-factors";
+import { purchasesFactors, getFactorOption } from "@/lib/emissions-factors";
 import { useEmissionsDraftStore } from "@/store";
-import {
-  Zap,
-  ArrowRight,
-  Leaf,
-  TrendingUp,
-} from "lucide-react";
+import { ShoppingCart, ArrowRight, Leaf, TrendingUp } from "lucide-react";
 
-export default function EnergyPage() {
+export default function PurchasesPage() {
   const router = useRouter();
   const { setEntry, entries } = useEmissionsDraftStore();
 
-  const defaultOption = entries.energy?.activityType
-    ? energyFactors.find((option) => option.label === entries.energy?.activityType)?.value || energyFactors[0].value
-    : energyFactors[0].value;
+  const defaultOption = entries.purchases?.activityType || purchasesFactors[0].value;
+  const [purchaseType, setPurchaseType] = useState(defaultOption);
+  const [vendor, setVendor] = useState(entries.purchases?.meta?.vendor || "");
+  const [spend, setSpend] = useState(entries.purchases?.amount?.toString() || "");
+  const [date, setDate] = useState(entries.purchases?.date || "");
 
-  const [energyType, setEnergyType] = useState(defaultOption);
-  const [source, setSource] = useState(entries.energy?.meta?.source || "Mixed Grid Supply");
-  const [consumption, setConsumption] = useState(entries.energy?.amount?.toString() || "");
-  const [date, setDate] = useState(entries.energy?.date || "");
-
-  const option = getFactorOption(energyFactors, energyType);
-  const consumptionValue = Number(consumption || 0);
-
-  const estimatedImpact = consumptionValue > 0
-    ? (consumptionValue * option.factorKgPerUnit).toFixed(2)
+  const option = getFactorOption(purchasesFactors, purchaseType);
+  const amountValue = Number(spend || 0);
+  const estimatedImpact = amountValue > 0
+    ? (amountValue * option.factorKgPerUnit).toFixed(2)
     : "0.00";
-  const trend = "-2.8%";
+  const trend = "-1.9%";
 
   const handleNext = () => {
-    if (consumption && date) {
-      setEntry("energy", {
-        category: "energy",
+    if (spend && date) {
+      setEntry("purchases", {
+        category: "purchases",
         activityType: option.label,
-        detail: `${consumptionValue.toLocaleString()} ${option.unit} • ${source}`,
-        amount: consumptionValue,
+        detail: `${amountValue.toLocaleString()} ${option.unit} • ${vendor || "Vendor"}`,
+        amount: amountValue,
         unit: option.unit,
         date,
         estimatedCo2Kg: Number(estimatedImpact),
         meta: {
-          source,
+          vendor: vendor || "Vendor",
           activity_key: option.value,
         },
       });
 
-      showSuccessToast("Energy data saved!");
+      showSuccessToast("Purchases data saved!");
     }
 
-    router.push("/emissions/waste");
+    router.push("/emissions/review");
   };
 
   const handlePrevious = () => {
-    router.push("/emissions/transport");
+    router.push("/emissions/waste");
   };
 
   return (
@@ -70,9 +61,9 @@ export default function EnergyPage() {
         <div className="flex items-center justify-between mt-4">
           <div>
             <h1 className="text-3xl font-bold text-white mb-2">
-              Energy Activity
+              Purchases Activity
             </h1>
-            <p className="text-slate-400">Step 2 of 4 - Electricity consumption and facility operations</p>
+            <p className="text-slate-400">Step 4 of 4 - Goods, services, and supplier spend</p>
           </div>
           <BackButton href="/emissions" label="Cancel" variant="ghost" />
         </div>
@@ -83,34 +74,34 @@ export default function EnergyPage() {
         <div className="flex items-center gap-2">
           <div className="flex-1 h-2 bg-primary rounded-full" />
           <div className="flex-1 h-2 bg-primary rounded-full" />
-          <div className="flex-1 h-2 bg-navy-border rounded-full" />
-          <div className="flex-1 h-2 bg-navy-border rounded-full" />
+          <div className="flex-1 h-2 bg-primary rounded-full" />
+          <div className="flex-1 h-2 bg-primary rounded-full" />
         </div>
-        <p className="text-sm text-primary font-medium mt-2 text-center">50% Complete</p>
+        <p className="text-sm text-primary font-medium mt-2 text-center">100% Complete</p>
       </div>
 
       {/* Main Form */}
       <DashboardCard
-        title="Energy Details"
-        subtitle="Electricity consumption and renewable energy usage"
-        icon={<Zap className="size-5" />}
+        title="Purchases Details"
+        subtitle="Goods, services, and supplier spend"
+        icon={<ShoppingCart className="size-5" />}
       >
         <div className="space-y-6">
           <p className="text-xs text-slate-500">
             Optional fields — add what you have now, or skip and return later.
           </p>
-          {/* Energy Type & Source */}
+          {/* Purchase Type & Vendor */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Energy Type
+                Purchase Type
               </label>
               <select
-                value={energyType}
-                onChange={(e) => setEnergyType(e.target.value)}
+                value={purchaseType}
+                onChange={(e) => setPurchaseType(e.target.value)}
                 className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                {energyFactors.map((factor) => (
+                {purchasesFactors.map((factor) => (
                   <option key={factor.value} value={factor.value}>
                     {factor.label}
                   </option>
@@ -120,33 +111,28 @@ export default function EnergyPage() {
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Source
+                Vendor / Supplier
               </label>
-              <select
-                value={source}
-                onChange={(e) => setSource(e.target.value)}
+              <input
+                value={vendor}
+                onChange={(e) => setVendor(e.target.value)}
                 className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                <option>Mixed Grid Supply</option>
-                <option>Solar Power</option>
-                <option>Wind Power</option>
-                <option>Hydro Power</option>
-                <option>Green Energy Contract</option>
-              </select>
+                placeholder="Supplier name"
+              />
             </div>
           </div>
 
-          {/* Consumption & Date */}
+          {/* Spend & Date */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Consumption
+                Spend Amount
               </label>
               <div className="relative">
                 <input
                   type="number"
-                  value={consumption}
-                  onChange={(e) => setConsumption(e.target.value)}
+                  value={spend}
+                  onChange={(e) => setSpend(e.target.value)}
                   className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
                   placeholder="0.00"
                 />
@@ -158,7 +144,7 @@ export default function EnergyPage() {
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Billing Period
+                Purchase Date
               </label>
               <input
                 type="date"
@@ -193,10 +179,10 @@ export default function EnergyPage() {
                   </span>
                 </div>
                 <div className="flex gap-1 mt-2">
-                  {[5, 4, 3, 2, 1].map((i) => (
+                  {[4, 3, 2, 3, 2].map((i, idx) => (
                     <div
-                      key={i}
-                      className="w-2 bg-emerald-400 rounded-full"
+                      key={idx}
+                      className="w-2 bg-primary rounded-full"
                       style={{ height: `${i * 8}px` }}
                     />
                   ))}
@@ -204,7 +190,7 @@ export default function EnergyPage() {
               </div>
             </div>
             <p className="text-xs text-slate-500 mt-4">
-              System auto-detect active • Based on UK National Grid factors
+              System auto-detect active • Based on supplier spend factors
             </p>
           </div>
         </div>
@@ -216,7 +202,7 @@ export default function EnergyPage() {
           variant="ghost"
           onClick={handlePrevious}
         >
-          Previous: Transport
+          Previous: Waste
         </Button>
         <div className="flex items-center gap-3">
           <Button
@@ -230,7 +216,7 @@ export default function EnergyPage() {
             icon={<ArrowRight className="size-4" />}
             onClick={handleNext}
           >
-            Next: Waste
+            Next: Review & Submit
           </Button>
         </div>
       </div>

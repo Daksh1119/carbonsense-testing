@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import DashboardCard from "@/components/DashboardCard";
 import StatsCard from "@/components/StatsCard";
 import Badge from "@/components/Badge";
 import Button from "@/components/Button";
 import { Breadcrumb, BackButton } from "@/components/navigation";
+import { useEmissions, useEmissionsUploads } from "@/hooks";
 import {
   BarChart3,
   TrendingDown,
@@ -15,6 +16,7 @@ import {
   Calendar,
   ArrowRight,
 } from "lucide-react";
+import { clsx } from "clsx";
 import {
   BarChart,
   Bar,
@@ -66,12 +68,35 @@ type CsvSummary = {
   computed_rows?: Array<{
     date?: string;
     emissions_kg_co2e?: number;
+<<<<<<< HEAD
   }>;
 };
 
 export default function AnalyticsPage() {
   const router = useRouter();
   const [csvSummary, setCsvSummary] = useState<CsvSummary | null>(null);
+=======
+    category?: string;
+  }>;
+};
+
+const CATEGORY_TO_SCOPE: Record<string, string> = {
+  transport: "Scope 3",
+  energy: "Scope 2",
+  food: "Scope 3",
+  waste: "Scope 3",
+  purchases: "Scope 3",
+};
+
+export default function AnalyticsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { uploads, isLoading: uploadsLoading } = useEmissionsUploads();
+  const [selectedUploadId, setSelectedUploadId] = useState<string | null>(null);
+  const { emissions } = useEmissions({ uploadId: selectedUploadId });
+  const [csvSummary, setCsvSummary] = useState<CsvSummary | null>(null);
+  const requestedUploadId = searchParams.get("uploadId");
+>>>>>>> ee2c3e4 (Align emissions ingestion, edit, and log with platform-calculated CO₂; replace prompt-based UI with modal forms; update factor mapping and Supabase SQL; add docs and test data; production-ready for backup)
 
   useEffect(() => {
     try {
@@ -84,8 +109,60 @@ export default function AnalyticsPage() {
     }
   }, []);
 
+<<<<<<< HEAD
   const categoryData = useMemo(() => {
     const byCategory = csvSummary?.breakdown?.by_category_kg_co2e;
+=======
+  useEffect(() => {
+    if (uploads.length === 0) return;
+    if (requestedUploadId && uploads.some((upload) => upload.id === requestedUploadId)) {
+      setSelectedUploadId(requestedUploadId);
+      return;
+    }
+    if (!selectedUploadId) {
+      setSelectedUploadId(uploads[0].id);
+    }
+  }, [uploads, requestedUploadId, selectedUploadId]);
+
+  const selectedUpload = uploads.find((upload) => upload.id === selectedUploadId) || null;
+
+  const derivedSummary = useMemo<CsvSummary | null>(() => {
+    if (!selectedUploadId || emissions.length === 0) return null;
+
+    const totalsKg = emissions.reduce((sum, entry) => sum + entry.co2Amount, 0);
+    const byCategory: Record<string, number> = {};
+    const byScope: Record<string, number> = {};
+    const computedRows = emissions.map((entry) => {
+      const category = String(entry.category || "purchases").toLowerCase();
+      byCategory[category] = (byCategory[category] || 0) + entry.co2Amount;
+
+      const scopeKey = CATEGORY_TO_SCOPE[category] || "Scope 3";
+      byScope[scopeKey] = (byScope[scopeKey] || 0) + entry.co2Amount;
+
+      return {
+        date: entry.date,
+        emissions_kg_co2e: entry.co2Amount,
+        category,
+      };
+    });
+
+    return {
+      totals: {
+        total_kg_co2e: totalsKg,
+      },
+      breakdown: {
+        by_category_kg_co2e: byCategory,
+        by_scope_kg_co2e: byScope,
+      },
+      computed_rows: computedRows,
+    };
+  }, [selectedUploadId, emissions]);
+
+  const activeSummary = derivedSummary || csvSummary;
+
+  const categoryData = useMemo(() => {
+    const byCategory = activeSummary?.breakdown?.by_category_kg_co2e;
+>>>>>>> ee2c3e4 (Align emissions ingestion, edit, and log with platform-calculated CO₂; replace prompt-based UI with modal forms; update factor mapping and Supabase SQL; add docs and test data; production-ready for backup)
     if (!byCategory || Object.keys(byCategory).length === 0) {
       return defaultCategoryData;
     }
@@ -96,6 +173,7 @@ export default function AnalyticsPage() {
       value: Math.round(Number(value)),
       percentage: Math.round((Number(value) / total) * 100),
     }));
+<<<<<<< HEAD
   }, [csvSummary]);
 
   const scopeData = useMemo(() => {
@@ -111,6 +189,29 @@ export default function AnalyticsPage() {
 
   const monthlyTrend = useMemo(() => {
     const rows = csvSummary?.computed_rows;
+=======
+  }, [activeSummary]);
+
+  const scopeData = useMemo(() => {
+    const byScope = activeSummary?.breakdown?.by_scope_kg_co2e;
+    if (!byScope || Object.keys(byScope).length === 0) {
+      return defaultScopeData;
+    }
+    const normalized = {
+      "Scope 1": 0,
+      "Scope 2": 0,
+      "Scope 3": 0,
+      ...byScope,
+    } as Record<string, number>;
+    return ["Scope 1", "Scope 2", "Scope 3"].map((name) => ({
+      name,
+      value: Math.round(Number(normalized[name] || 0)),
+    }));
+  }, [activeSummary]);
+
+  const monthlyTrend = useMemo(() => {
+    const rows = activeSummary?.computed_rows;
+>>>>>>> ee2c3e4 (Align emissions ingestion, edit, and log with platform-calculated CO₂; replace prompt-based UI with modal forms; update factor mapping and Supabase SQL; add docs and test data; production-ready for backup)
     if (!rows || rows.length === 0) {
       return defaultMonthlyTrend;
     }
@@ -129,9 +230,15 @@ export default function AnalyticsPage() {
     }));
 
     return series.length > 0 ? series : defaultMonthlyTrend;
+<<<<<<< HEAD
   }, [csvSummary]);
 
   const totalKg = Math.round(csvSummary?.totals?.total_kg_co2e || 1240);
+=======
+  }, [activeSummary]);
+
+  const totalKg = Math.round(activeSummary?.totals?.total_kg_co2e || 1240);
+>>>>>>> ee2c3e4 (Align emissions ingestion, edit, and log with platform-calculated CO₂; replace prompt-based UI with modal forms; update factor mapping and Supabase SQL; add docs and test data; production-ready for backup)
   const monthlyAvgKg = Math.round(totalKg / Math.max(monthlyTrend.length, 1));
   const topCategory = categoryData.reduce((prev, curr) => (curr.value > prev.value ? curr : prev), categoryData[0]);
   const highestMonth = monthlyTrend.reduce((prev, curr) => (curr.emissions > prev.emissions ? curr : prev), monthlyTrend[0]);
@@ -165,6 +272,90 @@ export default function AnalyticsPage() {
           </Button>
           <BackButton href="/dashboard" label="Back to Dashboard" variant="outline" />
         </div>
+<<<<<<< HEAD
+=======
+      </div>
+
+      {/* Uploads List */}
+      <div className="glass-card rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Uploads</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Select a monthly upload to view analytics</p>
+          </div>
+          {selectedUpload && (
+            <div className="flex items-center gap-2">
+              <span
+                className={clsx(
+                  "px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border",
+                  selectedUpload.source_type?.toLowerCase() === "manual"
+                    ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                    : "bg-slate-500/20 text-slate-300 border-slate-500/30"
+                )}
+              >
+                {selectedUpload.source_type || "CSV"}
+              </span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {new Date(selectedUpload.created_at).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {uploads.length === 0 && !uploadsLoading ? (
+            <div className="text-sm text-slate-500 dark:text-slate-400">
+              No uploads yet. Analytics will appear after the first upload.
+            </div>
+          ) : (
+            uploads.map((upload) => {
+              const isActive = upload.id === selectedUploadId;
+              const uploadDate = new Date(upload.created_at).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              });
+              const periodLabel = upload.period_start
+                ? new Date(upload.period_start).toLocaleDateString("en-US", { month: "short", year: "numeric" })
+                : "Latest";
+              return (
+                <button
+                  key={upload.id}
+                  onClick={() => setSelectedUploadId(upload.id)}
+                  className={clsx(
+                    "px-3 py-2 rounded-lg text-left border transition-all min-w-[180px]",
+                    isActive
+                      ? "bg-emerald-600 text-white border-emerald-600 shadow-md"
+                      : "bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500"
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold">{uploadDate}</span>
+                    <span
+                      className={clsx(
+                        "px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border",
+                        upload.source_type?.toLowerCase() === "manual"
+                          ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                          : "bg-slate-500/20 text-slate-300 border-slate-500/30",
+                        isActive ? "border-transparent" : ""
+                      )}
+                    >
+                      {upload.source_type || "CSV"}
+                    </span>
+                  </div>
+                  <div className={clsx("text-xs", isActive ? "text-white/80" : "text-slate-500 dark:text-slate-400")}>
+                    <span className="block truncate">{upload.original_file_name}</span>
+                    <span className="block">Period: {periodLabel}</span>
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+>>>>>>> ee2c3e4 (Align emissions ingestion, edit, and log with platform-calculated CO₂; replace prompt-based UI with modal forms; update factor mapping and Supabase SQL; add docs and test data; production-ready for backup)
       </div>
 
       {/* Stats Grid */}
@@ -290,11 +481,14 @@ export default function AnalyticsPage() {
             {scopeData.map((scope, index) => (
               <div
                 key={index}
-                className="flex items-center justify-between p-3 bg-navy-muted/50 rounded-lg"
+                className={clsx(
+                  "flex items-center justify-between p-3 bg-navy-muted/50 rounded-lg",
+                  scope.value === 0 ? "opacity-70" : ""
+                )}
               >
                 <span className="text-sm text-slate-300">{scope.name}</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-white">
+                  <span className={clsx("text-sm font-bold", scope.value === 0 ? "text-slate-400" : "text-white")}>
                     {scope.value} tCO₂e
                   </span>
                   <Badge variant="info">

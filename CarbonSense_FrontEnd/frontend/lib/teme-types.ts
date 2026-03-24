@@ -77,8 +77,8 @@ export interface TEMERunRecord {
 
 export const VALID_SPECIES = [
 	"Neem",
-	"Bamboo",
 	"Peepal",
+	"Bamboo",
 	"Banyan",
 	"Mango",
 	"Acacia",
@@ -90,10 +90,12 @@ export const VALID_SPECIES = [
 	"Moringa",
 	"Casuarina",
 	"Sheesham",
+	"Khejri",
 	"Amla",
 	"Mahua",
 	"Sal",
 	"Eucalyptus",
+	"Chir Pine",
 ] as const;
 
 export const VALID_LOCATIONS = [

@@ -1,10 +1,18 @@
 import { useState, useEffect } from 'react';
 import { EmissionEntry } from '@/lib/types';
+import {
+  fetchEmissionsForUpload,
+  updateEmissionEntry,
+  deleteEmissionEntry,
+  EmissionEntryRecord,
+} from '@/lib/emissions-api';
+import { getCurrentUserContext } from '@/lib/recommendations-api';
 
 interface UseEmissionsParams {
   startDate?: string;
   endDate?: string;
   category?: string;
+  uploadId?: string | null;
 }
 
 interface UseEmissionsReturn {
@@ -14,6 +22,8 @@ interface UseEmissionsReturn {
   error: string | null;
   refetch: () => void;
   addEmission: (emission: Omit<EmissionEntry, 'id' | 'createdAt'>) => Promise<void>;
+  updateEmission: (id: string, updates: Partial<EmissionEntry>) => Promise<void>;
+  deleteEmission: (id: string) => Promise<void>;
 }
 
 /**
@@ -26,11 +36,33 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const mapEntryRecord = (entry: EmissionEntryRecord): EmissionEntry => ({
+    id: entry.id,
+    date: entry.entry_date,
+    category: entry.category as EmissionEntry['category'],
+    activity: entry.activity,
+    amount: Number(entry.amount || 0),
+    unit: entry.unit || '',
+    co2Amount: Number(entry.co2_kg || 0),
+    createdAt: entry.created_at,
+  });
+
   const fetchEmissions = async () => {
     try {
       setIsLoading(true);
       setError(null);
+      const { organizationId } = getCurrentUserContext();
+      if (organizationId && params?.uploadId) {
+        const entries = await fetchEmissionsForUpload(organizationId, params.uploadId);
+        const mapped: EmissionEntry[] = entries.map(mapEntryRecord);
 
+        setEmissions(mapped);
+        setTotal(mapped.reduce((sum, e) => sum + e.co2Amount, 0));
+        setIsLoading(false);
+        return;
+      }
+
+>>>>>>> ee2c3e4 (Align emissions ingestion, edit, and log with platform-calculated CO₂; replace prompt-based UI with modal forms; update factor mapping and Supabase SQL; add docs and test data; production-ready for backup)
       // Use latest uploaded CSV result when available.
       const latestCsv = typeof window !== 'undefined'
         ? window.sessionStorage.getItem('latest_csv_emissions_summary')
@@ -157,9 +189,58 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
     }
   };
 
+  const updateEmission = async (id: string, updates: Partial<EmissionEntry>): Promise<void> => {
+    try {
+      setIsLoading(true);
+      const { organizationId } = getCurrentUserContext();
+      if (!organizationId) {
+        throw new Error('Missing organization context.');
+      }
+
+      const payload = {
+        entry_date: updates.date,
+        category: updates.category,
+        activity: updates.activity,
+        amount: updates.amount,
+        unit: updates.unit,
+        co2_kg: updates.co2Amount,
+      };
+
+      const response = await updateEmissionEntry(organizationId, id, payload);
+      const updated = mapEntryRecord(response.entry);
+
+      setEmissions((prev) => prev.map((entry) => (entry.id === id ? updated : entry)));
+      setTotal(response.uploadTotals.total_emissions_kg);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update emission');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteEmission = async (id: string): Promise<void> => {
+    try {
+      setIsLoading(true);
+      const { organizationId } = getCurrentUserContext();
+      if (!organizationId) {
+        throw new Error('Missing organization context.');
+      }
+
+      const response = await deleteEmissionEntry(organizationId, id);
+      setEmissions((prev) => prev.filter((entry) => entry.id !== id));
+      setTotal(response.uploadTotals.total_emissions_kg);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete emission');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchEmissions();
-  }, [params?.startDate, params?.endDate, params?.category]);
+  }, [params?.startDate, params?.endDate, params?.category, params?.uploadId]);
 
   return {
     emissions,
@@ -168,5 +249,7 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
     error,
     refetch: fetchEmissions,
     addEmission,
+    updateEmission,
+    deleteEmission,
   };
 };

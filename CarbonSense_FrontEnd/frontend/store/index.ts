@@ -4,6 +4,7 @@
  */
 
 export { useUserStore } from './useUserStore';
+export { useEmissionsDraftStore } from './useEmissionsDraftStore';
 export { usePolicyStore } from './usePolicyStore';
 export { useNotificationStore } from './useNotificationStore';
 export { useThemeStore } from './useThemeStore';

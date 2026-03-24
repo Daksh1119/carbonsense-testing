@@ -45,7 +45,7 @@ export interface GenerateRecommendationsResponse {
   recommendations: GeneratedRecommendation[];
 }
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -137,7 +137,11 @@ export async function getLatestTEMERun(userId: string): Promise<any | null> {
 export async function generateRecommendations(
   payload: GenerateRecommendationsPayload
 ): Promise<GenerateRecommendationsResponse> {
+<<<<<<< HEAD
   const endpoint = apiUrl ? `${apiUrl}/recommendations/generate` : "/api/recommendations/generate";
+=======
+  const endpoint = `${apiUrl}/recommendations/generate`;
+>>>>>>> ee2c3e4 (Align emissions ingestion, edit, and log with platform-calculated CO₂; replace prompt-based UI with modal forms; update factor mapping and Supabase SQL; add docs and test data; production-ready for backup)
 
   const res = await fetch(endpoint, {
     method: "POST",

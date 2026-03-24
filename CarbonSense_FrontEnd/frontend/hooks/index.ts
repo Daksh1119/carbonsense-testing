@@ -5,5 +5,6 @@
 
 export { useDashboardData } from './useDashboardData';
 export { useEmissions } from './useEmissions';
+export { useEmissionsUploads } from './useEmissionsUploads';
 export { usePolicies } from './usePolicies';
 export { useRecommendations } from './useRecommendations';

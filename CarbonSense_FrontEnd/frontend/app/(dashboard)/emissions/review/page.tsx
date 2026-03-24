@@ -4,58 +4,115 @@ import { useRouter } from "next/navigation";
 import DashboardCard from "@/components/DashboardCard";
 import Button from "@/components/Button";
 import { Breadcrumb, BackButton } from "@/components/navigation";
-import { showSuccessToast } from "@/lib/toast";
+import { showSuccessToast, showErrorToast } from "@/lib/toast";
+import { persistManualEntries } from "@/lib/emissions-api";
+import { getCurrentUserContext } from "@/lib/recommendations-api";
+import { useEmissionsDraftStore } from "@/store";
 import {
   TrendingUp,
   CheckCircle,
   Truck,
   Zap,
   Trash2,
+  ShoppingCart,
   Edit2,
   Leaf,
 } from "lucide-react";
 
 export default function ReviewPage() {
   const router = useRouter();
+  const { entries, clearAll } = useEmissionsDraftStore();
 
-  // Mock data - in real app, this would come from state management or API
   const activities = [
-    {
+    entries.transport && {
       category: "Transport",
       icon: Truck,
-      type: "Business Travel (Road)",
-      detail: "150 KM • Diesel",
-      date: "March 5, 2026",
-      emissions: 18.60,
+      type: entries.transport.activityType,
+      detail: entries.transport.detail,
+      date: entries.transport.date,
+      emissions: entries.transport.estimatedCo2Kg,
       color: "text-blue-400",
     },
-    {
+    entries.energy && {
       category: "Energy",
       icon: Zap,
-      type: "Grid Electricity",
-      detail: "450 kWh • Mixed Grid",
-      date: "February 2026",
-      emissions: 104.85,
+      type: entries.energy.activityType,
+      detail: entries.energy.detail,
+      date: entries.energy.date,
+      emissions: entries.energy.estimatedCo2Kg,
       color: "text-yellow-400",
     },
-    {
+    entries.waste && {
       category: "Waste",
       icon: Trash2,
-      type: "General Waste",
-      detail: "75 KG • Landfill",
-      date: "March 1, 2026",
-      emissions: 43.80,
+      type: entries.waste.activityType,
+      detail: entries.waste.detail,
+      date: entries.waste.date,
+      emissions: entries.waste.estimatedCo2Kg,
       color: "text-green-400",
     },
-  ];
+    entries.purchases && {
+      category: "Purchases",
+      icon: ShoppingCart,
+      type: entries.purchases.activityType,
+      detail: entries.purchases.detail,
+      date: entries.purchases.date,
+      emissions: entries.purchases.estimatedCo2Kg,
+      color: "text-primary",
+    },
+  ].filter(Boolean) as Array<{
+    category: string;
+    icon: typeof Truck;
+    type: string;
+    detail: string;
+    date: string;
+    emissions: number;
+    color: string;
+  }>;
 
-  const totalEmissions = activities.reduce((sum, activity) => sum + activity.emissions, 0).toFixed(2);
+  const totalEmissions = activities
+    .reduce((sum, activity) => sum + activity.emissions, 0)
+    .toFixed(2);
 
-  const handleSubmit = () => {
-    showSuccessToast("All emission entries saved successfully!");
-    setTimeout(() => {
-      router.push("/detailed-log");
-    }, 1500);
+  const handleSubmit = async () => {
+    if (activities.length === 0) {
+      showErrorToast("Add at least one category before submitting.");
+      return;
+    }
+
+    const { organizationId, userId } = getCurrentUserContext();
+    if (!organizationId || !userId) {
+      showErrorToast("Missing user or organization context.");
+      return;
+    }
+
+    try {
+      const payloadEntries = Object.values(entries)
+        .filter((entry) => entry)
+        .map((entry) => ({
+          category: entry!.category,
+          activity: entry!.activityType,
+          amount: entry!.amount,
+          unit: entry!.unit,
+          entry_date: entry!.date,
+          co2_kg: entry!.estimatedCo2Kg,
+        }));
+
+      await persistManualEntries({
+        organizationId,
+        userId,
+        entries: payloadEntries,
+      });
+
+      clearAll();
+      showSuccessToast("All emission entries saved successfully!");
+      setTimeout(() => {
+        router.push("/detailed-log");
+      }, 1500);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to submit entries";
+      showErrorToast(message);
+    }
   };
 
   const handleEdit = (category: string) => {
@@ -63,6 +120,7 @@ export default function ReviewPage() {
       "Transport": "/emissions/transport",
       "Energy": "/emissions/energy",
       "Waste": "/emissions/waste",
+      "Purchases": "/emissions/purchases",
     };
     router.push(paths[category]);
   };
@@ -77,7 +135,7 @@ export default function ReviewPage() {
             <h1 className="text-3xl font-bold text-white mb-2">
               Review & Submit
             </h1>
-            <p className="text-slate-400">Step 4 of 4 - Verify your entries before submission</p>
+            <p className="text-slate-400">Final review - Verify your entries before submission</p>
           </div>
           <BackButton href="/emissions" label="Cancel" variant="ghost" />
         </div>
@@ -91,7 +149,7 @@ export default function ReviewPage() {
           <div className="flex-1 h-2 bg-primary rounded-full" />
           <div className="flex-1 h-2 bg-primary rounded-full" />
         </div>
-        <p className="text-sm text-primary font-medium mt-2 text-center">100% Complete</p>
+        <p className="text-sm text-primary font-medium mt-2 text-center">Ready to submit</p>
       </div>
 
       {/* Total Emissions Summary */}
@@ -124,6 +182,26 @@ export default function ReviewPage() {
 
       {/* Activity Review Cards */}
       <div className="space-y-4 mb-6">
+        {activities.length === 0 && (
+          <DashboardCard
+            title="No entries yet"
+            subtitle="Add any category to build your manual emissions record"
+            icon={<TrendingUp className="size-5" />}
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-slate-400">
+                You can submit a single category now and add the rest later.
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push("/emissions")}
+              >
+                Add Entry
+              </Button>
+            </div>
+          </DashboardCard>
+        )}
         {activities.map((activity, index) => (
           <DashboardCard
             key={index}
@@ -140,7 +218,13 @@ export default function ReviewPage() {
                   </div>
                   <div>
                     <p className="text-slate-400 mb-1">Date</p>
-                    <p className="text-white font-medium">{activity.date}</p>
+                    <p className="text-white font-medium">
+                      {new Date(activity.date).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </p>
                   </div>
                   <div>
                     <p className="text-slate-400 mb-1">Emissions</p>
@@ -201,9 +285,9 @@ export default function ReviewPage() {
       <div className="flex items-center justify-between mt-6">
         <Button
           variant="ghost"
-          onClick={() => router.push("/emissions/waste")}
+          onClick={() => router.push("/emissions/purchases")}
         >
-          Previous: Waste
+          Previous: Purchases
         </Button>
         <Button
           variant="primary"
