@@ -130,29 +130,31 @@ export default function DashboardPage() {
           title="Total Emissions"
           value={data.totalEmissions.toLocaleString()}
           unit="tCO₂e"
-          change="-5.2% vs last year"
-          changeType="positive"
+          change={`Latest update: ${data.latestPeriodLabel}`}
+          changeType="neutral"
           icon={<Wind className="size-6" />}
         />
         <StatsCard
           title="Reduction Achieved"
           value={`${data.reductionAchieved}%`}
-          change="-1.2% this quarter"
-          changeType="negative"
+          change="vs last upload"
+          changeType={data.reductionAchieved >= 0 ? "positive" : "negative"}
           icon={<TrendingDown className="size-6" />}
         />
         <StatsCard
           title="Time-Debt Status"
           value={data.timeDebtStatus}
           unit="Offset Maturity Window"
+          change={`Updated: ${data.latestPeriodLabel}`}
+          changeType="neutral"
           icon={<Clock className="size-6" />}
         />
         <StatsCard
           title="Policy Alerts"
           value={data.policyAlerts.toString()}
           unit="Active"
-          change="Immediate Action Required"
-          changeType="negative"
+          change={`Updated: ${data.latestPeriodLabel}`}
+          changeType="neutral"
           icon={<AlertTriangle className="size-6" />}
         />
       </div>

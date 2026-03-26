@@ -1,27 +1,108 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ColumnDef } from '@tanstack/react-table';
-import { useEmissions } from '@/hooks';
+import { useEmissions, useEmissionsUploads } from '@/hooks';
 import DataTable from '@/components/ui/DataTable';
 import { CardSkeleton, TableSkeleton, ErrorState, EmptyState } from '@/components/ui';
 import Button from '@/components/Button';
 import { Breadcrumb, BackButton } from '@/components/navigation';
-import { showSuccessToast, showErrorToast, showInfoToast } from '@/lib/toast';
+import Modal from '@/components/ui/Modal';
+import FormModal from '@/components/ui/FormModal';
+import { showSuccessToast, showErrorToast } from '@/lib/toast';
+import {
+  transportFactors,
+  energyFactors,
+  wasteFactors,
+  purchasesFactors,
+} from '@/lib/emissions-factors';
 import {
   Edit,
   Trash2,
   Eye,
   FileDown,
   Plus,
+  BarChart3,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
 export default function DetailedEmissionsLogPage() {
-  const { emissions, total, isLoading, error, refetch } = useEmissions();
+  const { uploads, isLoading: uploadsLoading, error: uploadsError, refetch: refetchUploads } = useEmissionsUploads();
+  const [selectedUploadId, setSelectedUploadId] = useState<string | null>(null);
+  const { emissions, total, isLoading, error, refetch, updateEmission, deleteEmission } = useEmissions({ uploadId: selectedUploadId });
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [viewEntryId, setViewEntryId] = useState<string | null>(null);
+  const [editEntryId, setEditEntryId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    date: '',
+    activity: '',
+    amount: '',
+    unit: '',
+    co2Amount: '',
+  });
+  const [isSaving, setIsSaving] = useState(false);
   const router = useRouter();
+
+  const factorMap = useMemo(
+    () =>
+      new Map(
+        [...transportFactors, ...energyFactors, ...wasteFactors, ...purchasesFactors].map((factor) => [
+          factor.value,
+          factor.factorKgPerUnit,
+        ])
+      ),
+    []
+  );
+
+  useEffect(() => {
+    if (!selectedUploadId && uploads.length > 0) {
+      setSelectedUploadId(uploads[0].id);
+    }
+  }, [uploads, selectedUploadId]);
+
+  const selectedUpload = uploads.find((upload) => upload.id === selectedUploadId) || null;
+  const periodLabel = selectedUpload?.period_start
+    ? new Date(selectedUpload.period_start).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    : 'Latest';
+
+  const viewEntry = useMemo(
+    () => emissions.find((entry) => entry.id === viewEntryId) || null,
+    [emissions, viewEntryId]
+  );
+
+  const editEntry = useMemo(
+    () => emissions.find((entry) => entry.id === editEntryId) || null,
+    [emissions, editEntryId]
+  );
+
+  const computedEditCo2 = useMemo(() => {
+    const activityKey = editForm.activity.trim().toLowerCase();
+    const factor = factorMap.get(activityKey);
+    if (!factor) return 0;
+    const amount = Number(editForm.amount || 0);
+    if (Number.isNaN(amount)) return 0;
+    return Number((amount * factor).toFixed(2));
+  }, [editForm.activity, editForm.amount, factorMap]);
+
+  useEffect(() => {
+    if (!editEntry) return;
+    setEditForm({
+      date: editEntry.date,
+      activity: editEntry.activity,
+      amount: String(editEntry.amount),
+      unit: editEntry.unit,
+      co2Amount: String(editEntry.co2Amount),
+    });
+  }, [editEntry]);
+
+  const getSourceBadge = (sourceType?: string) => {
+    const type = String(sourceType || '').toLowerCase();
+    if (type === 'manual') {
+      return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+    }
+    return 'bg-slate-500/20 text-slate-300 border-slate-500/30';
+  };
 
   // Filter data by category
   const filteredData = selectedCategory === 'all' 
@@ -107,16 +188,17 @@ export default function DetailedEmissionsLogPage() {
         return (
           <div className="flex items-center gap-2">
             <button
-              onClick={() => showInfoToast(`Viewing details for ${row.activity}`)}
+              onClick={() => {
+                setViewEntryId(row.id);
+              }}
               className="p-1 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-400/10 rounded transition-colors"
               title="View"
             >
               <Eye className="w-4 h-4" />
             </button>
             <button
-              onClick={() => {
-                showInfoToast('Opening edit form...');
-                // In real app, would navigate to /emissions/edit/[id]
+              onClick={async () => {
+                setEditEntryId(row.id);
               }}
               className="p-1 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-400/10 rounded transition-colors"
               title="Edit"
@@ -124,7 +206,17 @@ export default function DetailedEmissionsLogPage() {
               <Edit className="w-4 h-4" />
             </button>
             <button
-              onClick={() => showErrorToast(`Delete "${row.activity}"? This action cannot be undone.`)}
+              onClick={async () => {
+                const confirmed = window.confirm(`Delete "${row.activity}"? This action cannot be undone.`);
+                if (!confirmed) return;
+
+                try {
+                  await deleteEmission(row.id);
+                  showSuccessToast('Entry deleted successfully.');
+                } catch (err) {
+                  showErrorToast(err instanceof Error ? err.message : 'Failed to delete entry.');
+                }
+              }}
               className="p-1 text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-400/10 rounded transition-colors"
               title="Delete"
             >
@@ -140,8 +232,11 @@ export default function DetailedEmissionsLogPage() {
     showSuccessToast('Emissions log exported successfully!');
   };
 
+  const combinedError = error || uploadsError;
+  const combinedLoading = isLoading || uploadsLoading;
+
   // Show error state
-  if (error && !isLoading) {
+  if (combinedError && !combinedLoading) {
     return (
       <div className="space-y-6">
         <div className="space-y-4">
@@ -160,15 +255,18 @@ export default function DetailedEmissionsLogPage() {
         </div>
         <ErrorState
           title="Failed to load emissions"
-          message={error}
-          onRetry={refetch}
+          message={combinedError}
+          onRetry={() => {
+            refetch();
+            refetchUploads();
+          }}
         />
       </div>
     );
   }
 
   // Show loading state
-  if (isLoading) {
+  if (combinedLoading) {
     return (
       <div className="space-y-6">
         <CardSkeleton />
@@ -178,7 +276,7 @@ export default function DetailedEmissionsLogPage() {
   }
 
   // Show empty state
-  if (!emissions || emissions.length === 0) {
+  if ((!emissions || emissions.length === 0) && uploads.length === 0) {
     return (
       <div className="space-y-6">
         <div className="space-y-4">
@@ -205,8 +303,8 @@ export default function DetailedEmissionsLogPage() {
           </div>
         </div>
         <EmptyState
-          title="No emissions recorded"
-          message="Start by adding your first carbon activity to track your environmental impact."
+          title="No uploads recorded"
+          message="Upload your first monthly emissions file to view the detailed log."
           actionLabel="Log First Activity"
           onAction={() => router.push('/emissions')}
         />
@@ -226,7 +324,8 @@ export default function DetailedEmissionsLogPage() {
             Detailed Emissions Log
           </h1>
           <p className="text-slate-600 dark:text-slate-400 mt-1">
-            Audit-ready granular activity tracking • Total: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{total.toFixed(2)} kg CO₂e</span>
+            Audit-ready granular activity tracking • Period: {periodLabel} • Total:{' '}
+            <span className="font-semibold text-emerald-600 dark:text-emerald-400">{total.toFixed(2)} kg CO₂e</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -238,6 +337,89 @@ export default function DetailedEmissionsLogPage() {
             <Plus className="w-4 h-4" />
             Log New Activity
           </button>
+        </div>
+      </div>
+
+      {/* Uploads List */}
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Uploads</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Select a monthly upload to view details</p>
+          </div>
+          {selectedUpload && (
+            <div className="flex items-center gap-2">
+              <span
+                className={clsx(
+                  'px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border',
+                  getSourceBadge(selectedUpload.source_type)
+                )}
+              >
+                {selectedUpload.source_type || 'CSV'}
+              </span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {new Date(selectedUpload.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {uploads.map((upload) => {
+            const isActive = upload.id === selectedUploadId;
+            const uploadDate = new Date(upload.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            return (
+              <div
+                key={upload.id}
+                className={clsx(
+                  'px-3 py-2 rounded-lg text-left border transition-all min-w-[180px]',
+                  isActive
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-md'
+                    : 'bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500'
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedUploadId(upload.id)}
+                    className="text-left"
+                  >
+                    <span className="block text-sm font-semibold">{uploadDate}</span>
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={clsx(
+                        'px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border',
+                        getSourceBadge(upload.source_type),
+                        isActive ? 'border-transparent' : ''
+                      )}
+                    >
+                      {upload.source_type || 'CSV'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/analytics?uploadId=${upload.id}`)}
+                      className={clsx(
+                        'p-1 rounded-md border text-xs transition-colors',
+                        isActive
+                          ? 'border-white/30 text-white hover:bg-white/10'
+                          : 'border-slate-300/60 text-slate-500 hover:border-emerald-500 hover:text-emerald-500 dark:border-slate-600 dark:text-slate-400 dark:hover:border-emerald-400 dark:hover:text-emerald-400'
+                      )}
+                      title="View analytics"
+                    >
+                      <BarChart3 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedUploadId(upload.id)}
+                  className={clsx('text-xs truncate text-left w-full', isActive ? 'text-white/80' : 'text-slate-500 dark:text-slate-400')}
+                >
+                  {upload.original_file_name}
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -297,6 +479,139 @@ export default function DetailedEmissionsLogPage() {
           </div>
         </div>
       </div>
+
+      {/* View Entry Modal */}
+      <Modal
+        isOpen={Boolean(viewEntry)}
+        onClose={() => setViewEntryId(null)}
+        title="Emission Entry Details"
+        description="Review the recorded emissions entry."
+        size="md"
+      >
+        {viewEntry && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="bg-slate-900/60 border border-slate-700 rounded-lg p-3">
+                <p className="text-xs text-slate-400">Date</p>
+                <p className="text-sm text-slate-100 font-medium">
+                  {new Date(viewEntry.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </p>
+              </div>
+              <div className="bg-slate-900/60 border border-slate-700 rounded-lg p-3">
+                <p className="text-xs text-slate-400">Category</p>
+                <p className="text-sm text-slate-100 font-medium capitalize">{viewEntry.category}</p>
+              </div>
+              <div className="bg-slate-900/60 border border-slate-700 rounded-lg p-3 sm:col-span-2">
+                <p className="text-xs text-slate-400">Activity</p>
+                <p className="text-sm text-slate-100 font-medium">{viewEntry.activity}</p>
+              </div>
+              <div className="bg-slate-900/60 border border-slate-700 rounded-lg p-3">
+                <p className="text-xs text-slate-400">Amount</p>
+                <p className="text-sm text-slate-100 font-medium">{viewEntry.amount} {viewEntry.unit}</p>
+              </div>
+              <div className="bg-slate-900/60 border border-slate-700 rounded-lg p-3">
+                <p className="text-xs text-slate-400">CO₂ Impact</p>
+                <p className="text-sm text-emerald-400 font-semibold">{viewEntry.co2Amount.toFixed(2)} kg CO₂e</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Edit Entry Modal */}
+      <FormModal
+        isOpen={Boolean(editEntry)}
+        onClose={() => setEditEntryId(null)}
+        title="Edit Emissions Entry"
+        description="Update editable values and save changes."
+        submitLabel="Save Changes"
+        cancelLabel="Cancel"
+        isSubmitting={isSaving}
+        isValid={Boolean(editForm.activity.trim())}
+        onSubmit={async () => {
+          if (!editEntry) return;
+          const nextAmount = Number(editForm.amount);
+          if (Number.isNaN(nextAmount)) {
+            showErrorToast('Amount must be a valid number.');
+            return;
+          }
+
+          setIsSaving(true);
+          try {
+            await updateEmission(editEntry.id, {
+              date: editForm.date,
+              activity: editForm.activity.trim(),
+              amount: nextAmount,
+              unit: editForm.unit,
+              co2Amount: computedEditCo2,
+            });
+            showSuccessToast('Entry updated successfully.');
+            setEditEntryId(null);
+          } catch (err) {
+            showErrorToast(err instanceof Error ? err.message : 'Failed to update entry.');
+          } finally {
+            setIsSaving(false);
+          }
+        }}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <label className="space-y-1 text-sm text-slate-300">
+            Date
+            <input
+              type="date"
+              value={editForm.date}
+              onChange={(event) => setEditForm((prev) => ({ ...prev, date: event.target.value }))}
+              className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
+            />
+          </label>
+          <label className="space-y-1 text-sm text-slate-300">
+            Category
+            <input
+              type="text"
+              value={editEntry?.category ? editEntry.category.charAt(0).toUpperCase() + editEntry.category.slice(1) : ''}
+              disabled={true}
+              className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-400"
+            />
+          </label>
+          <label className="space-y-1 text-sm text-slate-300 sm:col-span-2">
+            Activity
+            <input
+              type="text"
+              value={editForm.activity}
+              onChange={(event) => setEditForm((prev) => ({ ...prev, activity: event.target.value }))}
+              className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
+              placeholder="Activity description"
+            />
+          </label>
+          <label className="space-y-1 text-sm text-slate-300">
+            Amount
+            <input
+              type="number"
+              value={editForm.amount}
+              onChange={(event) => setEditForm((prev) => ({ ...prev, amount: event.target.value }))}
+              className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
+            />
+          </label>
+          <label className="space-y-1 text-sm text-slate-300">
+            Unit
+            <input
+              type="text"
+              value={editForm.unit}
+              onChange={(event) => setEditForm((prev) => ({ ...prev, unit: event.target.value }))}
+              className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
+            />
+          </label>
+          <label className="space-y-1 text-sm text-slate-300 sm:col-span-2">
+            CO₂ Impact (kg)
+            <input
+              type="number"
+              value={computedEditCo2}
+              disabled={true}
+              className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-400"
+            />
+          </label>
+        </div>
+      </FormModal>
     </div>
   );
 }

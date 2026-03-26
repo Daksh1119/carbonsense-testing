@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import DashboardCard from "@/components/DashboardCard";
 import Button from "@/components/Button";
 import { Breadcrumb, BackButton } from "@/components/navigation";
-import { showSuccessToast, showErrorToast } from "@/lib/toast";
+import { showSuccessToast } from "@/lib/toast";
+import { transportFactors, getFactorOption } from "@/lib/emissions-factors";
+import { useEmissionsDraftStore } from "@/store";
 import {
   Truck,
   ArrowRight,
@@ -15,22 +17,44 @@ import {
 
 export default function TransportPage() {
   const router = useRouter();
+  const { setEntry, entries } = useEmissionsDraftStore();
 
-  const [activityType, setActivityType] = useState("Business Travel (Road)");
-  const [fuelType, setFuelType] = useState("Diesel (Avg Biofuel Blend)");
-  const [distance, setDistance] = useState("");
-  const [date, setDate] = useState("");
+  const defaultOption = entries.transport?.activityType
+    ? transportFactors.find((option) => option.label === entries.transport?.activityType)?.value || transportFactors[0].value
+    : transportFactors[0].value;
 
-  const estimatedImpact = distance ? (parseFloat(distance) * 0.124).toFixed(2) : "0.00";
+  const [activityType, setActivityType] = useState(defaultOption);
+  const [fuelType, setFuelType] = useState(entries.transport?.meta?.fuelType || "Diesel (Avg Biofuel Blend)");
+  const [distance, setDistance] = useState(entries.transport?.amount?.toString() || "");
+  const [date, setDate] = useState(entries.transport?.date || "");
+
+  const option = getFactorOption(transportFactors, activityType);
+  const distanceValue = Number(distance || 0);
+
+  const estimatedImpact = distanceValue > 0
+    ? (distanceValue * option.factorKgPerUnit).toFixed(2)
+    : "0.00";
   const trend = "+4.2%";
 
   const handleNext = () => {
-    if (!distance || !date) {
-      showErrorToast("Please fill in all required fields");
-      return;
+    if (distance && date) {
+      setEntry("transport", {
+        category: "transport",
+        activityType: option.label,
+        detail: `${distanceValue.toLocaleString()} ${option.unit} • ${fuelType}`,
+        amount: distanceValue,
+        unit: option.unit,
+        date,
+        estimatedCo2Kg: Number(estimatedImpact),
+        meta: {
+          fuelType,
+          activity_key: option.value,
+        },
+      });
+
+      showSuccessToast("Transport data saved!");
     }
 
-    showSuccessToast("Transport data saved!");
     router.push("/emissions/energy");
   };
 
@@ -68,28 +92,31 @@ export default function TransportPage() {
         icon={<Truck className="size-5" />}
       >
         <div className="space-y-6">
+          <p className="text-xs text-slate-500">
+            Optional fields — add what you have now, or skip and return later.
+          </p>
           {/* Activity Type & Fuel Type */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Activity Type <span className="text-red-400">*</span>
+                Activity Type
               </label>
               <select
                 value={activityType}
                 onChange={(e) => setActivityType(e.target.value)}
                 className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                <option>Business Travel (Road)</option>
-                <option>Business Travel (Air)</option>
-                <option>Employee Commute</option>
-                <option>Freight Transport</option>
-                <option>Company Fleet</option>
+                {transportFactors.map((factor) => (
+                  <option key={factor.value} value={factor.value}>
+                    {factor.label}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Fuel Type <span className="text-red-400">*</span>
+                Fuel Type
               </label>
               <select
                 value={fuelType}
@@ -110,7 +137,7 @@ export default function TransportPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Distance / Quantity <span className="text-red-400">*</span>
+                Distance / Quantity
               </label>
               <div className="relative">
                 <input
@@ -121,14 +148,14 @@ export default function TransportPage() {
                   placeholder="0.00"
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">
-                  KM
+                  {option.unit}
                 </span>
               </div>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Date of Activity <span className="text-red-400">*</span>
+                Date of Activity
               </label>
               <input
                 type="date"
@@ -188,13 +215,21 @@ export default function TransportPage() {
         >
           Back to Categories
         </Button>
-        <Button
-          variant="primary"
-          icon={<ArrowRight className="size-4" />}
-          onClick={handleNext}
-        >
-          Next: Energy
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            onClick={() => router.push("/emissions/review")}
+          >
+            Review Now
+          </Button>
+          <Button
+            variant="primary"
+            icon={<ArrowRight className="size-4" />}
+            onClick={handleNext}
+          >
+            Next: Energy
+          </Button>
+        </div>
       </div>
     </div>
   );

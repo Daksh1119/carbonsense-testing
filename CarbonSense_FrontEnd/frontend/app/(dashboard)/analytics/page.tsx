@@ -7,6 +7,8 @@ import StatsCard from "@/components/StatsCard";
 import Badge from "@/components/Badge";
 import Button from "@/components/Button";
 import { Breadcrumb, BackButton } from "@/components/navigation";
+import { useEmissions, useEmissionsUploads } from "@/hooks";
+import { clsx } from "clsx";
 import {
   BarChart3,
   TrendingDown,
@@ -55,6 +57,14 @@ const defaultScopeData = [
   { name: "Scope 3", value: 410 },
 ];
 
+const CATEGORY_TO_SCOPE: Record<string, string> = {
+  transport: "Scope 3",
+  energy: "Scope 2",
+  food: "Scope 3",
+  waste: "Scope 3",
+  purchases: "Scope 3",
+};
+
 type CsvSummary = {
   totals?: {
     total_kg_co2e?: number;
@@ -71,7 +81,11 @@ type CsvSummary = {
 
 export default function AnalyticsPage() {
   const router = useRouter();
+  const { uploads, isLoading: uploadsLoading } = useEmissionsUploads();
+  const [selectedUploadId, setSelectedUploadId] = useState<string | null>(null);
+  const { emissions } = useEmissions({ uploadId: selectedUploadId });
   const [csvSummary, setCsvSummary] = useState<CsvSummary | null>(null);
+  const [requestedUploadId, setRequestedUploadId] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -82,10 +96,67 @@ export default function AnalyticsPage() {
     } catch {
       setCsvSummary(null);
     }
+
+    const uploadId = new URLSearchParams(window.location.search).get("uploadId");
+    setRequestedUploadId(uploadId);
   }, []);
 
+  useEffect(() => {
+    if (uploads.length === 0) return;
+    if (requestedUploadId && uploads.some((upload) => upload.id === requestedUploadId)) {
+      setSelectedUploadId(requestedUploadId);
+      return;
+    }
+    if (!selectedUploadId) {
+      setSelectedUploadId(uploads[0].id);
+    }
+  }, [uploads, requestedUploadId, selectedUploadId]);
+
+  const selectedUpload = uploads.find((upload) => upload.id === selectedUploadId) || null;
+
+  const getSourceBadge = (sourceType?: string) => {
+    const type = String(sourceType || "").toLowerCase();
+    if (type === "manual") {
+      return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+    }
+    return "bg-slate-500/20 text-slate-300 border-slate-500/30";
+  };
+
+  const derivedSummary = useMemo<CsvSummary | null>(() => {
+    if (!selectedUploadId || emissions.length === 0) return null;
+
+    const totalsKg = emissions.reduce((sum, entry) => sum + entry.co2Amount, 0);
+    const byCategory: Record<string, number> = {};
+    const byScope: Record<string, number> = {};
+    const computedRows = emissions.map((entry) => {
+      const category = String(entry.category || "purchases").toLowerCase();
+      byCategory[category] = (byCategory[category] || 0) + entry.co2Amount;
+
+      const scopeKey = CATEGORY_TO_SCOPE[category] || "Scope 3";
+      byScope[scopeKey] = (byScope[scopeKey] || 0) + entry.co2Amount;
+
+      return {
+        date: entry.date,
+        emissions_kg_co2e: entry.co2Amount,
+      };
+    });
+
+    return {
+      totals: {
+        total_kg_co2e: totalsKg,
+      },
+      breakdown: {
+        by_category_kg_co2e: byCategory,
+        by_scope_kg_co2e: byScope,
+      },
+      computed_rows: computedRows,
+    };
+  }, [selectedUploadId, emissions]);
+
+  const activeSummary = derivedSummary || csvSummary;
+
   const categoryData = useMemo(() => {
-    const byCategory = csvSummary?.breakdown?.by_category_kg_co2e;
+    const byCategory = activeSummary?.breakdown?.by_category_kg_co2e;
     if (!byCategory || Object.keys(byCategory).length === 0) {
       return defaultCategoryData;
     }
@@ -96,21 +167,29 @@ export default function AnalyticsPage() {
       value: Math.round(Number(value)),
       percentage: Math.round((Number(value) / total) * 100),
     }));
-  }, [csvSummary]);
+  }, [activeSummary]);
 
   const scopeData = useMemo(() => {
-    const byScope = csvSummary?.breakdown?.by_scope_kg_co2e;
+    const byScope = activeSummary?.breakdown?.by_scope_kg_co2e;
     if (!byScope || Object.keys(byScope).length === 0) {
       return defaultScopeData;
     }
-    return Object.entries(byScope).map(([name, value]) => ({
+
+    const normalized = {
+      "Scope 1": 0,
+      "Scope 2": 0,
+      "Scope 3": 0,
+      ...byScope,
+    } as Record<string, number>;
+
+    return ["Scope 1", "Scope 2", "Scope 3"].map((name) => ({
       name,
-      value: Math.round(Number(value)),
+      value: Math.round(Number(normalized[name] || 0)),
     }));
-  }, [csvSummary]);
+  }, [activeSummary]);
 
   const monthlyTrend = useMemo(() => {
-    const rows = csvSummary?.computed_rows;
+    const rows = activeSummary?.computed_rows;
     if (!rows || rows.length === 0) {
       return defaultMonthlyTrend;
     }
@@ -129,9 +208,9 @@ export default function AnalyticsPage() {
     }));
 
     return series.length > 0 ? series : defaultMonthlyTrend;
-  }, [csvSummary]);
+  }, [activeSummary]);
 
-  const totalKg = Math.round(csvSummary?.totals?.total_kg_co2e || 1240);
+  const totalKg = Math.round(activeSummary?.totals?.total_kg_co2e || 1240);
   const monthlyAvgKg = Math.round(totalKg / Math.max(monthlyTrend.length, 1));
   const topCategory = categoryData.reduce((prev, curr) => (curr.value > prev.value ? curr : prev), categoryData[0]);
   const highestMonth = monthlyTrend.reduce((prev, curr) => (curr.emissions > prev.emissions ? curr : prev), monthlyTrend[0]);
@@ -164,6 +243,80 @@ export default function AnalyticsPage() {
             View Recommendations
           </Button>
           <BackButton href="/dashboard" label="Back to Dashboard" variant="outline" />
+        </div>
+      </div>
+
+      {/* Uploads List */}
+      <div className="glass-card rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Uploads</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Select a monthly upload to view analytics</p>
+          </div>
+          {selectedUpload && (
+            <div className="flex items-center gap-2">
+              <span
+                className={clsx(
+                  "px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border",
+                  getSourceBadge(selectedUpload.source_type)
+                )}
+              >
+                {selectedUpload.source_type || "CSV"}
+              </span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {new Date(selectedUpload.created_at).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {uploads.length === 0 && !uploadsLoading ? (
+            <div className="text-sm text-slate-500 dark:text-slate-400">
+              No uploads yet. Analytics will appear after the first upload.
+            </div>
+          ) : (
+            uploads.map((upload) => {
+              const isActive = upload.id === selectedUploadId;
+              const uploadDate = new Date(upload.created_at).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              });
+              return (
+                <button
+                  type="button"
+                  key={upload.id}
+                  onClick={() => setSelectedUploadId(upload.id)}
+                  className={clsx(
+                    "px-3 py-2 rounded-lg text-left border transition-all min-w-[180px]",
+                    isActive
+                      ? "bg-emerald-600 text-white border-emerald-600 shadow-md"
+                      : "bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500"
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold">{uploadDate}</span>
+                    <span
+                      className={clsx(
+                        "px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border",
+                        getSourceBadge(upload.source_type),
+                        isActive ? "border-transparent" : ""
+                      )}
+                    >
+                      {upload.source_type || "CSV"}
+                    </span>
+                  </div>
+                  <span className={clsx("text-xs truncate text-left block", isActive ? "text-white/80" : "text-slate-500 dark:text-slate-400")}>
+                    {upload.original_file_name}
+                  </span>
+                </button>
+              );
+            })
+          )}
         </div>
       </div>
 

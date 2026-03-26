@@ -21,28 +21,44 @@ interface NewProjectModalProps {
 const timeHorizons: Array<5 | 10 | 15 | 20 | 25 | 30> = [5, 10, 15, 20, 25, 30];
 
 export default function NewProjectModal({ onSuccess, onClose }: NewProjectModalProps) {
+	const toNumber = (value: string, fallback: number) => {
+		if (value.trim() === "") return fallback;
+		const parsed = Number(value);
+		return Number.isNaN(parsed) ? fallback : parsed;
+	};
+
 	const [projectName, setProjectName] = useState("");
 	const [location, setLocation] = useState<string>(VALID_LOCATIONS[0]);
 	const [projectGoal, setProjectGoal] = useState<string>("");
-	const [emissionKg, setEmissionKg] = useState<number>(1000);
-	const [startYear, setStartYear] = useState<number>(new Date().getFullYear());
+	const [emissionKgInput, setEmissionKgInput] = useState<string>("1000");
+	const [startYearInput, setStartYearInput] = useState<string>(String(new Date().getFullYear()));
 
-	const [landArea, setLandArea] = useState<number>(1);
+	const [landAreaInput, setLandAreaInput] = useState<string>("1");
 	const [timeHorizon, setTimeHorizon] = useState<5 | 10 | 15 | 20 | 25 | 30>(15);
 
 	const [preferredSpecies, setPreferredSpecies] = useState<string[]>([]);
 	const [excludeSpecies, setExcludeSpecies] = useState<string[]>([]);
+	const [preferredSelection, setPreferredSelection] = useState<string>(VALID_SPECIES[0]);
+	const [excludedSelection, setExcludedSelection] = useState<string>(VALID_SPECIES[0]);
 	const [enableMonteCarlo, setEnableMonteCarlo] = useState(true);
-	const [monteCarloTrials, setMonteCarloTrials] = useState<number>(300);
+	const [monteCarloTrialsInput, setMonteCarloTrialsInput] = useState<string>("300");
 
 	const [showActivityBreakdown, setShowActivityBreakdown] = useState(false);
-	const [activityBreakdown, setActivityBreakdown] = useState({
-		transport: 0,
-		food: 0,
-		energy: 0,
-		shopping: 0,
-		other: 0,
+	const [activityBreakdownInput, setActivityBreakdownInput] = useState<Record<string, string>>({
+		transport: "",
+		food: "",
+		energy: "",
+		shopping: "",
+		other: "",
 	});
+
+	const activityBreakdown = useMemo(() => ({
+		transport: toNumber(activityBreakdownInput.transport, 0),
+		food: toNumber(activityBreakdownInput.food, 0),
+		energy: toNumber(activityBreakdownInput.energy, 0),
+		shopping: toNumber(activityBreakdownInput.shopping, 0),
+		other: toNumber(activityBreakdownInput.other, 0),
+	}), [activityBreakdownInput]);
 
 	const { totalEmissionKg } = useAutoEmissions(activityBreakdown);
 
@@ -51,29 +67,29 @@ export default function NewProjectModal({ onSuccess, onClose }: NewProjectModalP
 
 	const speciesPool = useMemo(() => [...VALID_SPECIES], []);
 
-	const togglePreferred = (species: string) => {
+	const addPreferred = () => {
+		if (!preferredSelection) return;
 		setPreferredSpecies((prev) => {
-			const next = prev.includes(species)
-				? prev.filter((s) => s !== species)
-				: [...prev, species];
-			if (!prev.includes(species)) {
-				setExcludeSpecies((list) => list.filter((s) => s !== species));
-			}
-			return next;
+			if (prev.includes(preferredSelection)) return prev;
+			return [...prev, preferredSelection];
 		});
+		setExcludeSpecies((list) => list.filter((s) => s !== preferredSelection));
 	};
 
-	const toggleExcluded = (species: string) => {
+	const addExcluded = () => {
+		if (!excludedSelection) return;
 		setExcludeSpecies((prev) => {
-			const next = prev.includes(species)
-				? prev.filter((s) => s !== species)
-				: [...prev, species];
-			if (!prev.includes(species)) {
-				setPreferredSpecies((list) => list.filter((s) => s !== species));
-			}
-			return next;
+			if (prev.includes(excludedSelection)) return prev;
+			return [...prev, excludedSelection];
 		});
+		setPreferredSpecies((list) => list.filter((s) => s !== excludedSelection));
 	};
+
+	const removePreferred = (species: string) =>
+		setPreferredSpecies((prev) => prev.filter((item) => item !== species));
+
+	const removeExcluded = (species: string) =>
+		setExcludeSpecies((prev) => prev.filter((item) => item !== species));
 
 	const handleSubmit = async (e: FormEvent) => {
 		e.preventDefault();
@@ -87,19 +103,19 @@ export default function NewProjectModal({ onSuccess, onClose }: NewProjectModalP
 		const payload: TEMERequest = {
 			project_name: projectName.trim(),
 			location,
-			emission_kg: Number(emissionKg),
-			start_year: Number(startYear),
+			emission_kg: toNumber(emissionKgInput, 1),
+			start_year: toNumber(startYearInput, new Date().getFullYear()),
 			project_goal: projectGoal || undefined,
 			activity_breakdown: showActivityBreakdown ? activityBreakdown : undefined,
 			constraints: {
-				max_land_area_hectare: Number(landArea),
+				max_land_area_hectare: toNumber(landAreaInput, 0.01),
 				time_horizon_years: timeHorizon,
 				preferred_species: preferredSpecies,
 				exclude_species: excludeSpecies,
 			},
 			ml_config: {
 				enable_monte_carlo: enableMonteCarlo,
-				monte_carlo_trials: Number(monteCarloTrials),
+				monte_carlo_trials: toNumber(monteCarloTrialsInput, 300),
 			},
 		};
 
@@ -211,8 +227,8 @@ export default function NewProjectModal({ onSuccess, onClose }: NewProjectModalP
 								<input
 									type="number"
 									min={1}
-									value={emissionKg}
-									onChange={(e) => setEmissionKg(Number(e.target.value))}
+									value={emissionKgInput}
+									onChange={(e) => setEmissionKgInput(e.target.value)}
 									className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
 								/>
 							</div>
@@ -220,8 +236,8 @@ export default function NewProjectModal({ onSuccess, onClose }: NewProjectModalP
 								<label className="mb-1 block text-xs text-slate-400">Start Year</label>
 								<input
 									type="number"
-									value={startYear}
-									onChange={(e) => setStartYear(Number(e.target.value))}
+									value={startYearInput}
+									onChange={(e) => setStartYearInput(e.target.value)}
 									className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
 								/>
 							</div>
@@ -249,11 +265,11 @@ export default function NewProjectModal({ onSuccess, onClose }: NewProjectModalP
 											<input
 												type="number"
 												min={0}
-												value={value}
+												value={activityBreakdownInput[key]}
 												onChange={(e) =>
-													setActivityBreakdown((prev) => ({
+													setActivityBreakdownInput((prev) => ({
 														...prev,
-														[key]: Number(e.target.value),
+														[key]: e.target.value,
 													}))
 												}
 												className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-sm text-white"
@@ -268,7 +284,7 @@ export default function NewProjectModal({ onSuccess, onClose }: NewProjectModalP
 										<span className="font-semibold text-white">{totalEmissionKg} kg CO2e</span>
 										<button
 											type="button"
-											onClick={() => setEmissionKg(totalEmissionKg)}
+											onClick={() => setEmissionKgInput(String(totalEmissionKg))}
 											className="rounded-md bg-primary px-2 py-1 text-slate-950"
 										>
 											Use this total
@@ -290,16 +306,16 @@ export default function NewProjectModal({ onSuccess, onClose }: NewProjectModalP
 									min={0.01}
 									max={50}
 									step={0.01}
-									value={landArea}
-									onChange={(e) => setLandArea(Number(e.target.value))}
+									value={toNumber(landAreaInput, 0.01)}
+									onChange={(e) => setLandAreaInput(e.target.value)}
 									className="w-full"
 								/>
 								<input
 									type="number"
 									min={0.01}
 									step={0.01}
-									value={landArea}
-									onChange={(e) => setLandArea(Number(e.target.value))}
+									value={landAreaInput}
+									onChange={(e) => setLandAreaInput(e.target.value)}
 									className="w-28 rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-sm text-white"
 								/>
 							</div>
@@ -328,40 +344,94 @@ export default function NewProjectModal({ onSuccess, onClose }: NewProjectModalP
 						<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
 							<div>
 								<label className="mb-2 block text-xs text-slate-400">Preferred species</label>
-								<div className="flex flex-wrap gap-2">
-									{speciesPool.map((species) => (
-										<button
-											type="button"
+								<div className="flex items-center gap-2">
+									<select
+										value={preferredSelection}
+										onChange={(e) => setPreferredSelection(e.target.value)}
+										className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white"
+									>
+										{speciesPool.map((species) => (
+											<option key={species} value={species}>
+												{species}
+											</option>
+										))}
+									</select>
+									<button
+										type="button"
+										onClick={addPreferred}
+										className="rounded-lg border border-emerald-500/60 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-300"
+									>
+										Add
+									</button>
+								</div>
+								<div className="mt-3 flex flex-wrap gap-2">
+									{preferredSpecies.length === 0 && (
+										<span className="text-xs text-slate-500">No preferred species selected</span>
+									)}
+									{preferredSpecies.map((species) => (
+										<span
 											key={species}
-											onClick={() => togglePreferred(species)}
-											className={`rounded-full border px-3 py-1 text-xs ${
-												preferredSpecies.includes(species)
-													? "border-emerald-400 bg-emerald-400/20 text-emerald-300"
-													: "border-slate-700 bg-slate-900 text-slate-300"
-											}`}
+											title={species}
+											className="inline-flex items-center gap-1 rounded-full border border-emerald-400 bg-emerald-400/20 px-3 py-1 text-xs text-emerald-300"
 										>
 											{species}
-										</button>
+											<button
+												type="button"
+												onClick={() => removePreferred(species)}
+												className="rounded-full p-0.5 text-emerald-200 hover:bg-emerald-400/30"
+												aria-label={`Remove ${species}`}
+												title={`Remove ${species}`}
+											>
+												<X className="size-3" />
+											</button>
+										</span>
 									))}
 								</div>
 							</div>
 
 							<div>
 								<label className="mb-2 block text-xs text-slate-400">Excluded species</label>
-								<div className="flex flex-wrap gap-2">
-									{speciesPool.map((species) => (
-										<button
-											type="button"
+								<div className="flex items-center gap-2">
+									<select
+										value={excludedSelection}
+										onChange={(e) => setExcludedSelection(e.target.value)}
+										className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white"
+									>
+										{speciesPool.map((species) => (
+											<option key={species} value={species}>
+												{species}
+											</option>
+										))}
+									</select>
+									<button
+										type="button"
+										onClick={addExcluded}
+										className="rounded-lg border border-rose-500/60 bg-rose-500/15 px-3 py-2 text-xs font-semibold text-rose-300"
+									>
+										Add
+									</button>
+								</div>
+								<div className="mt-3 flex flex-wrap gap-2">
+									{excludeSpecies.length === 0 && (
+										<span className="text-xs text-slate-500">No excluded species selected</span>
+									)}
+									{excludeSpecies.map((species) => (
+										<span
 											key={species}
-											onClick={() => toggleExcluded(species)}
-											className={`rounded-full border px-3 py-1 text-xs ${
-												excludeSpecies.includes(species)
-													? "border-rose-400 bg-rose-400/20 text-rose-300"
-													: "border-slate-700 bg-slate-900 text-slate-300"
-											}`}
+											title={species}
+											className="inline-flex items-center gap-1 rounded-full border border-rose-400 bg-rose-400/20 px-3 py-1 text-xs text-rose-300"
 										>
 											{species}
-										</button>
+											<button
+												type="button"
+												onClick={() => removeExcluded(species)}
+												className="rounded-full p-0.5 text-rose-200 hover:bg-rose-400/30"
+												aria-label={`Remove ${species}`}
+												title={`Remove ${species}`}
+											>
+												<X className="size-3" />
+											</button>
+										</span>
 									))}
 								</div>
 							</div>
@@ -396,8 +466,8 @@ export default function NewProjectModal({ onSuccess, onClose }: NewProjectModalP
 								min={50}
 								max={5000}
 								step={50}
-								value={monteCarloTrials}
-								onChange={(e) => setMonteCarloTrials(Number(e.target.value || 300))}
+								value={monteCarloTrialsInput}
+								onChange={(e) => setMonteCarloTrialsInput(e.target.value)}
 								disabled={!enableMonteCarlo}
 								className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-50"
 							/>

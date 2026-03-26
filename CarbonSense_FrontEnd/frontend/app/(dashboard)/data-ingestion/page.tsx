@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -8,6 +8,7 @@ import FileUpload from '@/components/ui/FileUpload';
 import { Breadcrumb, BackButton } from '@/components/navigation';
 import { showSuccessToast, showErrorToast, showInfoToast } from '@/lib/toast';
 import { calculateEmissionsFromCSV } from '@/lib/ingestion-api';
+import { persistCsvUpload } from '@/lib/emissions-api';
 import { getCurrentUserContext } from '@/lib/recommendations-api';
 import {
   Upload,
@@ -43,6 +44,12 @@ export default function DataIngestionPage() {
 
         showInfoToast('Processing emissions data...');
         const summary = await calculateEmissionsFromCSV(files[0], organizationId, userId);
+        await persistCsvUpload({
+          organizationId,
+          userId,
+          file: files[0],
+          summary,
+        });
 
         for (let i = 60; i <= 100; i += 10) {
           setUploadProgress(i);

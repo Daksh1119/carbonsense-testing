@@ -8,7 +8,7 @@ import {
   Truck,
   Zap,
   Trash2,
-  TrendingUp,
+  ShoppingCart,
   ArrowRight,
 } from "lucide-react";
 
@@ -41,13 +41,13 @@ const activityCategories = [
     examples: "Landfill, recycling, composting, incineration",
   },
   {
-    id: "review",
-    name: "Review & Submit",
-    description: "Review all entries and submit for processing",
-    icon: TrendingUp,
+    id: "purchases",
+    name: "Purchases",
+    description: "Goods, services, and supplier spend",
+    icon: ShoppingCart,
     color: "bg-primary/20 text-primary border-primary/30",
-    href: "/emissions/review",
-    examples: "Summary of all activities",
+    href: "/emissions/purchases",
+    examples: "Office supplies, vendors, travel spend",
   },
 ];
 
@@ -131,12 +131,18 @@ export default function EmissionsPage() {
       </DashboardCard>
 
       {/* Back Button */}
-      <div className="mt-6">
+      <div className="mt-6 flex items-center justify-between">
         <Button
           variant="ghost"
           onClick={() => router.push("/dashboard")}
         >
           Back to Dashboard
+        </Button>
+        <Button
+          variant="primary"
+          onClick={() => router.push("/emissions/review")}
+        >
+          Review & Submit
         </Button>
       </div>
     </div>
