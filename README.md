@@ -454,6 +454,4 @@ This repository is licensed under the MIT License.
 
 **Built with scientific rigor. No greenwashing. Reduction-first, always.**
 
-You are not just tracking carbon. You are making a difference.
-
 </div>
