@@ -128,34 +128,44 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard
           title="Total Emissions"
-          value={data.totalEmissions.toLocaleString()}
-          unit="tCO₂e"
-          change={`Latest update: ${data.latestPeriodLabel}`}
+          value={data.totalEmissionsHasData ? data.totalEmissions.toLocaleString() : "None"}
+          unit={data.totalEmissionsHasData ? "tCO₂e" : undefined}
+          change={`${data.totalEmissionsMeta} • Refreshed ${data.refreshedAtLabel}`}
           changeType="neutral"
           icon={<Wind className="size-6" />}
+          onClick={() =>
+            router.push(`/detailed-log?year=${data.totalEmissionsYear}&month=${data.totalEmissionsMonth}`)
+          }
+          actionLabel="Open detailed log for current month"
         />
         <StatsCard
           title="Reduction Achieved"
           value={`${data.reductionAchieved}%`}
-          change="vs last upload"
+          change={`${data.reductionBaselineLabel} • ${data.reductionFormula}`}
           changeType={data.reductionAchieved >= 0 ? "positive" : "negative"}
           icon={<TrendingDown className="size-6" />}
+          onClick={() => router.push('/analytics')}
+          actionLabel="Open analytics details"
         />
         <StatsCard
           title="Time-Debt Status"
-          value={data.timeDebtStatus}
-          unit="Offset Maturity Window"
-          change={`Updated: ${data.latestPeriodLabel}`}
+          value={data.timeDebtYears ?? "N/A"}
+          unit={data.timeDebtYears !== null ? "Years" : "Awaiting TEME"}
+          change={data.timeDebtMeta}
           changeType="neutral"
           icon={<Clock className="size-6" />}
+          onClick={() => router.push('/tree-engine')}
+          actionLabel="Open tree engine and time-debt model"
         />
         <StatsCard
           title="Policy Alerts"
           value={data.policyAlerts.toString()}
           unit="Active"
-          change={`Updated: ${data.latestPeriodLabel}`}
+          change={data.policyMeta}
           changeType="neutral"
           icon={<AlertTriangle className="size-6" />}
+          onClick={() => router.push('/policy-intelligence')}
+          actionLabel="Open policy intelligence"
         />
       </div>
 

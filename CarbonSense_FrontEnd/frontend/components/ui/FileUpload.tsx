@@ -60,7 +60,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
         onFilesRejected?.(fileRejections);
       }
 
-      // Handle accepted files
+      // Handle accepted files – only add to preview list if processing succeeds
       if (acceptedFiles.length > 0) {
         const filesWithPreview = acceptedFiles.map((file) =>
           Object.assign(file, {
@@ -68,8 +68,16 @@ const FileUpload: React.FC<FileUploadProps> = ({
           })
         );
 
-        setFiles((prev) => [...prev, ...filesWithPreview]);
-        await onFilesAccepted(acceptedFiles);
+        try {
+          await onFilesAccepted(acceptedFiles);
+          // Only add files to the preview list after successful processing
+          setFiles((prev) => [...prev, ...filesWithPreview]);
+        } catch {
+          // Processing failed – revoke any preview URLs and don't add to list
+          filesWithPreview.forEach((f) => {
+            if (f.preview) URL.revokeObjectURL(f.preview);
+          });
+        }
       }
     },
     [onFilesAccepted, onFilesRejected]

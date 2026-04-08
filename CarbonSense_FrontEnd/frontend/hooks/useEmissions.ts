@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { EmissionEntry } from '@/lib/types';
 import {
   fetchEmissionsForUpload,
@@ -36,6 +36,9 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const uploadId = params?.uploadId;
+  const hasUploadIdParam = Object.prototype.hasOwnProperty.call(params || {}, 'uploadId');
+
   const mapEntryRecord = (entry: EmissionEntryRecord): EmissionEntry => ({
     id: entry.id,
     date: entry.entry_date,
@@ -47,18 +50,26 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
     createdAt: entry.created_at,
   });
 
-  const fetchEmissions = async () => {
+  const fetchEmissions = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
 
       const { organizationId } = getCurrentUserContext();
-      if (organizationId && params?.uploadId) {
-        const entries = await fetchEmissionsForUpload(organizationId, params.uploadId);
+      if (organizationId && uploadId) {
+        const entries = await fetchEmissionsForUpload(organizationId, uploadId);
         const mapped: EmissionEntry[] = entries.map(mapEntryRecord);
 
         setEmissions(mapped);
         setTotal(mapped.reduce((sum, e) => sum + e.co2Amount, 0));
+        setIsLoading(false);
+        return;
+      }
+
+      // When uploadId is intentionally set to null, keep the view empty instead of loading mock rows.
+      if (hasUploadIdParam && !uploadId) {
+        setEmissions([]);
+        setTotal(0);
         setIsLoading(false);
         return;
       }
@@ -154,7 +165,7 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [uploadId, hasUploadIdParam]);
 
   const addEmission = async (
     emission: Omit<EmissionEntry, 'id' | 'createdAt'>
@@ -240,7 +251,7 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
 
   useEffect(() => {
     fetchEmissions();
-  }, [params?.startDate, params?.endDate, params?.category, params?.uploadId]);
+  }, [fetchEmissions]);
 
   return {
     emissions,

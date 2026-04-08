@@ -55,37 +55,171 @@ export default function RecommendationsPage() {
 
   const topTwoTitles = recommendations.slice(0, 2).map((r) => r.title);
 
-  const handleGenerateRoadmap = () => {
-    const lines: string[] = [];
-    lines.push("# CarbonSense Custom Roadmap");
-    lines.push("");
-    lines.push(`Generated On: ${new Date().toISOString()}`);
-    lines.push(`Recommendation Count: ${recommendations.length}`);
-    lines.push(`LLM Mode: ${llmUsed ? "LLM Live" : "Fallback"}`);
-    lines.push("");
+  const handleGenerateRoadmap = async () => {
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
 
-    recommendations.forEach((rec, idx) => {
-      lines.push(`## ${idx + 1}. ${rec.title}`);
-      lines.push(`- Impact: ${rec.impact}`);
-      lines.push(`- Certainty: ${rec.certainty}%`);
-      lines.push(`- Time To Impact: ${rec.timeToImpact}`);
-      lines.push(`- Cost: ${rec.cost}`);
-      lines.push(`- Category: ${rec.category}`);
-      lines.push(`- Description: ${rec.description}`);
-      lines.push("- Steps:");
-      rec.steps.forEach((step, stepIdx) => lines.push(`  ${stepIdx + 1}. ${step}`));
-      lines.push("");
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const marginX = 48;
+    const marginTop = 56;
+    const marginBottom = 52;
+    const contentWidth = pageWidth - marginX * 2;
+    const lineColor: [number, number, number] = [210, 219, 230];
+    const accentColor: [number, number, number] = [11, 213, 176];
+    const mutedText: [number, number, number] = [90, 101, 117];
+
+    const generatedOn = new Date().toLocaleString("en-IN", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
     });
 
-    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `carbonsense-roadmap-${new Date().toISOString().slice(0, 10)}.md`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    let y = marginTop;
+
+    const ensureSpace = (requiredHeight: number) => {
+      if (y + requiredHeight > pageHeight - marginBottom) {
+        doc.addPage();
+        y = marginTop;
+      }
+    };
+
+    const drawLabelValue = (label: string, value: string) => {
+      const safeValue = value.replace(/\u20b9/g, "INR ");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(45, 55, 72);
+      doc.text(label, marginX, y);
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(31, 41, 55);
+      doc.text(safeValue, marginX + 110, y);
+      y += 15;
+    };
+
+    doc.setDrawColor(...lineColor);
+    doc.setFillColor(244, 251, 248);
+    doc.roundedRect(marginX, y - 24, contentWidth, 64, 8, 8, "F");
+
+    doc.setTextColor(18, 35, 44);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.text("CarbonSense Custom Roadmap", marginX + 14, y);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.setTextColor(...mutedText);
+    doc.text("Personalized decarbonization action plan", marginX + 14, y + 20);
+    y += 58;
+
+    doc.setDrawColor(...lineColor);
+    doc.roundedRect(marginX, y, contentWidth, 72, 8, 8, "S");
+    y += 20;
+    drawLabelValue("Generated On", generatedOn);
+    drawLabelValue("Recommendations", String(recommendations.length));
+    drawLabelValue("Model Mode", llmUsed ? "LLM Live" : "Fallback");
+    y += 12;
+
+    ensureSpace(92);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(18, 35, 44);
+    doc.setFontSize(13);
+    doc.text("Executive Summary", marginX, y);
+    y += 14;
+
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(marginX, y, contentWidth, 58, 8, 8, "F");
+    y += 20;
+    drawLabelValue("Annual Savings Potential", `${Math.round(totalPotential)} kgCO2e`);
+    drawLabelValue("High Impact Actions", `${highImpactCount}`);
+    drawLabelValue("Average Confidence", `${Math.round(avgCertainty)}%`);
+    y += 10;
+
+    recommendations.forEach((rec, idx) => {
+      const safeCost = String(rec.cost).replace(/\u20b9/g, "INR ");
+      const titleLines = doc.splitTextToSize(`${idx + 1}. ${rec.title}`, contentWidth - 24) as string[];
+      const descriptionLines = doc.splitTextToSize(rec.description, contentWidth - 24) as string[];
+
+      let blockHeight = 28;
+      blockHeight += titleLines.length * 14;
+      blockHeight += 6 * 15;
+      blockHeight += 22;
+      blockHeight += descriptionLines.length * 13;
+      blockHeight += 20;
+
+      rec.steps.forEach((step) => {
+        const stepLines = doc.splitTextToSize(step, contentWidth - 44) as string[];
+        blockHeight += stepLines.length * 13;
+      });
+      blockHeight += 16;
+
+      ensureSpace(blockHeight);
+
+      doc.setDrawColor(...lineColor);
+      doc.roundedRect(marginX, y, contentWidth, blockHeight, 8, 8, "S");
+      y += 20;
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...accentColor);
+      doc.setFontSize(13);
+      titleLines.forEach((line) => {
+        doc.text(line, marginX + 12, y);
+        y += 14;
+      });
+      y += 4;
+
+      drawLabelValue("Impact", rec.impact);
+      drawLabelValue("Certainty", `${rec.certainty}%`);
+      drawLabelValue("Time To Impact", rec.timeToImpact);
+      drawLabelValue("Estimated Cost", safeCost);
+      drawLabelValue("Category", rec.category);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(45, 55, 72);
+      doc.text("Description", marginX + 12, y);
+      y += 13;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(31, 41, 55);
+      descriptionLines.forEach((line) => {
+        doc.text(line, marginX + 12, y);
+        y += 13;
+      });
+
+      y += 6;
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(45, 55, 72);
+      doc.text("Implementation Steps", marginX + 12, y);
+      y += 13;
+
+      doc.setFont("helvetica", "normal");
+      rec.steps.forEach((step, stepIdx) => {
+        const stepLines = doc.splitTextToSize(`${stepIdx + 1}. ${step}`, contentWidth - 36) as string[];
+        stepLines.forEach((line) => {
+          doc.text(line, marginX + 20, y);
+          y += 13;
+        });
+      });
+
+      y += 14;
+    });
+
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i += 1) {
+      doc.setPage(i);
+      doc.setDrawColor(...lineColor);
+      doc.line(marginX, pageHeight - 30, pageWidth - marginX, pageHeight - 30);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(...mutedText);
+      doc.text(`CarbonSense Roadmap | Page ${i} of ${totalPages}`, marginX, pageHeight - 16);
+    }
+
+    doc.save(`carbonsense-roadmap-${new Date().toISOString().slice(0, 10)}.pdf`);
     showSuccessToast("Custom roadmap downloaded");
   };
 

@@ -9,6 +9,8 @@ interface StatsCardProps {
   changeType?: "positive" | "negative" | "neutral";
   icon?: ReactNode;
   trend?: ReactNode;
+  onClick?: () => void;
+  actionLabel?: string;
 }
 
 export default function StatsCard({
@@ -19,9 +21,11 @@ export default function StatsCard({
   changeType = "neutral",
   icon,
   trend,
+  onClick,
+  actionLabel,
 }: StatsCardProps) {
-  return (
-    <div className="glass-card rounded-xl p-6">
+  const cardContent = (
+    <>
       <div className="flex items-start justify-between mb-4">
         <div>
           <p className="text-sm text-slate-400 mb-1">{title}</p>
@@ -54,6 +58,25 @@ export default function StatsCard({
           {trend && <div className="flex-1 ml-2">{trend}</div>}
         </div>
       )}
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={actionLabel || `${title} details`}
+        className="glass-card rounded-xl p-6 w-full text-left transition-all duration-300 hover:border-primary/50 hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary/60"
+      >
+        {cardContent}
+      </button>
+    );
+  }
+
+  return (
+    <div className="glass-card rounded-xl p-6">
+      {cardContent}
     </div>
   );
 }

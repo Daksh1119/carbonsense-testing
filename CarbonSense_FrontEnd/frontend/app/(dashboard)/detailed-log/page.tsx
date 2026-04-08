@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ColumnDef } from '@tanstack/react-table';
 import { useEmissions, useEmissionsUploads } from '@/hooks';
 import DataTable from '@/components/ui/DataTable';
@@ -27,9 +27,42 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
+const MONTH_OPTIONS = [
+  { value: 1, label: 'Jan' },
+  { value: 2, label: 'Feb' },
+  { value: 3, label: 'Mar' },
+  { value: 4, label: 'Apr' },
+  { value: 5, label: 'May' },
+  { value: 6, label: 'Jun' },
+  { value: 7, label: 'Jul' },
+  { value: 8, label: 'Aug' },
+  { value: 9, label: 'Sep' },
+  { value: 10, label: 'Oct' },
+  { value: 11, label: 'Nov' },
+  { value: 12, label: 'Dec' },
+];
+
 export default function DetailedEmissionsLogPage() {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
   const { uploads, isLoading: uploadsLoading, error: uploadsError, refetch: refetchUploads } = useEmissionsUploads();
+  const searchParams = useSearchParams();
   const [selectedUploadId, setSelectedUploadId] = useState<string | null>(null);
+  const queryYear = Number(searchParams.get('year'));
+  const queryMonth = Number(searchParams.get('month'));
+  const queryYearValid = Number.isInteger(queryYear) ? queryYear : currentYear;
+  const queryMonthValid = Number.isInteger(queryMonth) && queryMonth >= 1 && queryMonth <= 12 ? queryMonth : currentMonth;
+  const queryIsFuture =
+    queryYearValid > currentYear ||
+    (queryYearValid === currentYear && queryMonthValid > currentMonth);
+
+  const initialYear = queryIsFuture ? currentYear : queryYearValid;
+  const initialMonth = queryIsFuture ? currentMonth : queryMonthValid;
+
+  const [selectedYear, setSelectedYear] = useState<number>(initialYear);
+  const [selectedMonth, setSelectedMonth] = useState<number>(initialMonth);
   const { emissions, total, isLoading, error, refetch, updateEmission, deleteEmission } = useEmissions({ uploadId: selectedUploadId });
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [viewEntryId, setViewEntryId] = useState<string | null>(null);
@@ -44,6 +77,48 @@ export default function DetailedEmissionsLogPage() {
   const [isSaving, setIsSaving] = useState(false);
   const router = useRouter();
 
+  const parsePeriodDate = (upload: { period_start: string | null; created_at: string }): Date | null => {
+    const source = upload.period_start || upload.created_at;
+    const parsed = new Date(source);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
+  };
+
+  const availableYears = useMemo(() => {
+    const years = uploads
+      .map((upload) => parsePeriodDate(upload)?.getFullYear())
+      .filter((year): year is number => typeof year === 'number');
+
+    const minYear = years.length > 0 ? Math.min(...years) : currentYear;
+    const result: number[] = [];
+    for (let year = currentYear; year >= minYear; year -= 1) {
+      result.push(year);
+    }
+    return result;
+  }, [uploads, currentYear]);
+
+  const allowedMonths = useMemo(() => {
+    const maxMonth = selectedYear === currentYear ? currentMonth : 12;
+    return MONTH_OPTIONS.filter((option) => option.value <= maxMonth);
+  }, [selectedYear, currentYear, currentMonth]);
+
+  const uploadsForSelectedPeriod = useMemo(() => {
+    return uploads
+      .filter((upload) => {
+        const periodDate = parsePeriodDate(upload);
+        if (!periodDate) return false;
+        return (
+          periodDate.getFullYear() === selectedYear &&
+          periodDate.getMonth() + 1 === selectedMonth
+        );
+      })
+      .sort((left, right) => {
+        const leftTime = parsePeriodDate(left)?.getTime() || 0;
+        const rightTime = parsePeriodDate(right)?.getTime() || 0;
+        return rightTime - leftTime;
+      });
+  }, [uploads, selectedYear, selectedMonth]);
+
   const factorMap = useMemo(
     () =>
       new Map(
@@ -56,15 +131,34 @@ export default function DetailedEmissionsLogPage() {
   );
 
   useEffect(() => {
-    if (!selectedUploadId && uploads.length > 0) {
-      setSelectedUploadId(uploads[0].id);
+    if (selectedYear > currentYear) {
+      setSelectedYear(currentYear);
+      setSelectedMonth(currentMonth);
+      return;
     }
-  }, [uploads, selectedUploadId]);
 
-  const selectedUpload = uploads.find((upload) => upload.id === selectedUploadId) || null;
-  const periodLabel = selectedUpload?.period_start
-    ? new Date(selectedUpload.period_start).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-    : 'Latest';
+    if (selectedYear === currentYear && selectedMonth > currentMonth) {
+      setSelectedMonth(currentMonth);
+    }
+  }, [selectedYear, selectedMonth, currentYear, currentMonth]);
+
+  useEffect(() => {
+    if (uploadsForSelectedPeriod.length === 0) {
+      setSelectedUploadId(null);
+      return;
+    }
+
+    const stillValid = uploadsForSelectedPeriod.some((upload) => upload.id === selectedUploadId);
+    if (!stillValid) {
+      setSelectedUploadId(uploadsForSelectedPeriod[0].id);
+    }
+  }, [uploadsForSelectedPeriod, selectedUploadId]);
+
+  const selectedUpload = uploadsForSelectedPeriod.find((upload) => upload.id === selectedUploadId) || null;
+  const periodLabel = new Date(selectedYear, selectedMonth - 1, 1).toLocaleDateString('en-US', {
+    month: 'short',
+    year: 'numeric',
+  });
 
   const viewEntry = useMemo(
     () => emissions.find((entry) => entry.id === viewEntryId) || null,
@@ -340,6 +434,59 @@ export default function DetailedEmissionsLogPage() {
         </div>
       </div>
 
+      {/* Period Controls */}
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm p-4">
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="space-y-1">
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Year
+            </label>
+            <select
+              value={selectedYear}
+              onChange={(event) => setSelectedYear(Number(event.target.value))}
+              className="h-10 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 text-sm text-slate-900 dark:text-slate-100"
+            >
+              {availableYears.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Month
+            </label>
+            <select
+              value={selectedMonth}
+              onChange={(event) => setSelectedMonth(Number(event.target.value))}
+              className="h-10 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 text-sm text-slate-900 dark:text-slate-100"
+            >
+              {allowedMonths.map((month) => (
+                <option key={month.value} value={month.value}>
+                  {month.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <Button
+            variant="outline"
+            onClick={() => {
+              setSelectedYear(currentYear);
+              setSelectedMonth(currentMonth);
+            }}
+          >
+            Current Month
+          </Button>
+
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Future periods are blocked for audit integrity.
+          </p>
+        </div>
+      </div>
+
       {/* Uploads List */}
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm p-4">
         <div className="flex items-center justify-between mb-3">
@@ -363,8 +510,15 @@ export default function DetailedEmissionsLogPage() {
             </div>
           )}
         </div>
+        {uploadsForSelectedPeriod.length === 0 && (
+          <div className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 p-4">
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              No uploads found for {periodLabel}. Select another month or upload a new activity file.
+            </p>
+          </div>
+        )}
         <div className="flex flex-wrap gap-3">
-          {uploads.map((upload) => {
+          {uploadsForSelectedPeriod.map((upload) => {
             const isActive = upload.id === selectedUploadId;
             const uploadDate = new Date(upload.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
             return (

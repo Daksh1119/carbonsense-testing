@@ -201,7 +201,6 @@ export default function TEMEDashboard() {
 	const { meanCurve, p5Curve, p95Curve, simulationEnabled, simulationTrials } =
 		getMonteCarloCurves(focusedResult);
 	const focusedEmissionKg = selectedProject?.emission_kg;
-	const dynamicInsight = buildKeyInsight(focusedResult, simulationEnabled, focusedEmissionKg);
 	const recommendation = buildRecommendation(focusedResult, simulationEnabled);
 
 	const topCardDetail = useMemo(() => {
@@ -403,11 +402,6 @@ export default function TEMEDashboard() {
 						<p className="text-slate-200 font-medium mb-1">Recommendation</p>
 						<p>{recommendation}</p>
 					</div>
-				</div>
-				<div className="mt-6 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
-					<p className="text-sm text-amber-400">
-						<strong>Key Insight:</strong> {dynamicInsight}
-					</p>
 				</div>
 			</DashboardCard>
 			</div>

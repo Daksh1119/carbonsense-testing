@@ -194,18 +194,27 @@ export default function AnalyticsPage() {
       return defaultMonthlyTrend;
     }
 
-    const map: Record<string, number> = {};
+    const map: Record<string, { month: string; emissions: number; sortKey: number }> = {};
     for (const row of rows) {
       const date = new Date(String(row.date || ""));
       if (Number.isNaN(date.getTime())) continue;
-      const key = date.toLocaleString("en-US", { month: "short" });
-      map[key] = (map[key] || 0) + Number(row.emissions_kg_co2e || 0);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      if (!map[key]) {
+        map[key] = {
+          month: date.toLocaleString("en-US", { month: "short" }),
+          emissions: 0,
+          sortKey: new Date(date.getFullYear(), date.getMonth(), 1).getTime(),
+        };
+      }
+      map[key].emissions += Number(row.emissions_kg_co2e || 0);
     }
 
-    const series = Object.entries(map).map(([month, emissions]) => ({
-      month,
-      emissions: Math.round(emissions),
-    }));
+    const series = Object.values(map)
+      .sort((a, b) => a.sortKey - b.sortKey)
+      .map(({ month, emissions }) => ({
+        month,
+        emissions: Math.round(emissions),
+      }));
 
     return series.length > 0 ? series : defaultMonthlyTrend;
   }, [activeSummary]);
@@ -477,6 +486,8 @@ export default function AnalyticsPage() {
             />
             <YAxis stroke="#64748b" fontSize={12} tickLine={false} />
             <Tooltip
+              formatter={(value: number | string) => [`${Number(value).toLocaleString()} tCO2e`, "Emissions"]}
+              labelFormatter={(label) => `${label}`}
               contentStyle={{
                 backgroundColor: "#16252d",
                 border: "1px solid #1e3a3a",

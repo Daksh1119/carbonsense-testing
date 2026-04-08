@@ -17,6 +17,9 @@ import {
   Database,
   CheckCircle,
   AlertCircle,
+  Table,
+  ChevronDown,
+  Info,
 } from 'lucide-react';
 
 export default function DataIngestionPage() {
@@ -24,6 +27,7 @@ export default function DataIngestionPage() {
   const [uploadingType, setUploadingType] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [csvProcessed, setCsvProcessed] = useState(false);
+  const [schemaExpanded, setSchemaExpanded] = useState(false);
 
   const handleFilesAccepted = async (files: File[], type: string) => {
     setUploadingType(type);
@@ -85,6 +89,9 @@ export default function DataIngestionPage() {
       }
       setUploadingType(null);
       setUploadProgress(0);
+      // Re-throw so the FileUpload component knows the upload failed
+      // and does not add the file to the "Selected Files" list
+      throw error;
     }
   };
 
@@ -124,6 +131,116 @@ export default function DataIngestionPage() {
           </div>
         </DashboardCard>
       )}
+
+      {/* CSV Schema Reference — collapsible */}
+      <div className="glass-card rounded-xl overflow-hidden">
+        <button
+          onClick={() => setSchemaExpanded(!schemaExpanded)}
+          className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-700/20 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+              <Table className="size-4 text-emerald-400" />
+            </div>
+            <div className="text-left">
+              <h3 className="text-sm font-semibold text-white">CSV Schema Reference</h3>
+              <p className="text-xs text-slate-500">Required format for CSV file uploads</p>
+            </div>
+          </div>
+          <ChevronDown className={`size-4 text-slate-400 transition-transform duration-200 ${schemaExpanded ? 'rotate-180' : ''}`} />
+        </button>
+
+        {schemaExpanded && (
+          <div className="px-5 pb-4 space-y-4 border-t border-slate-700/40">
+            {/* Required Columns */}
+            <div className="pt-4">
+              <h4 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <CheckCircle className="size-3.5" />
+                Required Columns
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { name: 'record_id', hint: 'Unique row ID' },
+                  { name: 'organization_id', hint: 'Your org ID' },
+                  { name: 'employee_id', hint: 'Employee ID' },
+                  { name: 'employee_name', hint: 'Full name' },
+                  { name: 'department', hint: 'Dept name' },
+                  { name: 'date', hint: 'YYYY-MM-DD' },
+                  { name: 'activity_type', hint: 'See activity types' },
+                  { name: 'quantity', hint: 'Numeric value' },
+                  { name: 'unit', hint: 'e.g. kWh, liters' },
+                ].map((col) => (
+                  <span
+                    key={col.name}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 font-mono"
+                    title={col.hint}
+                  >
+                    {col.name}
+                    <span className="text-emerald-500/50 font-sans text-[10px]">({col.hint})</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Optional Columns */}
+            <div>
+              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Info className="size-3.5" />
+                Optional Columns
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                {['source_category', 'spend_inr', 'vendor', 'location', 'scope', 'notes'].map((col) => (
+                  <span
+                    key={col}
+                    className="inline-flex items-center px-2.5 py-1 rounded-md bg-slate-700/50 border border-slate-600/30 text-xs text-slate-400 font-mono"
+                  >
+                    {col}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Accepted Activity Types */}
+            <div>
+              <h4 className="text-xs font-semibold text-sky-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Info className="size-3.5" />
+                Accepted Activity Types
+              </h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
+                {[
+                  { type: 'electricity_grid_kwh', scope: 'Scope 2' },
+                  { type: 'diesel_liter', scope: 'Scope 1' },
+                  { type: 'petrol_liter', scope: 'Scope 1' },
+                  { type: 'cng_kg', scope: 'Scope 1' },
+                  { type: 'flight_km_economy', scope: 'Scope 3' },
+                  { type: 'rail_km', scope: 'Scope 3' },
+                  { type: 'bus_km', scope: 'Scope 3' },
+                  { type: 'landfill_waste_kg', scope: 'Scope 3' },
+                  { type: 'recycled_waste_kg', scope: 'Scope 3' },
+                  { type: 'paper_kg', scope: 'Scope 3' },
+                  { type: 'hotel_night', scope: 'Scope 3' },
+                  { type: 'purchased_goods_inr', scope: 'Scope 3' },
+                ].map((a) => (
+                  <div
+                    key={a.type}
+                    className="flex items-center justify-between px-2 py-1.5 rounded bg-slate-800/70 border border-slate-700/40"
+                  >
+                    <code className="text-[11px] text-slate-300 truncate">{a.type}</code>
+                    <span className="text-[10px] text-slate-500 ml-1 shrink-0">{a.scope}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Sample row hint */}
+            <div className="bg-slate-800/50 border border-slate-700/30 rounded-lg px-3 py-2">
+              <p className="text-[11px] text-slate-500 font-mono leading-relaxed">
+                <span className="text-slate-400">Example row:</span> REC-001, ORG-01, EMP-101, John Doe, Operations, 2025-03-15, electricity_grid_kwh, 500, kWh
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Upload Options Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
