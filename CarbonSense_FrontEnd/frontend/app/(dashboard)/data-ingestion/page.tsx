@@ -41,27 +41,49 @@ export default function DataIngestionPage() {
           throw new Error('Missing logged-in user/organization context. Please login again.');
         }
 
-        for (let i = 0; i <= 45; i += 15) {
-          setUploadProgress(i);
-          await new Promise((resolve) => setTimeout(resolve, 120));
+        let processedCount = 0;
+        let latestSummary: unknown = null;
+        const failedFiles: string[] = [];
+
+        for (let index = 0; index < files.length; index += 1) {
+          const file = files[index];
+          const progressStart = Math.round((index / files.length) * 100);
+          const progressEnd = Math.round(((index + 1) / files.length) * 100);
+          setUploadProgress(progressStart);
+
+          try {
+            showInfoToast(`Processing ${index + 1}/${files.length}: ${file.name}`);
+            const summary = await calculateEmissionsFromCSV(file, organizationId, userId);
+            await persistCsvUpload({
+              organizationId,
+              userId,
+              file,
+              summary,
+            });
+
+            latestSummary = summary;
+            processedCount += 1;
+          } catch (fileError) {
+            const fileMessage = fileError instanceof Error ? fileError.message : 'Unknown processing error';
+            failedFiles.push(`${file.name} (${fileMessage})`);
+          }
+
+          setUploadProgress(progressEnd);
         }
 
-        showInfoToast('Processing emissions data...');
-        const summary = await calculateEmissionsFromCSV(files[0], organizationId, userId);
-        await persistCsvUpload({
-          organizationId,
-          userId,
-          file: files[0],
-          summary,
-        });
-
-        for (let i = 60; i <= 100; i += 10) {
-          setUploadProgress(i);
-          await new Promise((resolve) => setTimeout(resolve, 80));
+        if (processedCount === 0) {
+          throw new Error(`All selected files failed. ${failedFiles.join(' | ')}`);
         }
 
-        sessionStorage.setItem('latest_csv_emissions_summary', JSON.stringify(summary));
-        showSuccessToast(`Successfully uploaded ${files[0].name}`);
+        if (latestSummary) {
+          sessionStorage.setItem('latest_csv_emissions_summary', JSON.stringify(latestSummary));
+        }
+
+        if (failedFiles.length > 0) {
+          showErrorToast(`${failedFiles.length} file(s) failed to ingest. Check format/schema and retry.`);
+        }
+
+        showSuccessToast(`Successfully processed ${processedCount}/${files.length} file(s)`);
         setCsvProcessed(true);
       } else {
         for (let i = 0; i <= 100; i += 10) {
@@ -247,14 +269,20 @@ export default function DataIngestionPage() {
         {/* CSV Upload */}
         <DashboardCard
           title="CSV Import"
-          subtitle="Upload emissions data in bulk"
+          subtitle="Upload emissions data in bulk (CSV/TSV/JSON/XLSX/XLS)"
           icon={<Database className="size-5" />}
         >
           <FileUpload
             onFilesAccepted={(files) => handleFilesAccepted(files, 'csv')}
             onFilesRejected={handleFilesRejected}
-            acceptedFileTypes={{ 'text/csv': ['.csv'] }}
-            maxFiles={5}
+            acceptedFileTypes={{
+              'text/csv': ['.csv'],
+              'text/tab-separated-values': ['.tsv'],
+              'application/json': ['.json'],
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+              'application/vnd.ms-excel': ['.xls'],
+            }}
+            maxFiles={15}
             maxSize={10 * 1024 * 1024} // 10MB
             multiple={true}
           />
@@ -273,9 +301,9 @@ export default function DataIngestionPage() {
             </div>
           )}
           <div className="mt-4 text-xs text-slate-500">
-            <p>• Supported format: CSV</p>
+            <p>• Supported formats: CSV, TSV, JSON, XLSX, XLS</p>
             <p>• Max file size: 10MB</p>
-            <p>• Up to 5 files at once</p>
+            <p>• Up to 15 files at once</p>
           </div>
         </DashboardCard>
 
@@ -363,7 +391,7 @@ export default function DataIngestionPage() {
           <ul className="space-y-2 text-sm text-slate-300">
             <li className="flex items-start gap-2">
               <CheckCircle className="size-4 text-emerald-400 mt-0.5 flex-shrink-0" />
-              <span>CSV files should include: date, category, activity, amount, unit</span>
+              <span>CSV/TSV/JSON/XLSX/XLS must follow the same emissions schema and activity_type rules</span>
             </li>
             <li className="flex items-start gap-2">
               <CheckCircle className="size-4 text-emerald-400 mt-0.5 flex-shrink-0" />

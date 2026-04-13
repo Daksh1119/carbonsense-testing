@@ -7,9 +7,21 @@ import Badge from "@/components/Badge";
 import ProgressBar from "@/components/ProgressBar";
 import { CardSkeleton, ChartSkeleton, ErrorState } from "@/components/ui";
 import Button from "@/components/Button";
-import InteractiveChart from "@/components/ui/InteractiveChart";
 import { Breadcrumb } from "@/components/navigation";
 import { useRouter } from "next/navigation";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  LabelList,
+  Legend,
+  Line,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import {
   Wind,
   TrendingDown,
@@ -48,6 +60,25 @@ const fundingOpportunities = [
     amount: "Post-KYC Eval",
   },
 ];
+
+const formatMonthLabel = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" }).toUpperCase();
+};
+
+const formatFullMonthLabel = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+};
+
+const formatTco2e = (value: number | null | undefined) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return "N/A";
+  return `${Number(value).toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e`;
+};
 
 export default function DashboardPage() {
   const { data, isLoading, error, refetch } = useDashboardData();
@@ -90,23 +121,67 @@ export default function DashboardPage() {
     );
   }
 
-  // Transform data for chart
-  const emissionsData = [
-    ...data.carbonPath.historical.map((item) => ({
-      month: new Date(item.date).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }).toUpperCase(),
-      name: new Date(item.date).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }).toUpperCase(),
-      value: item.value,
+  const latestHistoricalPoint = data.carbonPath.historical.length > 0
+    ? data.carbonPath.historical[data.carbonPath.historical.length - 1]
+    : null;
+  const previousHistoricalPoint = data.carbonPath.historical.length > 1
+    ? data.carbonPath.historical[data.carbonPath.historical.length - 2]
+    : null;
+  const finalProjectionPoint = data.carbonPath.projected.length > 0
+    ? data.carbonPath.projected[data.carbonPath.projected.length - 1]
+    : null;
+
+  const monthOverMonthChange = latestHistoricalPoint && previousHistoricalPoint && previousHistoricalPoint.value > 0
+    ? Number((((latestHistoricalPoint.value - previousHistoricalPoint.value) / previousHistoricalPoint.value) * 100).toFixed(1))
+    : null;
+
+  const carbonPathTrendLabel = monthOverMonthChange === null
+    ? "Not enough data yet"
+    : monthOverMonthChange < 0
+      ? "Getting better"
+      : monthOverMonthChange > 0
+        ? "Increasing"
+        : "Stable";
+
+  const carbonPathData = (() => {
+    const lastHistoricalIndex = data.carbonPath.historical.length - 1;
+
+    const historicalSeries = data.carbonPath.historical.map((item, index) => ({
+      month: formatMonthLabel(item.date),
+      monthLong: formatFullMonthLabel(item.date),
       historical: item.value,
+      projection: index === lastHistoricalIndex ? item.value : null,
+      phaseTag: index === lastHistoricalIndex ? "Current Month" : "Historical",
+      isCurrentMonth: index === lastHistoricalIndex,
+      isProjectionPoint: false,
+      showProjectionLabel: false,
+    }));
+
+    const projectedSeries = data.carbonPath.projected.map((item, index) => ({
+      month: formatMonthLabel(item.date),
+      monthLong: formatFullMonthLabel(item.date),
+      historical: null,
       projection: item.value,
-    })),
-    ...data.carbonPath.projected.map((item) => ({
-      month: new Date(item.date).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }).toUpperCase(),
-      name: new Date(item.date).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }).toUpperCase(),
-      value: item.value,
-      historical: 0,
-      projection: item.value,
-    })),
-  ];
+      phaseTag: "Projected",
+      isCurrentMonth: false,
+      isProjectionPoint: true,
+      showProjectionLabel: index === data.carbonPath.projected.length - 1,
+    }));
+
+    return [...historicalSeries, ...projectedSeries];
+  })();
+
+  const carbonPathYAxisMax = (() => {
+    const values = carbonPathData
+      .flatMap((point) => [point.historical, point.projection])
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+
+    if (values.length === 0) return 10;
+
+    const rawMax = Math.max(...values);
+    const paddedMax = rawMax * 1.12;
+    return Math.max(10, Math.ceil(paddedMax / 5) * 5);
+  })();
 
   return (
     <div className="space-y-6">
@@ -133,10 +208,8 @@ export default function DashboardPage() {
           change={`${data.totalEmissionsMeta} • Refreshed ${data.refreshedAtLabel}`}
           changeType="neutral"
           icon={<Wind className="size-6" />}
-          onClick={() =>
-            router.push(`/detailed-log?year=${data.totalEmissionsYear}&month=${data.totalEmissionsMonth}`)
-          }
-          actionLabel="Open detailed log for current month"
+          onClick={() => router.push('/detailed-log')}
+          actionLabel="Open detailed log"
         />
         <StatsCard
           title="Reduction Achieved"
@@ -211,7 +284,7 @@ export default function DashboardPage() {
       {/* Main Chart */}
       <DashboardCard
         title="Carbon Path 2024-2026"
-        subtitle="Historical sensor data vs. AI-driven 2026 Projection"
+        subtitle="Recorded monthly emissions with evidence-based forecast for upcoming months"
         headerAction={
           <Button 
             variant="outline" 
@@ -223,26 +296,178 @@ export default function DashboardPage() {
           </Button>
         }
       >
-        <InteractiveChart
-          data={emissionsData}
-          type="area"
-          dataKey="projection"
-          xAxisKey="month"
-          color="#0bd5b0"
-          height={300}
-          showGrid={true}
-          showLegend={true}
-          animate={true}
-        />
+        <div className="h-[320px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={carbonPathData} margin={{ top: 16, right: 18, left: -4, bottom: 0 }}>
+              <defs>
+                <linearGradient id="historicalFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#64748b" stopOpacity={0.28} />
+                  <stop offset="95%" stopColor="#64748b" stopOpacity={0.04} />
+                </linearGradient>
+                <linearGradient id="projectionFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#0bd5b0" stopOpacity={0.24} />
+                  <stop offset="95%" stopColor="#0bd5b0" stopOpacity={0.03} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1e3a3a" />
+              <XAxis
+                dataKey="month"
+                stroke="#64748b"
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                stroke="#64748b"
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+                domain={[0, carbonPathYAxisMax]}
+                tickFormatter={(value) => `${Number(value).toFixed(1)}`}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#16252d",
+                  border: "1px solid #1e3a3a",
+                  borderRadius: "0.5rem",
+                  color: "#fff",
+                }}
+                formatter={(value: number | string, name: string, item: { payload?: { phaseTag?: string } }) => {
+                  const numeric = Number(value);
+                  if (!Number.isFinite(numeric)) return ["N/A", name];
+                  const label = name === "historical" ? "Recorded" : "Expected";
+                  const suffix = item?.payload?.phaseTag ? ` (${item.payload.phaseTag})` : "";
+                  return [`${numeric.toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e`, `${label}${suffix}`];
+                }}
+                labelFormatter={(_label: string, payload) => {
+                  const point = payload?.[0]?.payload as { monthLong?: string } | undefined;
+                  return point?.monthLong || _label;
+                }}
+              />
+              <Legend
+                wrapperStyle={{ fontSize: "12px", color: "#94a3b8" }}
+                formatter={(value) => (value === "historical" ? "Recorded Months" : "Expected Months")}
+              />
+
+              {latestHistoricalPoint && (
+                <ReferenceLine
+                  x={formatMonthLabel(latestHistoricalPoint.date)}
+                  stroke="#94a3b8"
+                  strokeDasharray="4 4"
+                  label={{ value: "Current", fill: "#94a3b8", fontSize: 11, position: "insideTopRight" }}
+                />
+              )}
+
+              <Area
+                type="monotone"
+                dataKey="historical"
+                name="historical"
+                stroke="#64748b"
+                fill="url(#historicalFill)"
+                strokeWidth={2}
+                connectNulls={false}
+                dot={(props) => {
+                  const point = props.payload as { isCurrentMonth?: boolean };
+                  return (
+                    <circle
+                      cx={props.cx}
+                      cy={props.cy}
+                      r={point?.isCurrentMonth ? 5 : 3}
+                      fill={point?.isCurrentMonth ? "#f8fafc" : "#64748b"}
+                      stroke="#0f172a"
+                      strokeWidth={1}
+                    />
+                  );
+                }}
+                activeDot={{ r: 6, fill: "#f8fafc", stroke: "#64748b", strokeWidth: 2 }}
+              />
+
+              <Area
+                type="linear"
+                dataKey="projection"
+                name="projection-area"
+                stroke="none"
+                fill="url(#projectionFill)"
+                fillOpacity={1}
+                isAnimationActive={false}
+                connectNulls={false}
+                legendType="none"
+              />
+
+              <Line
+                type="linear"
+                dataKey="projection"
+                name="projection"
+                stroke="#0bd5b0"
+                strokeWidth={4}
+                strokeDasharray="6 4"
+                connectNulls={false}
+                isAnimationActive={false}
+                dot={false}
+                activeDot={{ r: 6, fill: "#0bd5b0", stroke: "#0f172a", strokeWidth: 2 }}
+              >
+                <LabelList
+                  dataKey="projection"
+                  position="top"
+                  fill="#0bd5b0"
+                  fontSize={11}
+                  formatter={(value: number | string, entry: { payload?: { showProjectionLabel?: boolean } }) => {
+                    if (!entry?.payload?.showProjectionLabel) return "";
+                    return Number(value).toLocaleString("en-US", { maximumFractionDigits: 1 });
+                  }}
+                />
+              </Line>
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">
+          <div className="p-3 bg-navy-muted/40 rounded-lg border border-navy-border/50">
+            <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-1">Latest Actual</p>
+            <p className="text-sm font-semibold text-white">{latestHistoricalPoint ? formatTco2e(latestHistoricalPoint.value) : "N/A"}</p>
+            <p className="text-xs text-slate-400 mt-1">{latestHistoricalPoint ? formatFullMonthLabel(latestHistoricalPoint.date) : "No uploaded month"}</p>
+          </div>
+          <div className="p-3 bg-navy-muted/40 rounded-lg border border-navy-border/50">
+            <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-1">Month-over-Month Status</p>
+            <p className={`text-sm font-semibold ${monthOverMonthChange !== null && monthOverMonthChange < 0 ? "text-emerald-400" : monthOverMonthChange !== null && monthOverMonthChange > 0 ? "text-rose-400" : "text-slate-200"}`}>
+              {carbonPathTrendLabel}
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              {monthOverMonthChange === null ? "Compare after next month upload" : `${monthOverMonthChange > 0 ? "+" : ""}${monthOverMonthChange}% compared with last month`}
+            </p>
+          </div>
+          <div className="p-3 bg-navy-muted/40 rounded-lg border border-navy-border/50">
+            <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-1">Expected Level (End Month)</p>
+            <p className="text-sm font-semibold text-primary">{finalProjectionPoint ? formatTco2e(finalProjectionPoint.value) : "N/A"}</p>
+            <p className="text-xs text-slate-400 mt-1">{finalProjectionPoint ? formatFullMonthLabel(finalProjectionPoint.date) : "No estimate yet"}</p>
+          </div>
+          <div className="p-3 bg-navy-muted/40 rounded-lg border border-navy-border/50">
+            <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-1">Forecast Confidence</p>
+            <p className="text-sm font-semibold text-white">{data.forecastQuality.confidenceScore}% ({data.forecastQuality.reliabilityLabel})</p>
+            <p className="text-xs text-slate-400 mt-1">
+              {data.forecastQuality.backtestMonths} backtest month(s) • MAPE {data.forecastQuality.mape !== null ? `${data.forecastQuality.mape}%` : "N/A"}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-lg border border-navy-border/60 bg-navy-muted/30 p-3">
+          <p className="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Forecast Evidence</p>
+          <p className="text-sm text-slate-200">{data.forecastQuality.method}</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Training months: {data.forecastQuality.trainingMonths} • MAE: {data.forecastQuality.mae !== null ? `${data.forecastQuality.mae} tCO₂e` : "N/A"} • RMSE: {data.forecastQuality.rmse !== null ? `${data.forecastQuality.rmse} tCO₂e` : "N/A"} • Volatility index: {data.forecastQuality.volatility}
+          </p>
+          <p className="text-xs text-amber-300/90 mt-1">{data.forecastQuality.caveat}</p>
+        </div>
+
         <div className="flex items-center justify-between mt-4">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-slate-500"></div>
-              <span className="text-xs text-slate-400">Historical</span>
+              <span className="text-xs text-slate-400">Recorded Months</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-primary"></div>
-              <span className="text-xs text-slate-400">2026 Projection</span>
+              <span className="text-xs text-slate-400">Expected Months</span>
             </div>
           </div>
           <Button 

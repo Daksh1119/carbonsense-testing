@@ -26,6 +26,7 @@ export interface GenerateRecommendationsPayload {
   location?: string;
   emission_kg?: number;
   time_horizon_years?: number;
+  target_recommendation_count?: number;
   teme_run_id?: string;
   teme_result?: Record<string, unknown>;
   kpi_snapshots?: Array<{

@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ColumnDef } from '@tanstack/react-table';
 import { useEmissions, useEmissionsUploads } from '@/hooks';
+import { deleteEmissionsUpload, getUploadDisplayType } from '@/lib/emissions-api';
+import { getCurrentUserContext } from '@/lib/recommendations-api';
 import DataTable from '@/components/ui/DataTable';
 import { CardSkeleton, TableSkeleton, ErrorState, EmptyState } from '@/components/ui';
 import Button from '@/components/Button';
@@ -46,13 +48,20 @@ export default function DetailedEmissionsLogPage() {
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
+  const minYear = currentYear - 19;
 
   const { uploads, isLoading: uploadsLoading, error: uploadsError, refetch: refetchUploads } = useEmissionsUploads();
   const searchParams = useSearchParams();
   const [selectedUploadId, setSelectedUploadId] = useState<string | null>(null);
-  const queryYear = Number(searchParams.get('year'));
-  const queryMonth = Number(searchParams.get('month'));
-  const queryYearValid = Number.isInteger(queryYear) ? queryYear : currentYear;
+  const queryYearRaw = searchParams.get('year');
+  const queryMonthRaw = searchParams.get('month');
+  const hasExplicitPeriodQuery = Boolean(queryYearRaw || queryMonthRaw);
+  const queryYear = queryYearRaw ? Number(queryYearRaw) : Number.NaN;
+  const queryMonth = queryMonthRaw ? Number(queryMonthRaw) : Number.NaN;
+  const queryYearValid =
+    Number.isInteger(queryYear) && queryYear >= minYear && queryYear <= currentYear
+      ? queryYear
+      : currentYear;
   const queryMonthValid = Number.isInteger(queryMonth) && queryMonth >= 1 && queryMonth <= 12 ? queryMonth : currentMonth;
   const queryIsFuture =
     queryYearValid > currentYear ||
@@ -63,7 +72,7 @@ export default function DetailedEmissionsLogPage() {
 
   const [selectedYear, setSelectedYear] = useState<number>(initialYear);
   const [selectedMonth, setSelectedMonth] = useState<number>(initialMonth);
-  const { emissions, total, isLoading, error, refetch, updateEmission, deleteEmission } = useEmissions({ uploadId: selectedUploadId });
+  const [isAllPeriods, setIsAllPeriods] = useState<boolean>(!hasExplicitPeriodQuery);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [viewEntryId, setViewEntryId] = useState<string | null>(null);
   const [editEntryId, setEditEntryId] = useState<string | null>(null);
@@ -77,25 +86,37 @@ export default function DetailedEmissionsLogPage() {
   const [isSaving, setIsSaving] = useState(false);
   const router = useRouter();
 
-  const parsePeriodDate = (upload: { period_start: string | null; created_at: string }): Date | null => {
-    const source = upload.period_start || upload.created_at;
-    const parsed = new Date(source);
+  const parseDateValue = (value?: string | null): Date | null => {
+    if (!value) return null;
+
+    const dateOnly = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnly) {
+      const year = Number(dateOnly[1]);
+      const month = Number(dateOnly[2]);
+      const day = Number(dateOnly[3]);
+      const localDate = new Date(year, month - 1, day);
+      if (!Number.isNaN(localDate.getTime())) {
+        return localDate;
+      }
+    }
+
+    const parsed = new Date(String(value));
     if (Number.isNaN(parsed.getTime())) return null;
     return parsed;
   };
 
-  const availableYears = useMemo(() => {
-    const years = uploads
-      .map((upload) => parsePeriodDate(upload)?.getFullYear())
-      .filter((year): year is number => typeof year === 'number');
+  const parsePeriodDate = (upload: { period_start: string | null; period_end: string | null; created_at: string }): Date | null => {
+    const source = upload.period_end || upload.period_start || upload.created_at;
+    return parseDateValue(source);
+  };
 
-    const minYear = years.length > 0 ? Math.min(...years) : currentYear;
+  const availableYears = useMemo(() => {
     const result: number[] = [];
     for (let year = currentYear; year >= minYear; year -= 1) {
       result.push(year);
     }
     return result;
-  }, [uploads, currentYear]);
+  }, [currentYear, minYear]);
 
   const allowedMonths = useMemo(() => {
     const maxMonth = selectedYear === currentYear ? currentMonth : 12;
@@ -119,6 +140,24 @@ export default function DetailedEmissionsLogPage() {
       });
   }, [uploads, selectedYear, selectedMonth]);
 
+  const uploadsForDisplay = useMemo(() => {
+    const source = isAllPeriods ? uploads : uploadsForSelectedPeriod;
+    return [...source].sort((left, right) => {
+      const leftTime = parsePeriodDate(left)?.getTime() || 0;
+      const rightTime = parsePeriodDate(right)?.getTime() || 0;
+      return rightTime - leftTime;
+    });
+  }, [isAllPeriods, uploads, uploadsForSelectedPeriod]);
+
+  const activeUploadIds = useMemo(
+    () => (selectedUploadId ? [selectedUploadId] : uploadsForDisplay.map((upload) => upload.id)),
+    [selectedUploadId, uploadsForDisplay]
+  );
+
+  const { emissions, total, isLoading, error, refetch, updateEmission, deleteEmission } = useEmissions({
+    uploadIds: activeUploadIds,
+  });
+
   const factorMap = useMemo(
     () =>
       new Map(
@@ -131,6 +170,12 @@ export default function DetailedEmissionsLogPage() {
   );
 
   useEffect(() => {
+    if (selectedYear < minYear) {
+      setSelectedYear(minYear);
+      setSelectedMonth(1);
+      return;
+    }
+
     if (selectedYear > currentYear) {
       setSelectedYear(currentYear);
       setSelectedMonth(currentMonth);
@@ -140,25 +185,24 @@ export default function DetailedEmissionsLogPage() {
     if (selectedYear === currentYear && selectedMonth > currentMonth) {
       setSelectedMonth(currentMonth);
     }
-  }, [selectedYear, selectedMonth, currentYear, currentMonth]);
+  }, [selectedYear, selectedMonth, currentYear, currentMonth, minYear]);
 
   useEffect(() => {
-    if (uploadsForSelectedPeriod.length === 0) {
-      setSelectedUploadId(null);
-      return;
-    }
+    if (!selectedUploadId) return;
 
-    const stillValid = uploadsForSelectedPeriod.some((upload) => upload.id === selectedUploadId);
+    const stillValid = uploadsForDisplay.some((upload) => upload.id === selectedUploadId);
     if (!stillValid) {
-      setSelectedUploadId(uploadsForSelectedPeriod[0].id);
+      setSelectedUploadId(null);
     }
-  }, [uploadsForSelectedPeriod, selectedUploadId]);
+  }, [uploadsForDisplay, selectedUploadId]);
 
-  const selectedUpload = uploadsForSelectedPeriod.find((upload) => upload.id === selectedUploadId) || null;
-  const periodLabel = new Date(selectedYear, selectedMonth - 1, 1).toLocaleDateString('en-US', {
-    month: 'short',
-    year: 'numeric',
-  });
+  const selectedUpload = uploadsForDisplay.find((upload) => upload.id === selectedUploadId) || null;
+  const periodLabel = isAllPeriods
+    ? 'All Uploads'
+    : new Date(selectedYear, selectedMonth - 1, 1).toLocaleDateString('en-US', {
+        month: 'short',
+        year: 'numeric',
+      });
 
   const viewEntry = useMemo(
     () => emissions.find((entry) => entry.id === viewEntryId) || null,
@@ -435,16 +479,19 @@ export default function DetailedEmissionsLogPage() {
       </div>
 
       {/* Period Controls */}
-      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm p-4">
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="space-y-1">
-            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm px-4 py-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1 min-w-[120px]">
+            <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Year
             </label>
             <select
               value={selectedYear}
-              onChange={(event) => setSelectedYear(Number(event.target.value))}
-              className="h-10 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 text-sm text-slate-900 dark:text-slate-100"
+              onChange={(event) => {
+                setSelectedYear(Number(event.target.value));
+                setIsAllPeriods(false);
+              }}
+              className="h-9 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2.5 text-sm text-slate-900 dark:text-slate-100"
             >
               {availableYears.map((year) => (
                 <option key={year} value={year}>
@@ -454,14 +501,17 @@ export default function DetailedEmissionsLogPage() {
             </select>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          <div className="space-y-1 min-w-[110px]">
+            <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Month
             </label>
             <select
               value={selectedMonth}
-              onChange={(event) => setSelectedMonth(Number(event.target.value))}
-              className="h-10 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 text-sm text-slate-900 dark:text-slate-100"
+              onChange={(event) => {
+                setSelectedMonth(Number(event.target.value));
+                setIsAllPeriods(false);
+              }}
+              className="h-9 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2.5 text-sm text-slate-900 dark:text-slate-100"
             >
               {allowedMonths.map((month) => (
                 <option key={month.value} value={month.value}>
@@ -474,15 +524,30 @@ export default function DetailedEmissionsLogPage() {
           <Button
             variant="outline"
             onClick={() => {
+              setIsAllPeriods(false);
               setSelectedYear(currentYear);
               setSelectedMonth(currentMonth);
             }}
+            className="h-9"
           >
             Current Month
           </Button>
 
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Future periods are blocked for audit integrity.
+          <Button
+            variant="outline"
+            onClick={() => {
+              setIsAllPeriods(true);
+              setSelectedUploadId(null);
+            }}
+            className="h-9"
+          >
+            All
+          </Button>
+
+          <p className="text-xs text-slate-500 dark:text-slate-400 ml-auto">
+            {isAllPeriods
+              ? `Showing all uploads • Range: ${minYear}-${currentYear}`
+              : `Range: ${minYear}-${currentYear} • Future periods blocked.`}
           </p>
         </div>
       </div>
@@ -492,7 +557,11 @@ export default function DetailedEmissionsLogPage() {
         <div className="flex items-center justify-between mb-3">
           <div>
             <h2 className="text-base font-semibold text-slate-900 dark:text-white">Uploads</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Select a monthly upload to view details</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {isAllPeriods
+                ? 'Showing all uploads. Select one upload to narrow the table, or keep All Uploads selected.'
+                : `Filtered for ${periodLabel}. Select one upload to narrow the table, or keep All Uploads selected.`}
+            </p>
           </div>
           {selectedUpload && (
             <div className="flex items-center gap-2">
@@ -502,7 +571,7 @@ export default function DetailedEmissionsLogPage() {
                   getSourceBadge(selectedUpload.source_type)
                 )}
               >
-                {selectedUpload.source_type || 'CSV'}
+                {getUploadDisplayType(selectedUpload)}
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400">
                 {new Date(selectedUpload.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -510,15 +579,33 @@ export default function DetailedEmissionsLogPage() {
             </div>
           )}
         </div>
-        {uploadsForSelectedPeriod.length === 0 && (
+        {uploadsForDisplay.length === 0 && (
           <div className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 p-4">
             <p className="text-sm text-slate-600 dark:text-slate-400">
-              No uploads found for {periodLabel}. Select another month or upload a new activity file.
+              {isAllPeriods
+                ? 'No uploads found yet. Upload a file to start tracking.'
+                : `No uploads found for ${periodLabel}. Select another month or upload a new activity file.`}
             </p>
           </div>
         )}
         <div className="flex flex-wrap gap-3">
-          {uploadsForSelectedPeriod.map((upload) => {
+          <button
+            type="button"
+            onClick={() => setSelectedUploadId(null)}
+            className={clsx(
+              'px-3 py-2 rounded-lg text-left border transition-all min-w-[180px]',
+              selectedUploadId === null
+                ? 'bg-emerald-600 text-white border-emerald-600 shadow-md'
+                : 'bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500'
+            )}
+          >
+            <span className="block text-sm font-semibold">All Uploads</span>
+            <span className={clsx('text-xs', selectedUploadId === null ? 'text-white/80' : 'text-slate-500 dark:text-slate-400')}>
+              {uploadsForDisplay.length} upload(s) in current view
+            </span>
+          </button>
+
+          {uploadsForDisplay.map((upload) => {
             const isActive = upload.id === selectedUploadId;
             const uploadDate = new Date(upload.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
             return (
@@ -547,7 +634,7 @@ export default function DetailedEmissionsLogPage() {
                         isActive ? 'border-transparent' : ''
                       )}
                     >
-                      {upload.source_type || 'CSV'}
+                      {getUploadDisplayType(upload)}
                     </span>
                     <button
                       type="button"
@@ -561,6 +648,43 @@ export default function DetailedEmissionsLogPage() {
                       title="View analytics"
                     >
                       <BarChart3 className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const confirmed = window.confirm(
+                          `Delete upload \"${upload.original_file_name}\" permanently? This will also remove all linked emission entries for this upload.`
+                        );
+                        if (!confirmed) return;
+
+                        try {
+                          const { organizationId, userId } = getCurrentUserContext();
+                          if (!organizationId) {
+                            throw new Error('Missing organization context.');
+                          }
+
+                          await deleteEmissionsUpload(organizationId, upload.id, userId || undefined);
+
+                          if (selectedUploadId === upload.id) {
+                            setSelectedUploadId(null);
+                          }
+
+                          await refetchUploads();
+                          await refetch();
+                          showSuccessToast('Upload deleted permanently.');
+                        } catch (err) {
+                          showErrorToast(err instanceof Error ? err.message : 'Failed to delete upload.');
+                        }
+                      }}
+                      className={clsx(
+                        'p-1 rounded-md border text-xs transition-colors',
+                        isActive
+                          ? 'border-white/30 text-white hover:bg-white/10'
+                          : 'border-slate-300/60 text-slate-500 hover:border-red-500 hover:text-red-500 dark:border-slate-600 dark:text-slate-400 dark:hover:border-red-400 dark:hover:text-red-400'
+                      )}
+                      title="Delete upload"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>

@@ -4,6 +4,7 @@ export interface EmissionsUploadRecord {
   organization_id: string;
   uploaded_by: string;
   source_type: string;
+  file_format?: "csv" | "tsv" | "json" | "xlsx" | "xls" | "manual" | "other";
   original_file_name: string;
   created_at: string;
   period_start: string | null;
@@ -11,6 +12,20 @@ export interface EmissionsUploadRecord {
   total_emissions_kg: number | null;
   total_emissions_tco2e: number | null;
   record_count: number | null;
+}
+
+export function getUploadDisplayType(upload: Pick<EmissionsUploadRecord, "file_format" | "source_type" | "original_file_name">): string {
+  if (upload.file_format) return String(upload.file_format).toUpperCase();
+  if (String(upload.source_type || "").toLowerCase() === "manual") return "MANUAL";
+
+  const fileName = String(upload.original_file_name || "").toLowerCase();
+  if (fileName.endsWith(".csv")) return "CSV";
+  if (fileName.endsWith(".tsv")) return "TSV";
+  if (fileName.endsWith(".json")) return "JSON";
+  if (fileName.endsWith(".xlsx")) return "XLSX";
+  if (fileName.endsWith(".xls")) return "XLS";
+
+  return "DATA";
 }
 
 export interface EmissionEntryRecord {
@@ -129,7 +144,24 @@ export async function persistManualEntries(
 }
 
 export async function fetchEmissionsUploads(organizationId: string): Promise<EmissionsUploadRecord[]> {
-  const response = await fetch(`${apiBaseUrl}/api/emissions/uploads?organizationId=${organizationId}`);
+  const response = await fetch(`${apiBaseUrl}/api/emissions/uploads?organizationId=${encodeURIComponent(organizationId)}`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || "Failed to load uploads.");
+  }
+
+  return response.json();
+}
+
+export async function fetchEmissionsUploadsScoped(params: {
+  organizationId?: string;
+  userId?: string;
+}): Promise<EmissionsUploadRecord[]> {
+  const query = new URLSearchParams();
+  if (params.organizationId) query.set("organizationId", params.organizationId);
+  if (params.userId) query.set("userId", params.userId);
+
+  const response = await fetch(`${apiBaseUrl}/api/emissions/uploads?${query.toString()}`);
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.detail || "Failed to load uploads.");
@@ -140,14 +172,40 @@ export async function fetchEmissionsUploads(organizationId: string): Promise<Emi
 
 export async function fetchEmissionsForUpload(
   organizationId: string,
-  uploadId: string
+  uploadId: string,
+  userId?: string
 ): Promise<EmissionEntryRecord[]> {
+  const query = new URLSearchParams();
+  query.set("organizationId", organizationId);
+  if (userId) query.set("userId", userId);
+
   const response = await fetch(
-    `${apiBaseUrl}/api/emissions/uploads/${uploadId}?organizationId=${organizationId}`
+    `${apiBaseUrl}/api/emissions/uploads/${uploadId}?${query.toString()}`
   );
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.detail || "Failed to load emission entries.");
+  }
+
+  return response.json();
+}
+
+export async function deleteEmissionsUpload(
+  organizationId: string,
+  uploadId: string,
+  userId?: string
+): Promise<{ deleted_upload_id: string; deleted_file_name: string; cascade_deleted_emission_entries: boolean }> {
+  const query = new URLSearchParams();
+  query.set("organizationId", organizationId);
+  if (userId) query.set("userId", userId);
+
+  const response = await fetch(
+    `${apiBaseUrl}/api/emissions/uploads/${uploadId}?${query.toString()}`,
+    { method: "DELETE" }
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || "Failed to delete upload.");
   }
 
   return response.json();

@@ -8,6 +8,7 @@ import Badge from "@/components/Badge";
 import Button from "@/components/Button";
 import { Breadcrumb, BackButton } from "@/components/navigation";
 import { useEmissions, useEmissionsUploads } from "@/hooks";
+import { EmissionsUploadRecord, getUploadDisplayType } from "@/lib/emissions-api";
 import { clsx } from "clsx";
 import {
   BarChart3,
@@ -30,7 +31,8 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
+  LabelList,
+  ReferenceLine,
 } from "recharts";
 
 const defaultCategoryData = [
@@ -41,15 +43,6 @@ const defaultCategoryData = [
 ];
 
 const COLORS = ["#0bd5b0", "#3b82f6", "#f59e0b", "#ef4444"];
-
-const defaultMonthlyTrend = [
-  { month: "Aug", emissions: 1150 },
-  { month: "Sep", emissions: 1280 },
-  { month: "Oct", emissions: 1190 },
-  { month: "Nov", emissions: 1320 },
-  { month: "Dec", emissions: 1240 },
-  { month: "Jan", emissions: 1180 },
-];
 
 const defaultScopeData = [
   { name: "Scope 1", value: 450 },
@@ -79,11 +72,41 @@ type CsvSummary = {
   }>;
 };
 
+type TrendPoint = {
+  month: string;
+  monthLabel: string;
+  monthKey: string;
+  emissions: number;
+  hasData: boolean;
+  isCurrentMonth: boolean;
+  uploadCount: number;
+};
+
+const getMonthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+const resolveUploadMonthDate = (upload: Pick<EmissionsUploadRecord, "period_start" | "period_end" | "created_at">) => {
+  const candidates = [upload.period_end, upload.period_start, upload.created_at];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const parsed = new Date(candidate);
+    if (!Number.isNaN(parsed.getTime())) {
+      return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+    }
+  }
+
+  return null;
+};
+
 export default function AnalyticsPage() {
   const router = useRouter();
   const { uploads, isLoading: uploadsLoading } = useEmissionsUploads();
   const [selectedUploadId, setSelectedUploadId] = useState<string | null>(null);
-  const { emissions } = useEmissions({ uploadId: selectedUploadId });
+  const activeUploadIds = useMemo(
+    () => (selectedUploadId ? [selectedUploadId] : uploads.map((upload) => upload.id)),
+    [selectedUploadId, uploads]
+  );
+  const { emissions } = useEmissions({ uploadIds: activeUploadIds });
   const [csvSummary, setCsvSummary] = useState<CsvSummary | null>(null);
   const [requestedUploadId, setRequestedUploadId] = useState<string | null>(null);
 
@@ -107,8 +130,9 @@ export default function AnalyticsPage() {
       setSelectedUploadId(requestedUploadId);
       return;
     }
-    if (!selectedUploadId) {
-      setSelectedUploadId(uploads[0].id);
+
+    if (selectedUploadId && !uploads.some((upload) => upload.id === selectedUploadId)) {
+      setSelectedUploadId(null);
     }
   }, [uploads, requestedUploadId, selectedUploadId]);
 
@@ -123,7 +147,7 @@ export default function AnalyticsPage() {
   };
 
   const derivedSummary = useMemo<CsvSummary | null>(() => {
-    if (!selectedUploadId || emissions.length === 0) return null;
+    if (emissions.length === 0) return null;
 
     const totalsKg = emissions.reduce((sum, entry) => sum + entry.co2Amount, 0);
     const byCategory: Record<string, number> = {};
@@ -151,7 +175,7 @@ export default function AnalyticsPage() {
       },
       computed_rows: computedRows,
     };
-  }, [selectedUploadId, emissions]);
+  }, [emissions]);
 
   const activeSummary = derivedSummary || csvSummary;
 
@@ -188,45 +212,66 @@ export default function AnalyticsPage() {
     }));
   }, [activeSummary]);
 
-  const monthlyTrend = useMemo(() => {
-    const rows = activeSummary?.computed_rows;
-    if (!rows || rows.length === 0) {
-      return defaultMonthlyTrend;
+  const monthlyTrend = useMemo<TrendPoint[]>(() => {
+    const now = new Date();
+    const rollingWindow = Array.from({ length: 6 }, (_, index) => {
+      const monthDate = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
+      return {
+        month: monthDate.toLocaleDateString("en-US", { month: "short" }),
+        monthLabel: monthDate.toLocaleDateString("en-US", { month: "short", year: "numeric" }),
+        monthKey: getMonthKey(monthDate),
+        emissions: 0,
+        hasData: false,
+        isCurrentMonth: index === 5,
+        uploadCount: 0,
+      };
+    });
+
+    const indexByMonth = new Map<string, number>(
+      rollingWindow.map((point, index) => [point.monthKey, index])
+    );
+
+    for (const upload of uploads) {
+      const monthDate = resolveUploadMonthDate(upload);
+      if (!monthDate) continue;
+
+      const monthKey = getMonthKey(monthDate);
+      const idx = indexByMonth.get(monthKey);
+      if (idx === undefined) continue;
+
+      const totalTco2e = Number(((upload.total_emissions_kg || 0) / 1000).toFixed(3));
+      rollingWindow[idx].emissions = Number((rollingWindow[idx].emissions + totalTco2e).toFixed(3));
+      rollingWindow[idx].hasData = rollingWindow[idx].hasData || totalTco2e > 0;
+      rollingWindow[idx].uploadCount += 1;
     }
 
-    const map: Record<string, { month: string; emissions: number; sortKey: number }> = {};
-    for (const row of rows) {
-      const date = new Date(String(row.date || ""));
-      if (Number.isNaN(date.getTime())) continue;
-      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-      if (!map[key]) {
-        map[key] = {
-          month: date.toLocaleString("en-US", { month: "short" }),
-          emissions: 0,
-          sortKey: new Date(date.getFullYear(), date.getMonth(), 1).getTime(),
-        };
-      }
-      map[key].emissions += Number(row.emissions_kg_co2e || 0);
-    }
+    return rollingWindow;
+  }, [uploads]);
 
-    const series = Object.values(map)
-      .sort((a, b) => a.sortKey - b.sortKey)
-      .map(({ month, emissions }) => ({
-        month,
-        emissions: Math.round(emissions),
-      }));
-
-    return series.length > 0 ? series : defaultMonthlyTrend;
-  }, [activeSummary]);
-
-  const totalKg = Math.round(activeSummary?.totals?.total_kg_co2e || 1240);
-  const monthlyAvgKg = Math.round(totalKg / Math.max(monthlyTrend.length, 1));
+  const selectedUploadTotalKg = Math.round(activeSummary?.totals?.total_kg_co2e || 0);
+  const selectedUploadTotalTco2e = Number((selectedUploadTotalKg / 1000).toFixed(2));
+  const rollingSixMonthTotalTco2e = Number(
+    monthlyTrend.reduce((sum, item) => sum + item.emissions, 0).toFixed(2)
+  );
+  const monthlyAvgTco2e = Number((rollingSixMonthTotalTco2e / Math.max(monthlyTrend.length, 1)).toFixed(2));
   const topCategory = categoryData.reduce((prev, curr) => (curr.value > prev.value ? curr : prev), categoryData[0]);
   const highestMonth = monthlyTrend.reduce((prev, curr) => (curr.emissions > prev.emissions ? curr : prev), monthlyTrend[0]);
   const lowestMonth = monthlyTrend.reduce((prev, curr) => (curr.emissions < prev.emissions ? curr : prev), monthlyTrend[0]);
-  const averageTrend = Math.round(
-    monthlyTrend.reduce((sum, item) => sum + item.emissions, 0) / Math.max(monthlyTrend.length, 1)
+  const averageTrend = Number(
+    (monthlyTrend.reduce((sum, item) => sum + item.emissions, 0) / Math.max(monthlyTrend.length, 1)).toFixed(2)
   );
+  const currentMonthPoint = monthlyTrend[monthlyTrend.length - 1];
+  const previousMonthPoint = monthlyTrend.length > 1 ? monthlyTrend[monthlyTrend.length - 2] : null;
+  const currentMonthDeltaPct = previousMonthPoint && previousMonthPoint.emissions > 0
+    ? Number((((currentMonthPoint.emissions - previousMonthPoint.emissions) / previousMonthPoint.emissions) * 100).toFixed(1))
+    : null;
+  const currentMonthTag = currentMonthDeltaPct === null
+    ? "Not enough data yet"
+    : currentMonthDeltaPct < 0
+      ? "Getting better"
+      : currentMonthDeltaPct > 0
+        ? "Increasing"
+        : "Stable";
 
   return (
     <div className="space-y-6">
@@ -260,7 +305,7 @@ export default function AnalyticsPage() {
         <div className="flex items-center justify-between mb-3">
           <div>
             <h2 className="text-base font-semibold text-slate-900 dark:text-white">Uploads</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Select a monthly upload to view analytics</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">By default, all uploads are included. Select one upload only if you want a narrower view.</p>
           </div>
           {selectedUpload && (
             <div className="flex items-center gap-2">
@@ -270,7 +315,7 @@ export default function AnalyticsPage() {
                   getSourceBadge(selectedUpload.source_type)
                 )}
               >
-                {selectedUpload.source_type || "CSV"}
+                {getUploadDisplayType(selectedUpload)}
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400">
                 {new Date(selectedUpload.created_at).toLocaleDateString("en-US", {
@@ -288,7 +333,24 @@ export default function AnalyticsPage() {
               No uploads yet. Analytics will appear after the first upload.
             </div>
           ) : (
-            uploads.map((upload) => {
+            <>
+            <button
+              type="button"
+              onClick={() => setSelectedUploadId(null)}
+              className={clsx(
+                "px-3 py-2 rounded-lg text-left border transition-all min-w-[180px]",
+                selectedUploadId === null
+                  ? "bg-emerald-600 text-white border-emerald-600 shadow-md"
+                  : "bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500"
+              )}
+            >
+              <span className="text-sm font-semibold block">All Uploads</span>
+              <span className={clsx("text-xs block", selectedUploadId === null ? "text-white/80" : "text-slate-500 dark:text-slate-400")}> 
+                {uploads.length} upload(s)
+              </span>
+            </button>
+
+            {uploads.map((upload) => {
               const isActive = upload.id === selectedUploadId;
               const uploadDate = new Date(upload.created_at).toLocaleDateString("en-US", {
                 month: "short",
@@ -316,7 +378,7 @@ export default function AnalyticsPage() {
                         isActive ? "border-transparent" : ""
                       )}
                     >
-                      {upload.source_type || "CSV"}
+                      {getUploadDisplayType(upload)}
                     </span>
                   </div>
                   <span className={clsx("text-xs truncate text-left block", isActive ? "text-white/80" : "text-slate-500 dark:text-slate-400")}>
@@ -324,7 +386,8 @@ export default function AnalyticsPage() {
                   </span>
                 </button>
               );
-            })
+            })}
+            </>
           )}
         </div>
       </div>
@@ -332,19 +395,19 @@ export default function AnalyticsPage() {
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatsCard
-          title="Total Emissions (YTD)"
-          value={totalKg.toLocaleString()}
+          title="Total for Selected View"
+          value={selectedUploadTotalTco2e.toLocaleString("en-US", { maximumFractionDigits: 2 })}
           unit="tCO₂e"
-          change="-5.2% vs last year"
-          changeType="positive"
+          change={selectedUpload ? selectedUpload.original_file_name : "All uploads included"}
+          changeType="neutral"
           icon={<Activity className="size-6" />}
         />
         <StatsCard
-          title="Monthly Average"
-          value={monthlyAvgKg.toLocaleString()}
+          title="Average for Last 6 Months"
+          value={monthlyAvgTco2e.toLocaleString("en-US", { maximumFractionDigits: 2 })}
           unit="tCO₂e"
-          change="+2.1% this month"
-          changeType="negative"
+          change={currentMonthDeltaPct === null ? "Comparison available after next month upload" : `${currentMonthDeltaPct > 0 ? "+" : ""}${currentMonthDeltaPct}% compared with last month`}
+          changeType={currentMonthDeltaPct !== null && currentMonthDeltaPct <= 0 ? "positive" : "negative"}
           icon={<Calendar className="size-6" />}
         />
         <StatsCard
@@ -354,9 +417,11 @@ export default function AnalyticsPage() {
           icon={<PieChart className="size-6" />}
         />
         <StatsCard
-          title="Reduction Target"
-          value="12.5%"
-          unit="achieved"
+          title="Current Month Status"
+          value={currentMonthTag}
+          unit={currentMonthPoint?.monthLabel || "Current month"}
+          change={currentMonthPoint?.hasData ? `${currentMonthPoint.uploadCount} upload(s) mapped` : "No uploaded data in current month"}
+          changeType={currentMonthDeltaPct !== null && currentMonthDeltaPct <= 0 ? "positive" : "neutral"}
           icon={<TrendingDown className="size-6" />}
         />
       </div>
@@ -457,10 +522,10 @@ export default function AnalyticsPage() {
                 <span className="text-sm text-slate-300">{scope.name}</span>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-white">
-                    {scope.value} tCO₂e
+                    {scope.value.toLocaleString()} kg CO₂e
                   </span>
                   <Badge variant="info">
-                    {Math.round((scope.value / Math.max(totalKg, 1)) * 100)}%
+                      {Math.round((scope.value / Math.max(selectedUploadTotalKg, 1)) * 100)}%
                   </Badge>
                 </div>
               </div>
@@ -472,7 +537,7 @@ export default function AnalyticsPage() {
       {/* Monthly Trend */}
       <DashboardCard
         title="6-Month Emissions Trend"
-        subtitle="Historical monthly emissions data"
+        subtitle="Last 6 months up to the current month. Updated automatically when new uploads are added."
         icon={<Activity className="size-5" />}
       >
         <ResponsiveContainer width="100%" height={300}>
@@ -484,10 +549,22 @@ export default function AnalyticsPage() {
               fontSize={12}
               tickLine={false}
             />
-            <YAxis stroke="#64748b" fontSize={12} tickLine={false} />
+            <YAxis
+              stroke="#64748b"
+              fontSize={12}
+              tickLine={false}
+              tickFormatter={(value) => Number(value).toFixed(1)}
+            />
             <Tooltip
-              formatter={(value: number | string) => [`${Number(value).toLocaleString()} tCO2e`, "Emissions"]}
-              labelFormatter={(label) => `${label}`}
+              formatter={(value: number | string) => [
+                `${Number(value).toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e`,
+                "Emissions",
+              ]}
+              labelFormatter={(_label: string, payload) => {
+                const point = payload?.[0]?.payload as TrendPoint | undefined;
+                const uploadTag = point?.hasData ? `${point.uploadCount} upload(s)` : "No upload data";
+                return `${point?.monthLabel || _label} • ${uploadTag}`;
+              }}
               contentStyle={{
                 backgroundColor: "#16252d",
                 border: "1px solid #1e3a3a",
@@ -495,28 +572,71 @@ export default function AnalyticsPage() {
                 color: "#fff",
               }}
             />
+
+            <ReferenceLine
+              y={averageTrend}
+              stroke="#64748b"
+              strokeDasharray="4 4"
+              label={{ value: `Average ${averageTrend.toFixed(2)}`, fill: "#94a3b8", fontSize: 11, position: "insideTopRight" }}
+            />
+
             <Line
               type="monotone"
               dataKey="emissions"
               stroke="#0bd5b0"
               strokeWidth={3}
-              dot={{ fill: "#0bd5b0", r: 6 }}
-              activeDot={{ r: 8 }}
-            />
+              dot={(props) => {
+                const point = props.payload as TrendPoint;
+                return (
+                  <circle
+                    cx={props.cx}
+                    cy={props.cy}
+                    r={point?.isCurrentMonth ? 7 : 5}
+                    fill={point?.isCurrentMonth ? "#f8fafc" : point?.hasData ? "#0bd5b0" : "#475569"}
+                    stroke={point?.isCurrentMonth ? "#0bd5b0" : "#0f172a"}
+                    strokeWidth={point?.isCurrentMonth ? 2 : 1.5}
+                  />
+                );
+              }}
+              activeDot={{ r: 8, fill: "#0bd5b0" }}
+            >
+              <LabelList
+                dataKey="emissions"
+                position="top"
+                fill="#94a3b8"
+                fontSize={11}
+                formatter={(value: number | string) => Number(value).toFixed(1)}
+              />
+            </Line>
           </LineChart>
         </ResponsiveContainer>
-        <div className="mt-4 grid grid-cols-3 gap-4">
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="p-4 bg-navy-muted/50 rounded-lg text-center">
             <p className="text-xs text-slate-400 mb-1">Highest Month</p>
-            <p className="text-lg font-bold text-rose-400">{highestMonth?.month} - {highestMonth?.emissions}</p>
+            <p className="text-lg font-bold text-rose-400">
+              {highestMonth?.monthLabel} - {highestMonth?.emissions.toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e
+            </p>
           </div>
           <div className="p-4 bg-navy-muted/50 rounded-lg text-center">
             <p className="text-xs text-slate-400 mb-1">Lowest Month</p>
-            <p className="text-lg font-bold text-emerald-400">{lowestMonth?.month} - {lowestMonth?.emissions}</p>
+            <p className="text-lg font-bold text-emerald-400">
+              {lowestMonth?.monthLabel} - {lowestMonth?.emissions.toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e
+            </p>
           </div>
           <div className="p-4 bg-navy-muted/50 rounded-lg text-center">
             <p className="text-xs text-slate-400 mb-1">Average</p>
-            <p className="text-lg font-bold text-white">{averageTrend.toLocaleString()} tCO₂e</p>
+            <p className="text-lg font-bold text-white">{averageTrend.toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e</p>
+          </div>
+          <div className="p-4 bg-navy-muted/50 rounded-lg text-center">
+            <p className="text-xs text-slate-400 mb-1">Current Month</p>
+            <p className={`text-lg font-bold ${currentMonthDeltaPct !== null && currentMonthDeltaPct <= 0 ? "text-emerald-400" : "text-white"}`}>
+              {currentMonthPoint.monthLabel} - {currentMonthPoint.emissions.toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              {currentMonthDeltaPct === null
+                ? "Comparison available after next month upload"
+                : `${currentMonthDeltaPct > 0 ? "+" : ""}${currentMonthDeltaPct}% compared with last month (${currentMonthTag})`}
+            </p>
           </div>
         </div>
       </DashboardCard>

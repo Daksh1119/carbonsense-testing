@@ -13,6 +13,7 @@ interface UseEmissionsParams {
   endDate?: string;
   category?: string;
   uploadId?: string | null;
+  uploadIds?: string[] | null;
 }
 
 interface UseEmissionsReturn {
@@ -37,7 +38,9 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
   const [error, setError] = useState<string | null>(null);
 
   const uploadId = params?.uploadId;
+  const uploadIds = params?.uploadIds;
   const hasUploadIdParam = Object.prototype.hasOwnProperty.call(params || {}, 'uploadId');
+  const hasUploadIdsParam = Object.prototype.hasOwnProperty.call(params || {}, 'uploadIds');
 
   const mapEntryRecord = (entry: EmissionEntryRecord): EmissionEntry => ({
     id: entry.id,
@@ -55,10 +58,28 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
       setIsLoading(true);
       setError(null);
 
-      const { organizationId } = getCurrentUserContext();
+      const { organizationId, userId } = getCurrentUserContext();
       if (organizationId && uploadId) {
-        const entries = await fetchEmissionsForUpload(organizationId, uploadId);
+        const entries = await fetchEmissionsForUpload(organizationId, uploadId, userId || undefined);
         const mapped: EmissionEntry[] = entries.map(mapEntryRecord);
+
+        setEmissions(mapped);
+        setTotal(mapped.reduce((sum, e) => sum + e.co2Amount, 0));
+        setIsLoading(false);
+        return;
+      }
+
+      if (organizationId && uploadIds && uploadIds.length > 0) {
+        const entryGroups = await Promise.all(
+          uploadIds.map((id) => fetchEmissionsForUpload(organizationId, id, userId || undefined))
+        );
+        const mapped: EmissionEntry[] = entryGroups.flat().map(mapEntryRecord);
+
+        mapped.sort((left, right) => {
+          const l = new Date(left.date).getTime();
+          const r = new Date(right.date).getTime();
+          return r - l;
+        });
 
         setEmissions(mapped);
         setTotal(mapped.reduce((sum, e) => sum + e.co2Amount, 0));
@@ -68,6 +89,14 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
 
       // When uploadId is intentionally set to null, keep the view empty instead of loading mock rows.
       if (hasUploadIdParam && !uploadId) {
+        setEmissions([]);
+        setTotal(0);
+        setIsLoading(false);
+        return;
+      }
+
+      // When uploadIds is intentionally set and empty, keep view empty.
+      if (hasUploadIdsParam && (!uploadIds || uploadIds.length === 0)) {
         setEmissions([]);
         setTotal(0);
         setIsLoading(false);
@@ -165,7 +194,7 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
     } finally {
       setIsLoading(false);
     }
-  }, [uploadId, hasUploadIdParam]);
+  }, [uploadId, uploadIds, hasUploadIdParam, hasUploadIdsParam]);
 
   const addEmission = async (
     emission: Omit<EmissionEntry, 'id' | 'createdAt'>
