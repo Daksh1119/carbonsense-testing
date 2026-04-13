@@ -30,6 +30,7 @@ class GenerateRecommendationsInput(BaseModel):
     location: Optional[str] = None
     emission_kg: Optional[float] = None
     time_horizon_years: int = 15
+    target_recommendation_count: Optional[int] = None
     teme_run_id: Optional[str] = None
     teme_result: Dict[str, Any] = Field(default_factory=dict)
     kpi_snapshots: List[KPISnapshotInput] = Field(default_factory=list)

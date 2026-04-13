@@ -23,6 +23,23 @@ Notes:
   - `LLM_API_BASE_URL=https://api.openai.com/v1`
   - `LLM_MODEL=gpt-4o-mini`
 
+Recommended for higher quality and stronger grounding:
+- Use a stronger primary model and at least 2 fallbacks:
+   - `LLM_MODEL=openai/gpt-5-mini`
+   - `LLM_MODEL_FALLBACKS=anthropic/claude-sonnet-4.5,google/gemini-2.5-pro`
+- Enforce provider parameter compatibility and response healing:
+   - `LLM_OPENROUTER_ENABLE_RESPONSE_HEALING=true`
+- Prefer stricter privacy routing when required:
+   - `LLM_OPENROUTER_DATA_COLLECTION=deny`
+   - `LLM_OPENROUTER_ZDR=true`
+
+Quality behavior now implemented in backend:
+- Recommendation count is dynamic (not fixed to 4), based on emissions and evidence richness.
+- Every recommendation must include at least 2 evidence items.
+- Evidence must map to known context evidence IDs (KPI snapshots, TEME run, org profile, methodology refs).
+- Ranking favors evidence quality, confidence, relevance to KPI focus areas, and feasibility.
+- Offset actions are capped to at most one item.
+
 ### Frontend (`CarbonSense_FrontEnd/frontend/.env.local`)
 - `NEXT_PUBLIC_API_URL=http://localhost:8000`
 - `NEXT_PUBLIC_SUPABASE_URL=<your-supabase-url>`

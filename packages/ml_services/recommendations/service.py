@@ -2,7 +2,7 @@ import json
 import os
 import hashlib
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from fastapi import HTTPException
 from dotenv import load_dotenv
@@ -29,6 +29,24 @@ def _llm_config() -> Dict[str, str]:
     }
 
 
+def _model_fallbacks() -> List[str]:
+    cfg = _llm_config()
+    raw = os.getenv("LLM_MODEL_FALLBACKS", "").strip()
+    models = [cfg["model"]]
+    if raw:
+        models.extend([m.strip() for m in raw.split(",") if m.strip()])
+
+    # Stable de-duplication while preserving order.
+    seen: Set[str] = set()
+    deduped: List[str] = []
+    for m in models:
+        if m in seen:
+            continue
+        seen.add(m)
+        deduped.append(m)
+    return deduped
+
+
 def _hash_payload(payload: Dict[str, Any]) -> str:
     try:
         canonical = json.dumps(payload, sort_keys=True, ensure_ascii=True, default=str)
@@ -46,10 +64,207 @@ def _strip_json_block(text: str) -> str:
     return cleaned
 
 
-def _heuristic_fallback(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _safe_float(v: Any, default: float = 0.0) -> float:
+    try:
+        return float(v)
+    except Exception:
+        return default
+
+
+def _safe_int(v: Any, default: int = 0) -> int:
+    try:
+        return int(v)
+    except Exception:
+        return default
+
+
+def _get_org_profile(org_id: str) -> Dict[str, Any]:
+    try:
+        q = (
+            supabase.table("organizations")
+            .select("id,name,industry,created_at")
+            .eq("id", org_id)
+            .limit(1)
+            .execute()
+        )
+        if q.data:
+            return q.data[0]
+    except Exception:
+        pass
+    return {"id": org_id}
+
+
+def _build_evidence_catalog(payload: Dict[str, Any], org_profile: Dict[str, Any], teme_run: Dict[str, Any]) -> List[Dict[str, Any]]:
+    catalog: List[Dict[str, Any]] = []
+
+    # Organization profile evidence (manual source to satisfy DB source_type checks).
+    if org_profile.get("name") or org_profile.get("industry"):
+        catalog.append(
+            {
+                "evidence_id": "org_profile",
+                "source_type": "manual",
+                "source_table": "organizations",
+                "source_record_id": str(org_profile.get("id") or ""),
+                "citation": "Organization profile",
+                "excerpt": f"Org={org_profile.get('name') or 'Unknown'}, industry={org_profile.get('industry') or 'Unknown'}.",
+                "tags": ["organization", "industry", "profile"],
+            }
+        )
+
+    kpis = payload.get("kpi_snapshots", []) or []
+    for i, k in enumerate(kpis, start=1):
+        kpi_name = str(k.get("kpi_name") or f"kpi_{i}").strip()
+        kpi_value = _safe_float(k.get("kpi_value"), 0.0)
+        kpi_unit = str(k.get("kpi_unit") or "").strip()
+        norm = kpi_name.lower().replace(" ", "_")
+        catalog.append(
+            {
+                "evidence_id": f"kpi::{norm}::{i}",
+                "source_type": "kpi_snapshot",
+                "source_table": "recommendation_kpi_snapshots",
+                "source_record_id": None,
+                "citation": f"KPI snapshot: {kpi_name}",
+                "excerpt": f"{kpi_name}={round(kpi_value, 4)} {kpi_unit}".strip(),
+                "tags": ["kpi", norm],
+            }
+        )
+
+    if teme_run.get("id"):
+        result = teme_run.get("result") or payload.get("teme_result") or {}
+        total_trees = _safe_int(result.get("total_trees"), 0)
+        maturity = _safe_int(result.get("avg_maturity_years"), 0)
+        emission_kg = _safe_float(teme_run.get("emission_kg") or payload.get("emission_kg"), 0.0)
+        catalog.append(
+            {
+                "evidence_id": "teme::latest_run",
+                "source_type": "teme_run",
+                "source_table": "teme_runs",
+                "source_record_id": str(teme_run.get("id") or ""),
+                "citation": "Latest TEME run",
+                "excerpt": (
+                    f"project={teme_run.get('project_name') or 'N/A'}, emission_kg={round(emission_kg, 4)}, "
+                    f"total_trees={total_trees}, avg_maturity_years={maturity}"
+                ),
+                "tags": ["teme", "offset", "survival"],
+            }
+        )
+
+    # Always include methodology references as traceable manual evidence.
+    for ref_idx, ref in enumerate(payload.get("methodology_refs", []) or [], start=1):
+        ref_name = str(ref).strip()
+        if not ref_name:
+            continue
+        catalog.append(
+            {
+                "evidence_id": f"methodology::{ref_idx}",
+                "source_type": "external",
+                "source_table": None,
+                "source_record_id": None,
+                "citation": ref_name,
+                "excerpt": "Methodology reference provided by CarbonSense context.",
+                "tags": ["methodology", "factors"],
+            }
+        )
+
+    return catalog
+
+
+def _derive_focus_areas(payload: Dict[str, Any]) -> List[str]:
+    kpis = payload.get("kpi_snapshots", []) or []
+    if not kpis:
+        return ["scope_2_energy", "transport", "purchases"]
+
+    ranked = sorted(
+        kpis,
+        key=lambda k: _safe_float(k.get("kpi_value"), 0.0),
+        reverse=True,
+    )
+    top_names = [str(k.get("kpi_name") or "").strip().lower() for k in ranked[:5] if str(k.get("kpi_name") or "").strip()]
+
+    areas: List[str] = []
+    for name in top_names:
+        if any(tok in name for tok in ["scope_2", "electricity", "power", "energy", "hvac", "lighting"]):
+            areas.append("scope_2_energy")
+        elif any(tok in name for tok in ["flight", "travel", "transport", "commute", "diesel", "fuel"]):
+            areas.append("transport")
+        elif any(tok in name for tok in ["purchases", "goods", "vendor", "procurement", "supply"]):
+            areas.append("purchases")
+        elif any(tok in name for tok in ["waste", "water"]):
+            areas.append("operations")
+        else:
+            areas.append("general_efficiency")
+
+    if not areas:
+        areas = ["scope_2_energy", "transport", "purchases"]
+
+    # Deduplicate while preserving order.
+    deduped: List[str] = []
+    seen: Set[str] = set()
+    for a in areas:
+        if a in seen:
+            continue
+        seen.add(a)
+        deduped.append(a)
+    return deduped
+
+
+def _target_recommendation_count(payload: Dict[str, Any], evidence_catalog: List[Dict[str, Any]]) -> int:
+    requested = payload.get("target_recommendation_count")
+    if requested is not None:
+        v = _safe_int(requested, 4)
+        return max(2, min(8, v))
+
+    emission_kg = _safe_float(payload.get("emission_kg"), 0.0)
+    kpi_count = len(payload.get("kpi_snapshots", []) or [])
+    evidence_count = len(evidence_catalog)
+
+    count = 3
+    if emission_kg >= 50000:
+        count += 1
+    if emission_kg >= 250000:
+        count += 1
+    if kpi_count >= 5:
+        count += 1
+    if evidence_count >= 12:
+        count += 1
+    return max(3, min(7, count))
+
+
+def _heuristic_fallback(
+    payload: Dict[str, Any],
+    target_count: int,
+    evidence_catalog: Optional[List[Dict[str, Any]]] = None,
+    focus_areas: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
     emission = float(payload.get("emission_kg", 0))
     total_trees = int(payload.get("teme_result", {}).get("total_trees", 0))
     tree_impact = max(50.0, emission * 0.18)
+    focus = focus_areas or []
+    evidence_catalog = evidence_catalog or []
+
+    def _pick_evidence(tags: List[str], fallback_min: int = 2) -> List[Dict[str, Any]]:
+        selected = []
+        for ev in evidence_catalog:
+            ev_tags = set([str(t).lower() for t in (ev.get("tags") or [])])
+            if any(t.lower() in ev_tags for t in tags):
+                selected.append(ev)
+        if len(selected) < fallback_min:
+            selected.extend([ev for ev in evidence_catalog if ev not in selected])
+        trimmed = selected[: max(2, fallback_min)]
+        out = []
+        for ev in trimmed:
+            out.append(
+                {
+                    "evidence_id": ev.get("evidence_id"),
+                    "source_type": ev.get("source_type", "manual"),
+                    "source_table": ev.get("source_table"),
+                    "source_record_id": ev.get("source_record_id"),
+                    "uri": ev.get("uri"),
+                    "citation": ev.get("citation"),
+                    "excerpt": ev.get("excerpt"),
+                }
+            )
+        return out
 
     def _impact_bounds(value: float) -> Dict[str, float]:
         return {
@@ -57,7 +272,7 @@ def _heuristic_fallback(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             "estimated_impact_kg_co2e_high": round(max(0.0, value * 1.2), 2),
         }
 
-    return [
+    templates = [
         {
             "title": "Optimize HVAC and lighting schedules",
             "summary": "Deploy occupancy-based controls and LED retrofits to reduce avoidable electricity use.",
@@ -79,19 +294,7 @@ def _heuristic_fallback(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "Replace high-usage fixtures with LEDs",
                 "Track baseline vs post-implementation savings",
             ],
-            "evidence": [
-                {
-                    "source_type": "kpi_snapshot",
-                    "source_table": "recommendation_kpi_snapshots",
-                    "citation": "Internal utility baseline and monthly meter trends",
-                    "excerpt": "High after-hours usage indicates avoidable load.",
-                },
-                {
-                    "source_type": "manual",
-                    "citation": "Facilities energy best-practices checklist",
-                    "excerpt": "Lighting/HVAC scheduling is a common quick win in office footprints.",
-                }
-            ],
+            "evidence": _pick_evidence(["scope_2_energy", "kpi", "organization", "methodology"], fallback_min=2),
         },
         {
             "title": "Low-carbon commute policy for employees",
@@ -114,19 +317,7 @@ def _heuristic_fallback(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "Subsidize public transport/carpooling",
                 "Review impact quarterly",
             ],
-            "evidence": [
-                {
-                    "source_type": "manual",
-                    "citation": "Organization-level commute policy benchmark",
-                    "excerpt": "Behavioral levers can deliver quick wins in 1-2 quarters.",
-                },
-                {
-                    "source_type": "kpi_snapshot",
-                    "source_table": "recommendation_kpi_snapshots",
-                    "citation": "Mobility activity KPI snapshot",
-                    "excerpt": "Travel-related activity exceeds baseline for comparable teams.",
-                }
-            ],
+            "evidence": _pick_evidence(["transport", "kpi", "organization", "methodology"], fallback_min=2),
         },
         {
             "title": "TEME-backed native species offset plan",
@@ -149,24 +340,63 @@ def _heuristic_fallback(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "Track survival and growth annually",
                 "Recalibrate offsets with observed mortality",
             ],
-            "evidence": [
-                {
-                    "source_type": "teme_run",
-                    "source_table": "teme_runs",
-                    "citation": "Latest TEME simulation output",
-                    "excerpt": "Total trees and maturity window support staged offset planning.",
-                },
-                {
-                    "source_type": "manual",
-                    "citation": "Offset governance policy",
-                    "excerpt": "Offsets are secondary to direct reduction and require verification.",
-                }
+            "evidence": _pick_evidence(["teme", "offset", "methodology", "organization"], fallback_min=2),
+        },
+        {
+            "title": "Supplier decarbonization scorecard",
+            "summary": "Target top Scope 3 procurement hotspots using supplier-level intensity and contract clauses.",
+            "action_type": "policy",
+            "priority": "high",
+            "confidence_score": 0.74,
+            "estimated_impact_kg_co2e": round(emission * 0.12, 2),
+            **_impact_bounds(emission * 0.12),
+            "implementation_cost_usd": 8000,
+            "time_to_impact_months": 5,
+            "rationale": "Procurement clauses and preferred-vendor policies reduce embedded emissions at scale.",
+            "impact_model": {
+                "kpi_refs": ["scope_3_purchases_kg", "purchased_goods_kg"],
+                "formula": "impact = purchases_related_kg * 0.12",
+            },
+            "implementation_steps": [
+                "Identify top 20 emitting vendors by spend and category",
+                "Set supplier disclosure and reduction requirements",
+                "Embed low-carbon criteria in renewal cycles",
+                "Track quarterly supplier-specific intensity trends",
             ],
+            "evidence": _pick_evidence(["purchases", "kpi", "organization", "methodology"], fallback_min=2),
+        },
+        {
+            "title": "Fleet and travel demand control",
+            "summary": "Cut high-emission travel through trip substitution rules and route optimization governance.",
+            "action_type": "reduction",
+            "priority": "medium",
+            "confidence_score": 0.72,
+            "estimated_impact_kg_co2e": round(emission * 0.1, 2),
+            **_impact_bounds(emission * 0.1),
+            "implementation_cost_usd": 6000,
+            "time_to_impact_months": 4,
+            "rationale": "Travel controls produce measurable reductions without long infrastructure lead times.",
+            "impact_model": {
+                "kpi_refs": ["travel_kg", "transport_kg"],
+                "formula": "impact = transport_related_kg * 0.10",
+            },
+            "implementation_steps": [
+                "Set thresholds where virtual meetings are mandatory",
+                "Prioritize rail over short-haul flights",
+                "Enforce route and occupancy optimization",
+                "Publish monthly compliance and emissions dashboard",
+            ],
+            "evidence": _pick_evidence(["transport", "kpi", "organization", "methodology"], fallback_min=2),
         },
     ]
 
+    if "purchases" in focus and "scope_2_energy" not in focus:
+        templates = [t for t in templates if t["title"] != "Optimize HVAC and lighting schedules"] + [templates[0]]
 
-def _build_prompt(payload: Dict[str, Any]) -> List[Dict[str, str]]:
+    return templates[: max(2, min(target_count, len(templates)))]
+
+
+def _build_prompt(payload: Dict[str, Any], target_count: int) -> List[Dict[str, str]]:
     schema_hint = {
         "recommendations": [
             {
@@ -188,6 +418,7 @@ def _build_prompt(payload: Dict[str, Any]) -> List[Dict[str, str]]:
                 "implementation_steps": ["string", "string"],
                 "evidence": [
                     {
+                        "evidence_id": "string - must match one of evidence_catalog.evidence_id",
                         "source_type": "teme_run | ocr_receipt | kpi_snapshot | external | manual",
                         "source_table": "string or null",
                         "source_record_id": "string or null",
@@ -206,18 +437,19 @@ def _build_prompt(payload: Dict[str, Any]) -> List[Dict[str, str]]:
             "content": (
                 "You are a climate strategy co-pilot for enterprise decarbonization. "
                 "Return only strict JSON, no markdown, no prose outside JSON. "
-                "Prioritize practical, measurable recommendations grounded in given organization context. "
-                "Every recommendation must cite at least 2 evidence items tied to provided KPIs or TEME output. "
-                "Do not invent data sources or claims not present in context."
+                "Prioritize practical, measurable recommendations grounded in organization-specific context. "
+                "Every recommendation must be implementable and cite at least 2 evidence items from evidence_catalog by evidence_id. "
+                "Do not invent data sources or claims not present in context. "
+                "If evidence is weak for an action, do not include that action."
             ),
         },
         {
             "role": "user",
             "content": (
-                "Generate top 4 recommendations from this context. "
-                "At least 2 must be direct reduction actions and at most 1 pure offset action. "
-                "Use realistic costs and impact ranges. "
-                "Provide impact bounds (low/high) and an impact_model that references KPI names.\n\n"
+                f"Generate up to {target_count} recommendations from this context, only where evidence is strong. "
+                "At least 60% must be direct reduction actions and at most 1 pure offset action. "
+                "Use realistic costs, realistic timelines, and impact ranges. "
+                "Provide impact bounds (low/high), implementation_steps (3-6), and an impact_model that references KPI names from context.\n\n"
                 f"Context JSON:\n{json.dumps(payload, ensure_ascii=True)}\n\n"
                 f"Output JSON schema:\n{json.dumps(schema_hint, ensure_ascii=True)}"
             ),
@@ -234,9 +466,23 @@ def _call_openai_compatible(messages: List[Dict[str, str]]) -> Dict[str, Any]:
         body = {
             "model": model_name,
             "messages": messages,
-            "temperature": 0.2,
+            "temperature": 0.1,
             "response_format": {"type": "json_object"},
         }
+
+        if cfg["provider"] == "openrouter":
+            body["provider"] = {
+                "require_parameters": True,
+            }
+
+            if os.getenv("LLM_OPENROUTER_DATA_COLLECTION", "deny").strip().lower() in {"allow", "deny"}:
+                body["provider"]["data_collection"] = os.getenv("LLM_OPENROUTER_DATA_COLLECTION", "deny").strip().lower()
+
+            if os.getenv("LLM_OPENROUTER_ZDR", "false").strip().lower() == "true":
+                body["provider"]["zdr"] = True
+
+            if os.getenv("LLM_OPENROUTER_ENABLE_RESPONSE_HEALING", "true").strip().lower() == "true":
+                body["plugins"] = [{"id": "response-healing"}]
 
         resp = requests.post(
             f"{cfg['base_url']}/chat/completions",
@@ -255,17 +501,25 @@ def _call_openai_compatible(messages: List[Dict[str, str]]) -> Dict[str, Any]:
 
         return resp.json()
 
-    try:
-        data = _request_with_model(cfg["model"])
-    except Exception as e:
+    data = None
+    last_error: Optional[Exception] = None
+    for model_name in _model_fallbacks():
+        try:
+            data = _request_with_model(model_name)
+            break
+        except Exception as e:
+            last_error = e
+            continue
+
+    if data is None:
         # OpenRouter can return 404 when a specific model has no active endpoints.
-        if "404" in str(e) and cfg["model"] != "openrouter/auto":
+        if cfg["provider"] == "openrouter" and cfg["model"] != "openrouter/auto":
             try:
                 data = _request_with_model("openrouter/auto")
             except Exception as e2:
                 raise HTTPException(status_code=502, detail=f"LLM provider error: {e2}")
         else:
-            raise HTTPException(status_code=502, detail=f"LLM provider error: {e}")
+            raise HTTPException(status_code=502, detail=f"LLM provider error: {last_error}")
 
     try:
         content = data["choices"][0]["message"]["content"]
@@ -275,7 +529,7 @@ def _call_openai_compatible(messages: List[Dict[str, str]]) -> Dict[str, Any]:
         raise HTTPException(status_code=502, detail=f"Invalid LLM response format: {e}")
 
 
-def _normalize_recommendations(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _normalize_recommendations(items: List[Dict[str, Any]], allowed_evidence_ids: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     allowed_priority = {"low", "medium", "high", "critical"}
     allowed_sources = {"teme_run", "ocr_receipt", "kpi_snapshot", "external", "manual"}
@@ -320,11 +574,15 @@ def _normalize_recommendations(items: List[Dict[str, Any]]) -> List[Dict[str, An
             source_type = str(ev.get("source_type", "manual")).strip()
             if source_type not in allowed_sources:
                 source_type = "manual"
+            evidence_id = str(ev.get("evidence_id") or "").strip()
+            if allowed_evidence_ids is not None and evidence_id and evidence_id not in allowed_evidence_ids:
+                continue
             normalized_evidence.append(
                 {
+                    "evidence_id": evidence_id or None,
                     "source_type": source_type,
                     "source_table": ev.get("source_table"),
-                    "source_record_id": ev.get("source_record_id"),
+                    "source_record_id": ev.get("source_record_id") or evidence_id or None,
                     "uri": ev.get("uri"),
                     "citation": ev.get("citation"),
                     "excerpt": ev.get("excerpt"),
@@ -355,30 +613,60 @@ def _normalize_recommendations(items: List[Dict[str, Any]]) -> List[Dict[str, An
     return out
 
 
-def _rank_and_filter(recs: List[Dict[str, Any]], emission_kg: float) -> List[Dict[str, Any]]:
+def _rank_and_filter(recs: List[Dict[str, Any]], emission_kg: float, target_count: int, focus_areas: List[str]) -> List[Dict[str, Any]]:
     if not recs:
         return []
 
     # Require at least 2 evidence items per recommendation.
-    filtered = [r for r in recs if len(r.get("evidence", [])) >= 2]
+    filtered = [
+        r
+        for r in recs
+        if len(r.get("evidence", [])) >= 2
+        and len([s for s in (r.get("implementation_steps") or []) if str(s).strip()]) >= 3
+        and float(r.get("confidence_score") or 0.0) >= 0.45
+    ]
     if not filtered:
         return []
 
     # Enforce action mix constraints.
     reductions = [r for r in filtered if r.get("action_type") == "reduction"]
     offsets = [r for r in filtered if r.get("action_type") == "offset"]
-    if len(reductions) < 2:
+    min_reductions = 2 if target_count >= 4 else 1
+    if len(reductions) < min_reductions:
         return []
     if len(offsets) > 1:
         offsets = offsets[:1]
         filtered = reductions + offsets + [r for r in filtered if r.get("action_type") not in {"reduction", "offset"}]
 
-    # Rank by impact * confidence / (cost + 1).
+    max_impact = max([_safe_float(r.get("estimated_impact_kg_co2e"), 0.0) for r in filtered] + [1.0])
+
+    # Rank by weighted realism score, not only impact/cost.
     def _score(rec: Dict[str, Any]) -> float:
-        impact = float(rec.get("estimated_impact_kg_co2e") or 0)
-        confidence = float(rec.get("confidence_score") or 0.0)
-        cost = float(rec.get("implementation_cost_usd") or 0.0)
-        return (impact * max(0.1, confidence)) / (cost + 1.0)
+        impact = _safe_float(rec.get("estimated_impact_kg_co2e"), 0.0)
+        confidence = _safe_float(rec.get("confidence_score"), 0.0)
+        cost = _safe_float(rec.get("implementation_cost_usd"), 0.0)
+        months = _safe_float(rec.get("time_to_impact_months"), 6.0)
+        evidence_score = _safe_float(rec.get("evidence_score"), 0.0)
+
+        kpi_refs = [str(x).lower() for x in ((rec.get("impact_model") or {}).get("kpi_refs") or [])]
+        relevance = 0.0
+        for area in focus_areas:
+            if area in " ".join(kpi_refs):
+                relevance += 0.25
+        relevance = min(1.0, relevance)
+
+        impact_norm = max(0.0, min(1.0, impact / max_impact))
+        affordability = 1.0 / (1.0 + max(0.0, cost) / 20000.0)
+        speed = 1.0 / (1.0 + max(1.0, months) / 12.0)
+        feasibility = 0.6 * affordability + 0.4 * speed
+
+        return (
+            0.32 * evidence_score
+            + 0.24 * confidence
+            + 0.20 * relevance
+            + 0.14 * impact_norm
+            + 0.10 * feasibility
+        )
 
     filtered.sort(key=_score, reverse=True)
 
@@ -396,7 +684,7 @@ def _rank_and_filter(recs: List[Dict[str, Any]], emission_kg: float) -> List[Dic
     for idx, rec in enumerate(filtered, start=1):
         rec["rank"] = idx
 
-    return filtered[:4]
+    return filtered[: max(2, min(target_count, len(filtered)))]
 
 
 def _get_teme_run(teme_run_id: Optional[str], user_id: str) -> Dict[str, Any]:
@@ -431,6 +719,8 @@ def generate_and_store_recommendations(payload: Dict[str, Any]) -> Dict[str, Any
     org_id = payload["organization_id"]
     teme_run = _get_teme_run(payload.get("teme_run_id"), user_id)
 
+    org_profile = _get_org_profile(org_id)
+
     llm_payload = {
         "organization_id": org_id,
         "user_id": user_id,
@@ -452,20 +742,54 @@ def generate_and_store_recommendations(payload: Dict[str, Any]) -> Dict[str, Any
         ],
     }
 
+    llm_payload["organization_profile"] = {
+        "organization_name": org_profile.get("name"),
+        "industry": org_profile.get("industry"),
+        "created_at": org_profile.get("created_at"),
+    }
+    llm_payload["focus_areas"] = _derive_focus_areas(llm_payload)
+    llm_payload["evidence_catalog"] = _build_evidence_catalog(llm_payload, org_profile, teme_run)
+    llm_payload["target_recommendation_count"] = _target_recommendation_count(llm_payload, llm_payload["evidence_catalog"])
+    llm_payload["recommendation_constraints"] = {
+        "min_evidence_items_per_recommendation": 2,
+        "min_implementation_steps": 3,
+        "max_offset_actions": 1,
+        "require_kpi_linkage": True,
+    }
+
     llm_used = True
     llm_warning = None
-    messages = _build_prompt(llm_payload)
+    messages = _build_prompt(llm_payload, llm_payload["target_recommendation_count"])
+    allowed_evidence_ids = {str(e.get("evidence_id")) for e in llm_payload["evidence_catalog"] if e.get("evidence_id")}
     try:
         raw = _call_openai_compatible(messages)
-        recs = _normalize_recommendations(raw.get("recommendations", []))
-        recs = _rank_and_filter(recs, float(llm_payload.get("emission_kg") or 0))
+        recs = _normalize_recommendations(raw.get("recommendations", []), allowed_evidence_ids=allowed_evidence_ids)
+        recs = _rank_and_filter(
+            recs,
+            float(llm_payload.get("emission_kg") or 0),
+            int(llm_payload["target_recommendation_count"]),
+            llm_payload["focus_areas"],
+        )
         if not recs:
             raise ValueError("No recommendations returned")
     except Exception as e:
         llm_used = False
         llm_warning = str(e)
-        recs = _normalize_recommendations(_heuristic_fallback(llm_payload))
-        recs = _rank_and_filter(recs, float(llm_payload.get("emission_kg") or 0))
+        recs = _normalize_recommendations(
+            _heuristic_fallback(
+                llm_payload,
+                target_count=int(llm_payload["target_recommendation_count"]),
+                evidence_catalog=llm_payload["evidence_catalog"],
+                focus_areas=llm_payload["focus_areas"],
+            ),
+            allowed_evidence_ids=allowed_evidence_ids,
+        )
+        recs = _rank_and_filter(
+            recs,
+            float(llm_payload.get("emission_kg") or 0),
+            int(llm_payload["target_recommendation_count"]),
+            llm_payload["focus_areas"],
+        )
 
     cfg = _llm_config()
     session_row = {
@@ -479,7 +803,7 @@ def generate_and_store_recommendations(payload: Dict[str, Any]) -> Dict[str, Any
         "context_snapshot": llm_payload,
         "llm_provider": cfg["provider"],
         "llm_model": cfg["model"],
-        "prompt_version": "v2",
+        "prompt_version": "v3_evidence_grounded",
         "status": "generated",
         "error_message": llm_warning,
         "input_hash": _hash_payload(payload),
@@ -555,7 +879,7 @@ def generate_and_store_recommendations(payload: Dict[str, Any]) -> Dict[str, Any
                     "user_id": user_id,
                     "source_type": str(ev.get("source_type", "manual"))[:64],
                     "source_table": ev.get("source_table"),
-                    "source_record_id": ev.get("source_record_id"),
+                    "source_record_id": ev.get("source_record_id") or ev.get("evidence_id"),
                     "uri": ev.get("uri"),
                     "citation": ev.get("citation"),
                     "excerpt": ev.get("excerpt"),

@@ -1,5 +1,7 @@
 import csv
 import io
+import re
+from datetime import date
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
@@ -58,6 +60,41 @@ OPTIONAL_COLUMNS = [
     "notes",
 ]
 
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _normalize_date_string(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+
+    # Canonical format first.
+    if _DATE_RE.match(raw):
+        return raw
+
+    # Common tabular date formats seen in enterprise exports.
+    candidates = [
+        (r"^(\d{2})-(\d{2})-(\d{4})$", (3, 2, 1)),  # DD-MM-YYYY
+        (r"^(\d{2})/(\d{2})/(\d{4})$", (3, 2, 1)),  # DD/MM/YYYY
+        (r"^(\d{4})/(\d{2})/(\d{2})$", (1, 2, 3)),  # YYYY/MM/DD
+        (r"^(\d{2})\. (\d{2})\. (\d{4})$", (3, 2, 1)),
+        (r"^(\d{2})\.(\d{2})\.(\d{4})$", (3, 2, 1)),
+    ]
+
+    for pattern, order in candidates:
+        m = re.match(pattern, raw)
+        if not m:
+            continue
+        y = int(m.group(order[0]))
+        mn = int(m.group(order[1]))
+        d = int(m.group(order[2]))
+        try:
+            return date(y, mn, d).isoformat()
+        except Exception:
+            return ""
+
+    return ""
+
 
 @dataclass
 class RowEmission:
@@ -91,6 +128,53 @@ def _validate_headers(headers: List[str]) -> None:
     missing = [c for c in REQUIRED_COLUMNS if c not in headers]
     if missing:
         raise ValueError(f"Missing required columns: {', '.join(missing)}")
+
+
+def _canonical_key(key: str) -> str:
+    return str(key or "").strip().lower().replace(" ", "_")
+
+
+def _normalize_row_keys(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {_canonical_key(k): v for k, v in row.items()}
+
+
+def _validate_row_schema(row: Dict[str, Any], row_index: int, seen_record_ids: set) -> None:
+    record_id = str(row.get("record_id", "")).strip()
+    if not record_id:
+        raise ValueError("Missing record_id")
+    if record_id in seen_record_ids:
+        raise ValueError("Duplicate record_id")
+    seen_record_ids.add(record_id)
+
+    date_value = _normalize_date_string(row.get("date", ""))
+    if not _DATE_RE.match(date_value):
+        raise ValueError("Invalid date format; expected YYYY-MM-DD")
+    try:
+        date.fromisoformat(date_value)
+    except Exception:
+        raise ValueError("Invalid calendar date")
+    row["date"] = date_value
+
+    quantity = _safe_float(row.get("quantity"), default=float("nan"))
+    if quantity != quantity or quantity <= 0:  # NaN-safe check
+        raise ValueError("quantity must be a positive number")
+
+    unit = str(row.get("unit", "")).strip()
+    if not unit:
+        raise ValueError("unit is required")
+
+    activity_type = str(row.get("activity_type", "")).strip().lower()
+    if activity_type not in EMISSION_FACTORS_KGCO2E:
+        raise ValueError(f"Unsupported activity_type '{activity_type}'. Add factor mapping first.")
+
+    if not str(row.get("organization_id", "")).strip():
+        raise ValueError("organization_id is required")
+    if not str(row.get("employee_id", "")).strip():
+        raise ValueError("employee_id is required")
+    if not str(row.get("employee_name", "")).strip():
+        raise ValueError("employee_name is required")
+    if not str(row.get("department", "")).strip():
+        raise ValueError("department is required")
 
 
 
@@ -201,6 +285,39 @@ def calculate_emissions_from_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def calculate_emissions_from_tabular_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not rows:
+        raise ValueError("Input file has no rows")
+
+    normalized_rows = [_normalize_row_keys(r) for r in rows]
+    headers = list(normalized_rows[0].keys())
+    _validate_headers(headers)
+
+    valid_rows: List[Dict[str, Any]] = []
+    rejected_rows: List[Dict[str, Any]] = []
+    seen_record_ids = set()
+
+    for idx, row in enumerate(normalized_rows, start=1):
+        try:
+            _validate_row_schema(row, idx, seen_record_ids)
+            row["activity_type"] = str(row.get("activity_type", "")).strip().lower()
+            row["date"] = str(row.get("date", "")).strip()
+            valid_rows.append(row)
+        except Exception as e:
+            rejected_rows.append(
+                {
+                    "row_index": idx,
+                    "record_id": row.get("record_id"),
+                    "reason": str(e),
+                }
+            )
+
+    result = calculate_emissions_from_rows(valid_rows)
+    result["rejected_rows"] = rejected_rows + (result.get("rejected_rows") or [])
+    result["totals"]["records_rejected"] = len(result["rejected_rows"])
+    return result
+
+
 
 def calculate_emissions_from_csv_text(csv_text: str) -> Dict[str, Any]:
     reader = csv.DictReader(io.StringIO(csv_text))
@@ -208,4 +325,4 @@ def calculate_emissions_from_csv_text(csv_text: str) -> Dict[str, Any]:
     _validate_headers(headers)
 
     rows = [dict(r) for r in reader]
-    return calculate_emissions_from_rows(rows)
+    return calculate_emissions_from_tabular_rows(rows)

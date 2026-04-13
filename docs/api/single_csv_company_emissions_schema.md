@@ -1,6 +1,6 @@
-# Single CSV Company Emissions Schema
+# Single Company Emissions Schema (CSV/TSV/JSON/XLSX/XLS)
 
-This is the single canonical CSV format for organization-level emissions ingestion and recommendation generation.
+This is the single canonical tabular schema for organization-level emissions ingestion and recommendation generation.
 
 ## Why one CSV works
 A single file can include employee-level activity data across major sources seen in dashboard views:
@@ -8,8 +8,20 @@ A single file can include employee-level activity data across major sources seen
 - Energy
 - Waste
 - Purchases
+- Food
 
 The backend computes emissions per row and aggregates totals by category/scope/employee, then passes the summarized context to the recommendation LLM.
+
+## Supported upload formats
+- `.csv`
+- `.tsv`
+- `.json` (array of objects, or object containing `rows`/`records`/`data` array)
+- `.xlsx`
+- `.xls`
+
+Important:
+- All formats must follow the exact same required/optional columns and value constraints listed below.
+- Validation rules are identical across formats.
 
 ## Required columns
 - `record_id`: unique row id
@@ -29,6 +41,16 @@ The backend computes emissions per row and aggregates totals by category/scope/e
 - `location`: city/site/location
 - `scope`: optional override (`Scope 1`, `Scope 2`, `Scope 3`)
 - `notes`: free-text details
+
+Recommended `source_category` values for dashboard-aligned grouping:
+- `Energy`
+- `Transport`
+- `Waste`
+- `Purchases`
+- `Food`
+
+Note:
+- `Food` is category-level labeling and can be represented using existing supported `activity_type` values such as `purchased_goods_inr` (for cafeteria, pantry, or catering spend) so ingestion remains compatible with current validators.
 
 ## Supported activity_type values
 - `electricity_grid_kwh`
@@ -64,7 +86,7 @@ Important:
 
 ## API flow
 1. Calculate only:
-   - `POST /ingestion/company-csv/calculate` (multipart upload `file`)
+   - `POST /ingestion/company-csv/calculate` (multipart upload `file` in any supported format)
 2. Calculate + recommendations:
    - `POST /ingestion/company-csv/recommendations` with:
      - `file` (CSV)
@@ -87,3 +109,11 @@ The second endpoint:
 
 ## Sample file
 - `data/raw/sample_org_data/company_emissions_single.csv`
+
+## Safety rules
+- Max file size: 25MB
+- Max rows per file: 50,000
+- `record_id` must be unique in the uploaded dataset
+- `date` must be valid `YYYY-MM-DD`
+- `quantity` must be numeric and `> 0`
+- `activity_type` must be from the supported token set
