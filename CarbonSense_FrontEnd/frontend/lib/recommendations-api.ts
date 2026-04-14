@@ -57,6 +57,19 @@ export interface CurrentUserContext {
   organizationId: string;
 }
 
+function isUuid(value?: string | null): boolean {
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value.trim()
+  );
+}
+
+function preferValidUuid(candidate: string, fallback: string): string {
+  if (isUuid(candidate)) return candidate;
+  if (isUuid(fallback)) return fallback;
+  return candidate || fallback;
+}
+
 function getSupabaseClient(): SupabaseClient {
   if (supabaseClient) return supabaseClient;
 
@@ -73,9 +86,10 @@ export function getCurrentUserId(): string {
 
   try {
     const raw = localStorage.getItem("carbonsense-user-storage");
-    if (!raw) return process.env.NEXT_PUBLIC_DEFAULT_USER_ID || "";
+    const fallback = process.env.NEXT_PUBLIC_DEFAULT_USER_ID || "";
+    if (!raw) return fallback;
     const parsed = JSON.parse(raw) as { state?: { user?: { id?: string } } };
-    return parsed.state?.user?.id || process.env.NEXT_PUBLIC_DEFAULT_USER_ID || "";
+    return preferValidUuid(parsed.state?.user?.id || "", fallback);
   } catch {
     return process.env.NEXT_PUBLIC_DEFAULT_USER_ID || "";
   }
@@ -105,8 +119,8 @@ export function getCurrentUserContext(): CurrentUserContext {
       state?: { user?: { id?: string; organizationId?: string } };
     };
     return {
-      userId: parsed.state?.user?.id || defaultUserId,
-      organizationId: parsed.state?.user?.organizationId || defaultOrgId,
+      userId: preferValidUuid(parsed.state?.user?.id || "", defaultUserId),
+      organizationId: preferValidUuid(parsed.state?.user?.organizationId || "", defaultOrgId),
     };
   } catch {
     return {

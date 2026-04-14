@@ -7,6 +7,8 @@ from ml_services.api.teme_routes import router as teme_router
 from ml_services.api.ocr_routes import router as ocr_router
 from ml_services.api.recommendation_routes import router as recommendation_router
 from ml_services.api.ingestion_routes import router as ingestion_router
+from ml_services.api.policies_routes import router as policies_router
+from ml_services.api.compliance_routes import router as compliance_router
 
 app = FastAPI(
     title="CarbonSense ML Service",
@@ -84,3 +86,5 @@ app.include_router(teme_router)
 app.include_router(ocr_router)
 app.include_router(recommendation_router)
 app.include_router(ingestion_router)
+app.include_router(policies_router)
+app.include_router(compliance_router)

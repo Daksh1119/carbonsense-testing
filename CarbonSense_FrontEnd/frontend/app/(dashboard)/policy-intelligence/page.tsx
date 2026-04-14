@@ -1,13 +1,26 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import DashboardCard from "@/components/DashboardCard";
 import Badge from "@/components/Badge";
 import Button from "@/components/Button";
+import PolicyDrawer from "@/components/PolicyDrawer";
+import ApplyNowModal from "@/components/ApplyNowModal";
+import FundingModal from "@/components/FundingModal";
+import ReadPolicyModal from "@/components/ReadPolicyModal";
 import { Breadcrumb, BackButton } from "@/components/navigation";
 import {
+  fetchBenchmark,
+  fetchComplianceResults,
+  fetchImpactSummary,
+  fetchPolicies,
+  fetchTopActions,
+  type PolicyRecord,
+  type TopActionRecord,
+} from "@/lib/policy-compliance-api";
+import { getCurrentUserContext } from "@/lib/recommendations-api";
+import {
   AlertTriangle,
-  FileText,
   CheckCircle2,
   Clock,
   DollarSign,
@@ -16,93 +29,167 @@ import {
   Shield,
 } from "lucide-react";
 
-const policyAlerts = [
-  {
-    title: "EU CSRD Compliance Report",
-    deadline: "15 days remaining",
-    urgency: "critical",
-    description:
-      "Corporate Sustainability Reporting Directive requires detailed emissions disclosure.",
-    actions: [
-      "Complete Scope 3 audit",
-      "Prepare sustainability report",
-      "Submit to regulatory body",
-    ],
-    status: "pending",
-  },
-  {
-    title: "Quarterly Emissions Report",
-    deadline: "45 days remaining",
-    urgency: "warning",
-    description:
-      "National quarterly reporting mandate for manufacturing sector.",
-    actions: [
-      "Compile Q1 emissions data",
-      "Internal review",
-      "File report online",
-    ],
-    status: "in-progress",
-  },
-  {
-    title: "Carbon Tax Assessment",
-    deadline: "78 days remaining",
-    urgency: "info",
-    description:
-      "Annual carbon tax calculation and payment for emissions above threshold.",
-    actions: [
-      "Calculate taxable emissions",
-      "Review exemptions",
-      "Submit payment",
-    ],
-    status: "pending",
-  },
-];
+function formatDate(value?: string | null): string {
+  if (!value) return "TBD";
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return "TBD";
+  return dt.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
 
-const fundingOpportunities = [
-  {
-    title: "DOE Clean Energy Grant",
-    amount: "₹6.2M – ₹8.6M",
-    eligibility: "Manufacturing sector with emissions > 500 tCO₂",
-    deadline: "Application deadline: June 30, 2026",
-    description:
-      "Funding for renewable energy transition and carbon capture technologies.",
-    ccus: true,
-  },
-  {
-    title: "Private Offset Fund",
-    amount: "Post-KYC Evaluation",
-    eligibility: "Verified carbon reduction projects",
-    deadline: "Rolling applications",
-    description:
-      "Private sector funding for tree planting and offset initiatives.",
-    ccus: false,
-  },
-  {
-    title: "Budget 2026 CCUS Incentive",
-    amount: "₹10M – ₹25M",
-    eligibility: "CCUS implementation projects",
-    deadline: "Application deadline: September 15, 2026",
-    description:
-      "Government incentive for Carbon Capture, Utilization, and Storage projects.",
-    ccus: true,
-  },
-];
+function urgencyFromLayer(layer?: string | null): "critical" | "warning" | "info" {
+  const l = (layer || "").toLowerCase();
+  if (l === "mandatory") return "critical";
+  if (l === "voluntary") return "warning";
+  return "info";
+}
 
-const completedActions = [
-  {
-    title: "ISO 14064 Certification",
-    completedDate: "Feb 15, 2026",
-    verifier: "SGS India Pvt Ltd",
-  },
-  {
-    title: "Annual Sustainability Report 2025",
-    completedDate: "Jan 10, 2026",
-    verifier: "Internal Audit Team",
-  },
-];
+function actionToFunding(action: TopActionRecord) {
+  const min = Math.max(0, action.rupee_impact_estimate * 0.6);
+  const max = Math.max(min, action.rupee_impact_estimate * 1.15);
+  return {
+    title: action.name,
+    amount: `₹${Math.round(min).toLocaleString("en-IN")} – ₹${Math.round(max).toLocaleString("en-IN")}`,
+    eligibility: `${action.type.toUpperCase()} requirement (${action.level.toUpperCase()})`,
+    deadline: "Action window: next compliance cycle",
+    description: action.description || "High-impact compliance action",
+    ccus: action.type === "action",
+  };
+}
 
 export default function PolicyIntelligencePage() {
-  const router = useRouter();
+  const { organizationId } = getCurrentUserContext();
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [policies, setPolicies] = useState<PolicyRecord[]>([]);
+  const [topActions, setTopActions] = useState<TopActionRecord[]>([]);
+  const [complianceResults, setComplianceResults] = useState<Array<{ id: string; requirement_id: string }>>([]);
+  const [impact, setImpact] = useState<{ unlocked: number; pipeline: number; unlockedCo2: number }>({
+    unlocked: 0,
+    pipeline: 0,
+    unlockedCo2: 0,
+  });
+  const [benchmark, setBenchmark] = useState<{ percentile: number; delta: number }>({
+    percentile: 50,
+    delta: 0,
+  });
+  const [completedActions, setCompletedActions] = useState<Array<{ title: string; completedDate: string; verifier: string }>>([]);
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("All");
+  const [selectedPolicy, setSelectedPolicy] = useState<PolicyRecord | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [fundingOpen, setFundingOpen] = useState(false);
+  const [readOpen, setReadOpen] = useState(false);
+  const [showAllPolicies, setShowAllPolicies] = useState(false);
+  const [showAllFunding, setShowAllFunding] = useState(false);
+
+  const resultIdByRequirementId = useMemo(() => {
+    return complianceResults.reduce<Record<string, string>>((map, result) => {
+      map[result.requirement_id] = result.id;
+      return map;
+    }, {});
+  }, [complianceResults]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const load = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const [policyRows, actionRows, impactSummary, benchmarkSummary, results] = await Promise.all([
+          fetchPolicies({ activeOnly: true, organizationId, industry: "manufacturing", size: "sme", totalEmissionsKg: 0 }),
+          fetchTopActions(3),
+          fetchImpactSummary(),
+          fetchBenchmark("sme"),
+          fetchComplianceResults(),
+        ]);
+
+        if (!isMounted) return;
+        setPolicies(policyRows);
+        setTopActions(actionRows);
+        setComplianceResults(results.map((row) => ({ id: row.id, requirement_id: row.requirement_id })));
+        setImpact({
+          unlocked: impactSummary.unlocked_rupees_estimate || 0,
+          pipeline: impactSummary.pipeline_rupees_estimate || 0,
+          unlockedCo2: impactSummary.unlocked_co2_kg_estimate || 0,
+        });
+        setBenchmark({
+          percentile: benchmarkSummary.estimated_percentile || 50,
+          delta: benchmarkSummary.delta_vs_baseline || 0,
+        });
+
+        const completed = results
+          .filter((r) => r.status === "completed" || r.status === "verified")
+          .slice(0, 5)
+          .map((r) => ({
+            title: r.requirement?.name || "Compliance task",
+            completedDate: formatDate(r.completed_at),
+            verifier: r.verified ? "Verified" : "Completed",
+          }));
+        setCompletedActions(completed);
+      } catch (err) {
+        if (!isMounted) return;
+        setError(err instanceof Error ? err.message : "Failed to load policy intelligence data");
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      isMounted = false;
+    };
+  }, [organizationId]);
+
+  const policyAlerts = useMemo(() => {
+    const terms = search.trim().toLowerCase();
+    return [...policies]
+      .filter((policy) => {
+        const category = categoryFilter === "All" ? true : String(policy.category || "").toLowerCase() === categoryFilter.toLowerCase();
+        if (!category) return false;
+        if (!terms) return true;
+        const haystack = [policy.name, policy.short_name, policy.authority, policy.match_reason].join(" ").toLowerCase();
+        return haystack.includes(terms);
+      })
+      .sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+  }, [policies, search, categoryFilter]);
+
+  const fundingOpportunities = useMemo(() => {
+    return [...policies]
+      .filter((policy) => policy.funding)
+      .sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+  }, [policies]);
+
+  const policyLimit = 8;
+  const fundingLimit = 8;
+
+  const visiblePolicyAlerts = useMemo(() => {
+    return showAllPolicies ? policyAlerts : policyAlerts.slice(0, policyLimit);
+  }, [policyAlerts, showAllPolicies]);
+
+  const visibleFunding = useMemo(() => {
+    return showAllFunding ? fundingOpportunities : fundingOpportunities.slice(0, fundingLimit);
+  }, [fundingOpportunities, showAllFunding]);
+
+  const openPolicy = (policy: PolicyRecord) => {
+    setSelectedPolicy(policy);
+    setDrawerOpen(true);
+  };
+
+  const openApply = (policy: PolicyRecord) => {
+    setSelectedPolicy(policy);
+    setApplyOpen(true);
+  };
+
+  const openFunding = (policy: PolicyRecord) => {
+    setSelectedPolicy(policy);
+    setFundingOpen(true);
+  };
+
+  const openRead = (policy: PolicyRecord) => {
+    setSelectedPolicy(policy);
+    setReadOpen(true);
+  };
   
   return (
     <div className="space-y-6">
@@ -127,7 +214,13 @@ export default function PolicyIntelligencePage() {
         </div>
       </div>
 
-      {/* CCUS Eligibility Banner */}
+      {error ? (
+        <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+          Live policy intelligence data is unavailable right now. Existing UI remains usable while services recover.
+        </div>
+      ) : null}
+
+      {/* Score / summary banner */}
       <div className="bg-gradient-to-r from-primary/20 to-emerald-500/20 border-2 border-primary/30 rounded-xl p-6">
         <div className="flex items-start gap-4">
           <div className="p-3 bg-primary rounded-lg">
@@ -139,9 +232,12 @@ export default function PolicyIntelligencePage() {
               <Badge variant="success">Budget 2026</Badge>
             </div>
             <p className="text-slate-300 text-sm mb-3">
-              Your organization qualifies for Carbon Capture, Utilization &
-              Storage funding under India Budget 2026. Estimated funding range:{" "}
-              <span className="font-bold text-primary">₹10M – ₹25M</span>
+              Estimated unlocked impact: {" "}
+              <span className="font-bold text-primary">₹{Math.round(impact.unlocked).toLocaleString("en-IN")}</span>
+              {" "}| pipeline: {" "}
+              <span className="font-bold text-primary">₹{Math.round(impact.pipeline).toLocaleString("en-IN")}</span>
+              {" "}| benchmark percentile: {" "}
+              <span className="font-bold text-primary">P{benchmark.percentile}</span>
             </p>
             <div className="flex items-center gap-3">
               <Button variant="primary" size="sm">
@@ -159,174 +255,96 @@ export default function PolicyIntelligencePage() {
         </div>
       </div>
 
-      {/* Policy Alerts Grid */}
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-navy-border bg-navy-muted/20 p-4">
+        {['All', 'energy', 'waste', 'esg', 'msme', 'environmental', 'transport'].map((category) => (
+          <button key={category} onClick={() => setCategoryFilter(category)} className={`rounded-full px-4 py-2 text-sm ${categoryFilter === category ? 'bg-primary text-background-dark' : 'bg-navy-muted text-slate-300'}`}>
+            {category === 'All' ? 'All' : category.charAt(0).toUpperCase() + category.slice(1)}
+          </button>
+        ))}
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search policies, authority, or reason..." className="ml-auto min-w-[260px] rounded-lg border border-navy-border bg-background-dark px-3 py-2 text-sm text-white outline-none" />
+      </div>
+
       <div>
-        <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-          <AlertTriangle className="size-5 text-rose-400" />
-          Active Compliance Requirements
-        </h2>
-        <div className="grid grid-cols-1 gap-4">
-          {policyAlerts.map((alert, index) => (
-            <DashboardCard
-              key={index}
-              title={alert.title}
-              subtitle={alert.description}
-              className="hover:border-primary/30 transition-colors"
-              headerAction={
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant={
-                      alert.urgency === "critical"
-                        ? "danger"
-                        : alert.urgency === "warning"
-                        ? "warning"
-                        : "info"
-                    }
-                  >
-                    {alert.urgency === "critical"
-                      ? "CRITICAL"
-                      : alert.urgency === "warning"
-                      ? "WARNING"
-                      : "INFO"}
-                  </Badge>
-                  <div className="flex items-center gap-1 text-slate-400">
-                    <Clock className="size-4" />
-                    <span className="text-xs font-medium">
-                      {alert.deadline}
-                    </span>
-                  </div>
-                </div>
-              }
-            >
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-xl font-bold text-white"><AlertTriangle className="size-5 text-rose-400" />Policy Radar</h2>
+          {policyAlerts.length > policyLimit ? (
+            <Button size="sm" variant="outline" onClick={() => setShowAllPolicies((value) => !value)}>
+              {showAllPolicies ? `Show Top ${policyLimit}` : `Show All (${policyAlerts.length})`}
+            </Button>
+          ) : null}
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {visiblePolicyAlerts.map((policy) => (
+            <DashboardCard key={policy.id} title={policy.short_name || policy.name} subtitle={policy.description || policy.match_reason || "Policy detail"} className="hover:border-primary/30 transition-colors" headerAction={<div className="flex flex-wrap items-center gap-2"><Badge variant="info">Match {Math.round(policy.match_score || 0)}%</Badge><Badge variant="default">{String(policy.category || 'General').toUpperCase()}</Badge><Badge variant={String(policy.layer || 'core') === 'core' ? 'success' : 'warning'}>{String(policy.layer || 'core').toUpperCase()}</Badge></div>}>
               <div className="space-y-4">
-                <div>
-                  <h4 className="text-sm font-semibold text-white mb-2">
-                    Required Actions:
-                  </h4>
-                  <div className="space-y-2">
-                    {alert.actions.map((action, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center gap-3 text-sm"
-                      >
-                        <div
-                          className={`size-5 rounded border-2 flex items-center justify-center ${
-                            alert.status === "in-progress" && idx === 0
-                              ? "border-primary bg-primary/10"
-                              : "border-navy-border bg-navy-muted"
-                          }`}
-                        >
-                          {alert.status === "in-progress" && idx === 0 && (
-                            <div className="size-2 bg-primary rounded-full"></div>
-                          )}
-                        </div>
-                        <span className="text-slate-300">{action}</span>
-                      </div>
-                    ))}
-                  </div>
+                <div className="rounded-lg bg-navy-muted/40 p-3 text-sm text-slate-300">{policy.match_reason || 'Matched to your organization profile.'}</div>
+                <div className="h-2 rounded-full bg-navy-border">
+                  <div className="h-2 rounded-full bg-primary" style={{ width: `${Math.max(8, Math.min(100, policy.match_score || 0))}%` }} />
                 </div>
-                <div className="flex gap-2">
-                  <Button variant="primary" size="sm">
-                    Mark as Complete
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    View Details
-                  </Button>
+                <div className="flex items-center justify-between text-xs text-slate-400"><span>Status: {policy.status || 'Applicable'}</span><span>{policy.compliance_progress?.completed || 0} / {policy.compliance_progress?.total || policy.requirements?.length || 0} complete</span></div>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => openPolicy(policy)}>View Details</Button>
+                  <Button size="sm" variant="outline" onClick={() => openApply(policy)}>Apply Now</Button>
+                  <Button size="sm" variant="ghost" onClick={() => openRead(policy)}>Read Policy Document</Button>
+                  <Button size="sm" variant="outline" onClick={() => openFunding(policy)}>View Funding</Button>
                 </div>
               </div>
             </DashboardCard>
           ))}
+          {!isLoading && policyAlerts.length === 0 ? <p className="text-sm text-slate-400">No policies returned for the current filter.</p> : null}
         </div>
       </div>
 
-      {/* Funding Opportunities */}
       <div>
-        <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-          <DollarSign className="size-5 text-primary" />
-          Funding Opportunities
-        </h2>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {fundingOpportunities.map((fund, index) => (
-            <DashboardCard
-              key={index}
-              title={fund.title}
-              subtitle={fund.description}
-              className={
-                fund.ccus ? "border-primary/30 bg-primary/5" : undefined
-              }
-              headerAction={
-                fund.ccus && (
-                  <Badge variant="info">CCUS Eligible</Badge>
-                )
-              }
-            >
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-slate-400 mb-1">
-                      Funding Amount
-                    </p>
-                    <p className="text-lg font-bold text-primary">
-                      {fund.amount}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-400 mb-1">Deadline</p>
-                    <p className="text-sm font-medium text-white">
-                      {fund.deadline.replace("Application deadline: ", "")}
-                    </p>
-                  </div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-xl font-bold text-white"><DollarSign className="size-5 text-primary" />Funding Opportunities</h2>
+          {fundingOpportunities.length > fundingLimit ? (
+            <Button size="sm" variant="outline" onClick={() => setShowAllFunding((value) => !value)}>
+              {showAllFunding ? `Show Top ${fundingLimit}` : `Show All (${fundingOpportunities.length})`}
+            </Button>
+          ) : null}
+        </div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {visibleFunding.map((policy, index) => {
+            const funding = policy.funding as Record<string, unknown> | undefined;
+            return (
+              <DashboardCard key={policy.id} title={String(funding?.scheme_name || policy.name)} subtitle={String(funding?.eligibility || 'Financial and incentive readiness')} className={index < 3 ? 'border-primary/30 bg-primary/5' : undefined} headerAction={index < 3 ? <Badge variant="info">Best Match</Badge> : undefined}>
+                <div className="space-y-3 text-sm">
+                  <div className="grid grid-cols-2 gap-4"><div><p className="mb-1 text-xs text-slate-400">Funding Amount</p><p className="text-lg font-bold text-primary">{String(funding?.amount || 'TBD')}</p></div><div><p className="mb-1 text-xs text-slate-400">Deadline</p><p className="text-sm font-medium text-white">{String(funding?.deadline || 'Rolling')}</p></div></div>
+                  <div><p className="mb-1 text-xs text-slate-400">Eligibility</p><p className="text-slate-300">{String(funding?.eligibility || 'Organization-specific')}</p></div>
+                  <Button variant="primary" size="sm" className="w-full" onClick={() => openFunding(policy)}>View Funding →</Button>
                 </div>
-                <div>
-                  <p className="text-xs text-slate-400 mb-1">Eligibility</p>
-                  <p className="text-sm text-slate-300">{fund.eligibility}</p>
-                </div>
-                <Button
-                  variant={fund.ccus ? "primary" : "outline"}
-                  size="sm"
-                  className="w-full"
-                >
-                  Apply Now
-                </Button>
-              </div>
-            </DashboardCard>
-          ))}
+              </DashboardCard>
+            );
+          })}
         </div>
       </div>
 
-      {/* Completed Actions */}
-      <DashboardCard
-        title="Completed Actions"
-        subtitle="Audit trail of completed compliance activities"
-        icon={<CheckCircle2 className="size-5 text-emerald-400" />}
-      >
-        <div className="space-y-3">
-          {completedActions.map((action, index) => (
-            <div
-              key={index}
-              className="flex items-center justify-between p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-lg"
-            >
-              <div className="flex items-center gap-3">
-                <CheckCircle2 className="size-5 text-emerald-400" />
-                <div>
-                  <h4 className="text-sm font-semibold text-white">
-                    {action.title}
-                  </h4>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Verified by: {action.verifier}
-                  </p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-slate-400">Completed</p>
-                <p className="text-sm font-medium text-emerald-400">
-                  {action.completedDate}
-                </p>
-              </div>
-            </div>
-          ))}
+      <DashboardCard title="Policy Action Tracker" subtitle="Bridge policy browsing to compliance workflow" icon={<CheckCircle2 className="size-5 text-emerald-400" />}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-slate-400"><tr><th className="py-2">Policy Name</th><th>Requirement</th><th>Type</th><th>Verification Method</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody>
+              {policyAlerts.flatMap((policy) => (policy.requirements || []).slice(0, 1).map((requirement, index) => (
+                <tr key={`${policy.id}-${index}`} className="border-t border-navy-border/60">
+                  <td className="py-3 text-white">{policy.short_name || policy.name}</td>
+                  <td>{requirement}</td>
+                  <td><Badge variant="default">Requirement</Badge></td>
+                  <td><Badge variant="info">Evidence</Badge></td>
+                  <td>{policy.status || 'Applicable'}</td>
+                  <td><Button size="sm" variant="outline" onClick={() => openApply(policy)}>{(policy.compliance_progress?.completed || 0) > 0 ? 'Continue →' : 'Start →'}</Button></td>
+                </tr>
+              )))
+              }
+            </tbody>
+          </table>
         </div>
       </DashboardCard>
+
+      <PolicyDrawer policyId={selectedPolicy?.id || null} open={drawerOpen} onClose={() => setDrawerOpen(false)} onApplyNow={openApply} onReadDocument={openRead} onViewFunding={openFunding} />
+      <ApplyNowModal isOpen={applyOpen} onClose={() => setApplyOpen(false)} policy={selectedPolicy ? { id: selectedPolicy.id, name: selectedPolicy.name, steps: selectedPolicy.steps } : null} resultIdByRequirementId={resultIdByRequirementId} />
+      <FundingModal isOpen={fundingOpen} onClose={() => setFundingOpen(false)} policy={selectedPolicy ? { id: selectedPolicy.id, name: selectedPolicy.name, funding: selectedPolicy.funding } : null} />
+      <ReadPolicyModal isOpen={readOpen} onClose={() => setReadOpen(false)} policy={selectedPolicy ? { name: selectedPolicy.name, external_url: selectedPolicy.external_url, document_summary: selectedPolicy.document_summary } : null} />
     </div>
   );
 }

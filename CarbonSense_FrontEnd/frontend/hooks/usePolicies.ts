@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { usePolicyStore } from '../store';
+import { fetchPolicies as fetchPolicyAlerts, type PolicyRecord } from '@/lib/policy-compliance-api';
 
 interface Policy {
   id: string;
@@ -11,6 +12,38 @@ interface Policy {
   actions: string[];
   isRead: boolean;
   createdAt: string;
+}
+
+function formatDeadline(policy: PolicyRecord): string {
+  if (policy.review_date) return policy.review_date;
+  if (policy.effective_date) return policy.effective_date;
+  if (!policy.key_deadlines) return 'Rolling';
+  const firstDeadline = Object.values(policy.key_deadlines)[0];
+  return firstDeadline ? String(firstDeadline) : 'Rolling';
+}
+
+function urgencyFromLayer(layer?: string | null): 'high' | 'medium' | 'low' {
+  const value = (layer || '').toLowerCase();
+  if (value === 'core' || value === 'mandatory') return 'high';
+  if (value === 'secondary' || value === 'optional') return 'medium';
+  return 'low';
+}
+
+function mapPolicy(policy: PolicyRecord): Policy {
+  return {
+    id: policy.id,
+    title: policy.short_name || policy.name,
+    description:
+      policy.description ||
+      policy.authority ||
+      `Policy category: ${policy.category || 'general'}`,
+    urgency: urgencyFromLayer(policy.layer),
+    sectors: policy.applicability || [],
+    deadline: formatDeadline(policy),
+    actions: (policy.requirements || []).slice(0, 3),
+    isRead: false,
+    createdAt: policy.effective_date || new Date().toISOString(),
+  };
 }
 
 interface UsePoliciesReturn {
@@ -31,54 +64,12 @@ export const usePolicies = (): UsePoliciesReturn => {
   
   const { policies, unreadCount, setPolicies } = usePolicyStore();
 
-  const fetchPolicies = async () => {
+  const loadPolicies = async () => {
     try {
       setIsLoading(true);
       setError(null);
-
-      // TODO: Replace with actual API call
-      // const response = await fetch('/api/policy/active-policies');
-      // const data = await response.json();
-
-      // Mock data for now
-      await new Promise((resolve) => setTimeout(resolve, 800));
-
-      const mockPolicies: Policy[] = [
-        {
-          id: 'policy-1',
-          title: 'Budget 2026 CCUS Incentive',
-          description:
-            '₹50,000 crore allocated for Carbon Capture Utilization and Storage. SMEs in cement and steel sectors can apply for funding.',
-          urgency: 'high',
-          sectors: ['Manufacturing', 'Cement', 'Steel'],
-          deadline: '2026-06-30',
-          actions: [
-            'Submit Expression of Interest',
-            'Prepare technical documentation',
-            'Apply for funding by deadline',
-          ],
-          isRead: false,
-          createdAt: '2026-02-01T00:00:00Z',
-        },
-        {
-          id: 'policy-2',
-          title: 'EU CBAM Compliance',
-          description:
-            'Carbon Border Adjustment Mechanism now requires quarterly reporting for exports to EU.',
-          urgency: 'medium',
-          sectors: ['Export', 'Manufacturing'],
-          deadline: '2026-04-15',
-          actions: [
-            'Register on CBAM portal',
-            'Submit Q1 emissions report',
-            'Pay adjustment fees if applicable',
-          ],
-          isRead: false,
-          createdAt: '2026-02-15T00:00:00Z',
-        },
-      ];
-
-      setPolicies(mockPolicies);
+      const livePolicies = await fetchPolicyAlerts({ activeOnly: true });
+      setPolicies(livePolicies.map(mapPolicy));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch policies');
     } finally {
@@ -87,7 +78,7 @@ export const usePolicies = (): UsePoliciesReturn => {
   };
 
   useEffect(() => {
-    fetchPolicies();
+    loadPolicies();
   }, []);
 
   return {
@@ -95,6 +86,6 @@ export const usePolicies = (): UsePoliciesReturn => {
     unreadCount,
     isLoading,
     error,
-    refetch: fetchPolicies,
+    refetch: loadPolicies,
   };
 };

@@ -9,7 +9,16 @@ build/
 
 # Virtual environments
 venv/
+.venv/
 .env/
+
+# Environment / local secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
+CarbonSense_FrontEnd/frontend/.env.local
+CarbonSense_FrontEnd/frontend/.env.*.local
 
 # OS
 .DS_Store
@@ -21,6 +30,10 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Supabase local tooling artifacts
+supabase/.temp/
+supabase/migrations_backup/
 
 # Local training artifacts (kept outside git; used in Colab/external training)
 models/*.pt

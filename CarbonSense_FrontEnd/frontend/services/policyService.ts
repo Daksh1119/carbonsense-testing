@@ -3,6 +3,8 @@
  * Handles all policy-related API calls
  */
 
+import { fetchPolicies, type PolicyRecord } from '@/lib/policy-compliance-api';
+
 export interface PolicyAlert {
   id: string;
   title: string;
@@ -27,34 +29,73 @@ export interface FundingOpportunity {
  * Fetch policy alerts
  */
 export const getPolicyAlerts = async (): Promise<PolicyAlert[]> => {
-  // TODO: Replace with actual API call
-  // const response = await fetch('/api/policy/alerts');
-  // if (!response.ok) throw new Error('Failed to fetch policy alerts');
-  // return response.json();
+  const policies = await fetchPolicies({ activeOnly: true });
 
-  // Mock data for now
-  await new Promise((resolve) => setTimeout(resolve, 600));
+  const parseDeadline = (policy: PolicyRecord): Date | null => {
+    const candidate = policy.review_date || policy.effective_date || Object.values(policy.key_deadlines || {})[0];
+    if (!candidate) return null;
+    const parsed = new Date(String(candidate));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
 
-  return [
-    {
-      id: '1',
-      title: 'EU CSRD Compliance',
-      deadline: '15 days remaining',
-      urgency: 'critical',
-      description: 'Corporate Sustainability Reporting Directive compliance requirements',
-      actions: ['Submit sustainability report', 'Third-party audit', 'Board approval'],
-      status: 'pending',
-    },
-    {
-      id: '2',
-      title: 'Scope 3 Audit Report',
-      deadline: '65 days remaining',
-      urgency: 'warning',
-      description: 'Annual Scope 3 emissions verification audit',
-      actions: ['Collect supply chain data', 'Engage auditor', 'Prepare documentation'],
-      status: 'in-progress',
-    },
-  ];
+  const getStatus = (policy: PolicyRecord): PolicyAlert['status'] => {
+    const completed = Number(policy.compliance_progress?.completed || 0);
+    const total = Number(policy.compliance_progress?.total || 0);
+    if (total > 0 && completed >= total) return 'completed';
+    if (completed > 0) return 'in-progress';
+    if ((policy.status || '').toLowerCase() === 'compliant') return 'completed';
+    return 'pending';
+  };
+
+  const getUrgency = (policy: PolicyRecord): PolicyAlert['urgency'] => {
+    const deadline = parseDeadline(policy);
+    const daysLeft = deadline ? Math.ceil((deadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
+    const score = Number(policy.match_score || 0);
+    const progress = Number(policy.compliance_progress?.completed || 0);
+
+    if ((policy.status || '').toLowerCase() === 'compliant') return 'info';
+    if (daysLeft !== null && daysLeft <= 7) return 'critical';
+    if (daysLeft !== null && daysLeft <= 30) return 'urgent';
+    if (score >= 75) return 'critical';
+    if (score >= 50 || progress > 0) return 'urgent';
+    return 'warning';
+  };
+
+  const formatDeadline = (policy: PolicyRecord): string => {
+    const deadline = parseDeadline(policy);
+    if (!deadline) return 'Rolling';
+    const daysLeft = Math.max(0, Math.ceil((deadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+    return daysLeft === 0 ? 'Due now' : `${daysLeft} days remaining`;
+  };
+
+  const mapActions = (policy: PolicyRecord): string[] => {
+    const requirements = policy.requirements || [];
+    if (requirements.length > 0) return requirements.slice(0, 3);
+    const steps = policy.steps || [];
+    return steps
+      .map((step) => String(step?.title || step?.description || '').trim())
+      .filter(Boolean)
+      .slice(0, 3);
+  };
+
+  return policies
+    .map((policy) => ({
+      id: policy.id,
+      title: policy.short_name || policy.name,
+      deadline: formatDeadline(policy),
+      urgency: getUrgency(policy),
+      description:
+        policy.match_reason ||
+        policy.description ||
+        policy.authority ||
+        `Policy category: ${policy.category || 'general'}`,
+      actions: mapActions(policy),
+      status: getStatus(policy),
+    }))
+    .sort((left, right) => {
+      const rank = { critical: 0, urgent: 1, warning: 2, info: 3 } as const;
+      return rank[left.urgency] - rank[right.urgency] || left.title.localeCompare(right.title);
+    });
 };
 
 /**

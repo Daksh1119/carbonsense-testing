@@ -5,6 +5,7 @@ import StatsCard from "@/components/StatsCard";
 import DashboardCard from "@/components/DashboardCard";
 import Badge from "@/components/Badge";
 import ProgressBar from "@/components/ProgressBar";
+import ScoreRing from "@/components/ScoreRing";
 import { CardSkeleton, ChartSkeleton, ErrorState } from "@/components/ui";
 import Button from "@/components/Button";
 import { Breadcrumb } from "@/components/navigation";
@@ -26,6 +27,8 @@ import {
   Wind,
   TrendingDown,
   Clock,
+  Shield,
+  CheckCircle2,
   AlertTriangle,
   Zap,
   TreePine,
@@ -36,19 +39,6 @@ import {
   ExternalLink,
   Upload,
 } from "lucide-react";
-
-const policyAlerts = [
-  {
-    title: "EU CSRD Compliance",
-    deadline: "Due in 15 days",
-    status: "urgent",
-  },
-  {
-    title: "Scope 3 Audit Report",
-    deadline: "Due in 65 days",
-    status: "warning",
-  },
-];
 
 const fundingOpportunities = [
   {
@@ -78,6 +68,30 @@ const formatFullMonthLabel = (value: string) => {
 const formatTco2e = (value: number | null | undefined) => {
   if (value === null || value === undefined || Number.isNaN(value)) return "N/A";
   return `${Number(value).toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e`;
+};
+
+const formatDeadlineDate = (value?: string | null) => {
+  if (!value) return "TBD";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "TBD";
+  return parsed.toLocaleDateString("en-US", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+const getDeadlineTone = (priority: string) => {
+  if (priority === "critical") return "danger";
+  if (priority === "high") return "warning";
+  return "neutral";
+};
+
+const getComplianceRingColor = (score: number) => {
+  if (score >= 80) return "green" as const;
+  if (score >= 60) return "teal" as const;
+  if (score >= 40) return "amber" as const;
+  return "rose" as const;
 };
 
 export default function DashboardPage() {
@@ -242,23 +256,41 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Emissions Actions */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <button
+          onClick={() => router.push('/emissions')}
+          className="group relative bg-background-dark border border-navy-border rounded-xl p-6 hover:border-primary/50 transition-all duration-300 text-left"
+        >
+          <div className="flex items-start justify-between mb-3">
+            <div className="bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded-lg p-3">
+              <Plus className="size-5" />
+            </div>
+            <ArrowUpRight className="size-4 text-slate-500 group-hover:text-primary group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-300" />
+          </div>
+          <h3 className="text-base font-bold text-white mb-1 group-hover:text-primary transition-colors">
+            Add Emission
+          </h3>
+          <p className="text-sm text-slate-400">
+            Start a new transport, energy, waste, or purchases entry
+          </p>
+        </button>
+
         <button
           onClick={() => router.push('/data-ingestion')}
           className="group relative bg-background-dark border border-navy-border rounded-xl p-6 hover:border-primary/50 transition-all duration-300 text-left"
         >
           <div className="flex items-start justify-between mb-3">
-            <div className="bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg p-3">
+            <div className="bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg p-3">
               <Upload className="size-5" />
             </div>
             <ArrowUpRight className="size-4 text-slate-500 group-hover:text-primary group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-300" />
           </div>
           <h3 className="text-base font-bold text-white mb-1 group-hover:text-primary transition-colors">
-            Data Ingestion
+            Upload File
           </h3>
           <p className="text-sm text-slate-400">
-            Upload CSV, receipts, or bank statements
+            Upload CSV, TSV, or JSON where supported and review schema guidance
           </p>
         </button>
 
@@ -267,7 +299,7 @@ export default function DashboardPage() {
           className="group relative bg-background-dark border border-navy-border rounded-xl p-6 hover:border-primary/50 transition-all duration-300 text-left"
         >
           <div className="flex items-start justify-between mb-3">
-            <div className="bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded-lg p-3">
+            <div className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg p-3">
               <FileText className="size-5" />
             </div>
             <ArrowUpRight className="size-4 text-slate-500 group-hover:text-primary group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-300" />
@@ -276,7 +308,64 @@ export default function DashboardPage() {
             Detailed Log
           </h3>
           <p className="text-sm text-slate-400">
-            View all emission entries with filters
+            Open the upload-wise emissions history and drilldown table
+          </p>
+        </button>
+      </div>
+
+      {/* Policy & Compliance Actions */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <button
+          onClick={() => router.push('/policy-intelligence')}
+          className="group relative bg-background-dark border border-navy-border rounded-xl p-6 hover:border-primary/50 transition-all duration-300 text-left"
+        >
+          <div className="flex items-start justify-between mb-3">
+            <div className="bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg p-3">
+              <Shield className="size-5" />
+            </div>
+            <ArrowUpRight className="size-4 text-slate-500 group-hover:text-primary group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-300" />
+          </div>
+          <h3 className="text-base font-bold text-white mb-1 group-hover:text-primary transition-colors">
+            View Policy
+          </h3>
+          <p className="text-sm text-slate-400">
+            Open policy intelligence and funding details
+          </p>
+        </button>
+
+        <button
+          onClick={() => router.push('/compliance')}
+          className="group relative bg-background-dark border border-navy-border rounded-xl p-6 hover:border-primary/50 transition-all duration-300 text-left"
+        >
+          <div className="flex items-start justify-between mb-3">
+            <div className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg p-3">
+              <CheckCircle2 className="size-5" />
+            </div>
+            <ArrowUpRight className="size-4 text-slate-500 group-hover:text-primary group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-300" />
+          </div>
+          <h3 className="text-base font-bold text-white mb-1 group-hover:text-primary transition-colors">
+            Check Compliance
+          </h3>
+          <p className="text-sm text-slate-400">
+            Review tasks, deadlines, and score rings
+          </p>
+        </button>
+
+        <button
+          onClick={() => router.push('/compliance?action=upload')}
+          className="group relative bg-background-dark border border-navy-border rounded-xl p-6 hover:border-primary/50 transition-all duration-300 text-left"
+        >
+          <div className="flex items-start justify-between mb-3">
+            <div className="bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded-lg p-3">
+              <Upload className="size-5" />
+            </div>
+            <ArrowUpRight className="size-4 text-slate-500 group-hover:text-primary group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-300" />
+          </div>
+          <h3 className="text-base font-bold text-white mb-1 group-hover:text-primary transition-colors">
+            Upload Evidence
+          </h3>
+          <p className="text-sm text-slate-400">
+            Open the evidence panel directly
           </p>
         </button>
       </div>
@@ -551,38 +640,75 @@ export default function DashboardPage() {
             </Button>
           }
         >
-          <div className="space-y-4">
+          <div className="space-y-5">
+            <div className="grid gap-4 lg:grid-cols-[180px_1fr]">
+              <ScoreRing
+                value={data.complianceScore.total_score}
+                max={100}
+                label="Compliance Score"
+                subLabel={`${Math.min(data.complianceDeadlines.length, 8)} shown • ${data.complianceDeadlineCount} in next 90 days`}
+                color={getComplianceRingColor(data.complianceScore.total_score)}
+              />
+              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                  <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Due Soon</p>
+                  <p className="mt-2 text-2xl font-semibold text-white">{data.complianceDueSoonCount}</p>
+                  <p className="text-xs text-slate-400">Deadlines within 30 days</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                  <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Critical</p>
+                  <p className="mt-2 text-2xl font-semibold text-white">{data.complianceCriticalDeadlineCount}</p>
+                  <p className="text-xs text-slate-400">Deadlines within 7 days</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                  <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Policy Alerts</p>
+                  <p className="mt-2 text-2xl font-semibold text-white">{data.policyAlerts}</p>
+                  <p className="text-xs text-slate-400">Active policy reminders</p>
+                </div>
+              </div>
+            </div>
+
             <div>
               <h4 className="text-sm font-semibold text-rose-400 mb-3 flex items-center gap-2">
                 <AlertTriangle className="size-4" />
-                IMMEDIATE DEADLINES
+                UPCOMING DEADLINES
+                <span className="rounded-full border border-rose-400/30 bg-rose-400/10 px-2 py-0.5 text-xs text-rose-200">
+                  {Math.min(data.complianceDeadlines.length, 8)} / {data.complianceDeadlineCount}
+                </span>
               </h4>
               <div className="space-y-3">
-                {policyAlerts.map((alert, index) => (
-                  <div
-                    key={index}
-                    className="p-3 bg-rose-500/5 border border-rose-500/20 rounded-lg cursor-pointer hover:bg-rose-500/10 transition-colors"
-                    onClick={() => router.push('/policy-intelligence')}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-white">
-                          {alert.title}
-                        </p>
-                        <p className="text-xs text-slate-400 mt-1">
-                          {alert.deadline}
-                        </p>
+                {data.complianceDeadlines.length > 0 ? (
+                  data.complianceDeadlines.map((deadline) => (
+                    <div
+                      key={deadline.id}
+                      className="p-3 bg-rose-500/5 border border-rose-500/20 rounded-lg cursor-pointer hover:bg-rose-500/10 transition-colors"
+                      onClick={() => router.push('/compliance')}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-medium text-white">{deadline.title}</p>
+                          <p className="text-xs text-slate-400 mt-1">
+                            Due {formatDeadlineDate(deadline.dueDate)} • {deadline.daysLeft} days left • {deadline.level}
+                          </p>
+                        </div>
+                        <Badge variant={getDeadlineTone(deadline.priority)}>
+                          {deadline.priority.toUpperCase()}
+                        </Badge>
                       </div>
-                      <Badge
-                        variant={
-                          alert.status === "urgent" ? "danger" : "warning"
-                        }
-                      >
-                        {alert.status === "urgent" ? "URGENT" : "WARNING"}
-                      </Badge>
                     </div>
+                  ))
+                ) : (
+                  <div className="rounded-lg border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
+                    No upcoming compliance deadlines in the next 90 days.
                   </div>
-                ))}
+                )}
+                {data.complianceDeadlineCount > data.complianceDeadlines.length ? (
+                  <div className="pt-1">
+                    <Button size="sm" variant="outline" onClick={() => router.push('/compliance')}>
+                      Show all {data.complianceDeadlineCount} deadlines
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -606,7 +732,7 @@ export default function DashboardPage() {
                   </div>
                 ))}
               </div>
-            </div>
+          </div>
           </div>
         </DashboardCard>
       </div>

@@ -2,6 +2,25 @@ import { useCallback, useEffect, useState } from 'react';
 import { fetchEmissionsUploadsScoped } from '@/lib/emissions-api';
 import { getCurrentUserContext, getLatestTEMERun } from '@/lib/recommendations-api';
 import { getPolicyAlerts } from '@/services/policyService';
+import { fetchComplianceDeadlines, fetchComplianceScore } from '@/lib/policy-compliance-api';
+
+interface DashboardComplianceScore {
+  total_score: number;
+  data_score: number;
+  action_score: number;
+  reporting_score: number;
+}
+
+interface DashboardComplianceDeadline {
+  id: string;
+  title: string;
+  dueDate: string;
+  daysLeft: number;
+  status: string;
+  level: string;
+  type: string;
+  priority: 'critical' | 'high' | 'medium' | 'low';
+}
 
 interface DashboardData {
   totalEmissions: number;
@@ -19,6 +38,11 @@ interface DashboardData {
   policyAlerts: number;
   policyCriticalAlerts: number;
   policyMeta: string;
+  complianceScore: DashboardComplianceScore;
+  complianceDeadlines: DashboardComplianceDeadline[];
+  complianceDeadlineCount: number;
+  complianceDueSoonCount: number;
+  complianceCriticalDeadlineCount: number;
   latestPeriodLabel: string;
   refreshedAtLabel: string;
   carbonPath: {
@@ -84,6 +108,13 @@ export const useDashboardData = (): UseDashboardDataReturn => {
     return parsed;
   };
 
+  const getDaysUntil = (value: string | null | undefined): number => {
+    if (!value) return 0;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return 0;
+    return Math.max(0, Math.ceil((parsed.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+  };
+
   const getMonthKey = (value: Date): string => (
     `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}`
   );
@@ -146,6 +177,16 @@ export const useDashboardData = (): UseDashboardDataReturn => {
     policyAlerts: 2,
     policyCriticalAlerts: 1,
     policyMeta: '1 critical, 1 warning',
+    complianceScore: {
+      total_score: 0,
+      data_score: 0,
+      action_score: 0,
+      reporting_score: 0,
+    },
+    complianceDeadlines: [],
+    complianceDeadlineCount: 0,
+    complianceDueSoonCount: 0,
+    complianceCriticalDeadlineCount: 0,
     latestPeriodLabel: 'Latest',
     refreshedAtLabel: 'now',
     carbonPath: {
@@ -259,10 +300,12 @@ export const useDashboardData = (): UseDashboardDataReturn => {
         throw new Error('Missing organization/user context.');
       }
 
-      const [uploadsResult, latestTemeRunResult, policyAlertsResult] = await Promise.allSettled([
+      const [uploadsResult, latestTemeRunResult, policyAlertsResult, deadlinesResult, complianceScoreResult] = await Promise.allSettled([
         fetchEmissionsUploadsScoped({ organizationId, userId }),
         getLatestTEMERun(userId),
         getPolicyAlerts(),
+        fetchComplianceDeadlines(90),
+        fetchComplianceScore(),
       ]);
 
       if (uploadsResult.status !== 'fulfilled') {
@@ -276,6 +319,12 @@ export const useDashboardData = (): UseDashboardDataReturn => {
       const policyAlertsResponse = policyAlertsResult.status === 'fulfilled'
         ? policyAlertsResult.value
         : [];
+      const deadlinesResponse = deadlinesResult.status === 'fulfilled'
+        ? deadlinesResult.value
+        : [];
+      const complianceScoreResponse = complianceScoreResult.status === 'fulfilled'
+        ? complianceScoreResult.value
+        : null;
 
       const now = new Date();
       const currentMonth = now.getMonth() + 1;
@@ -368,6 +417,30 @@ export const useDashboardData = (): UseDashboardDataReturn => {
       );
 
       const policyMeta = `${criticalPolicyAlerts.length} critical, ${activePolicyAlerts.length} active`;
+      const complianceDeadlines = deadlinesResponse
+        .map((deadline) => {
+          const dueDate = String(deadline.due_date || '');
+          const daysLeft = getDaysUntil(dueDate);
+          const level = String(deadline.compliance_requirements?.level || 'general');
+          const type = String(deadline.compliance_requirements?.type || 'general');
+          const priority = daysLeft <= 7 ? 'critical' : daysLeft <= 30 ? 'high' : 'medium';
+
+          return {
+            id: String(deadline.id || `${dueDate}-${deadline.compliance_requirements?.name || 'deadline'}`),
+            title: String(deadline.compliance_requirements?.name || 'Compliance requirement'),
+            dueDate,
+            daysLeft,
+            status: String(deadline.status || 'pending'),
+            level,
+            type,
+            priority,
+          } satisfies DashboardComplianceDeadline;
+        })
+        .sort((left, right) => left.daysLeft - right.daysLeft);
+
+      const complianceDeadlineCount = complianceDeadlines.length;
+      const complianceDueSoonCount = complianceDeadlines.filter((deadline) => deadline.daysLeft <= 30).length;
+      const complianceCriticalDeadlineCount = complianceDeadlines.filter((deadline) => deadline.priority === 'critical').length;
 
       const refreshedAtLabel = new Date().toLocaleTimeString('en-US', {
         hour: '2-digit',
@@ -527,6 +600,16 @@ export const useDashboardData = (): UseDashboardDataReturn => {
         policyAlerts: activePolicyAlerts.length,
         policyCriticalAlerts: criticalPolicyAlerts.length,
         policyMeta,
+        complianceScore: {
+          total_score: Number(complianceScoreResponse?.total_score || 0),
+          data_score: Number(complianceScoreResponse?.data_score || 0),
+          action_score: Number(complianceScoreResponse?.action_score || 0),
+          reporting_score: Number(complianceScoreResponse?.reporting_score || 0),
+        },
+        complianceDeadlines: complianceDeadlines.slice(0, 8),
+        complianceDeadlineCount,
+        complianceDueSoonCount,
+        complianceCriticalDeadlineCount,
         latestPeriodLabel,
         refreshedAtLabel,
         carbonPath: {

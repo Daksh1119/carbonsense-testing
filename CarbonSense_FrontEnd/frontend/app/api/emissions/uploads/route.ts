@@ -163,6 +163,23 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   return chunks;
 }
 
+function isUuid(value?: string | null): boolean {
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value.trim()
+  );
+}
+
+function resolveUuid(inputValue: string | undefined, fallbackEnvKey: string): string | null {
+  const raw = String(inputValue || "").trim();
+  if (isUuid(raw)) return raw;
+
+  const fallback = String(process.env[fallbackEnvKey] || "").trim();
+  if (isUuid(fallback)) return fallback;
+
+  return null;
+}
+
 function getSupabaseClient() {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -176,6 +193,11 @@ function getSupabaseClient() {
   });
 }
 
+function isDuplicateUploadError(message?: string): boolean {
+  const text = String(message || "").toLowerCase();
+  return text.includes("duplicate key value violates unique constraint");
+}
+
 export async function POST(req: NextRequest) {
   let payload: UploadPayload;
 
@@ -187,6 +209,22 @@ export async function POST(req: NextRequest) {
 
   if (!payload?.organizationId || !payload?.userId) {
     return NextResponse.json({ detail: "Missing organizationId or userId" }, { status: 400 });
+  }
+
+  const resolvedOrganizationId = resolveUuid(
+    payload.organizationId,
+    "NEXT_PUBLIC_DEFAULT_ORGANIZATION_ID"
+  );
+  const resolvedUserId = resolveUuid(payload.userId, "NEXT_PUBLIC_DEFAULT_USER_ID");
+
+  if (!resolvedOrganizationId || !resolvedUserId) {
+    return NextResponse.json(
+      {
+        detail:
+          "organizationId/userId must be UUIDs, or set NEXT_PUBLIC_DEFAULT_ORGANIZATION_ID and NEXT_PUBLIC_DEFAULT_USER_ID in frontend .env.local",
+      },
+      { status: 400 }
+    );
   }
 
   const sourceType = payload.sourceType || "csv";
@@ -248,8 +286,8 @@ export async function POST(req: NextRequest) {
   const { data: upload, error: uploadError } = await supabase
     .from("organization_uploads")
     .insert({
-      organization_id: payload.organizationId,
-      uploaded_by: payload.userId,
+      organization_id: resolvedOrganizationId,
+      uploaded_by: resolvedUserId,
       source_type: sourceType,
       original_file_name: uploadMeta.name,
       file_sha256: uploadMeta.sha256,
@@ -276,6 +314,35 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (uploadError || !upload) {
+    if (isDuplicateUploadError(uploadError?.message)) {
+      const { data: existingUpload } = await supabase
+        .from("organization_uploads")
+        .select(
+          "id, organization_id, uploaded_by, source_type, original_file_name, created_at, period_start, period_end, total_emissions_kg, total_emissions_tco2e, record_count"
+        )
+        .eq("organization_id", resolvedOrganizationId)
+        .eq("file_sha256", uploadMeta.sha256)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingUpload) {
+        return NextResponse.json(
+          {
+            ...existingUpload,
+            file_format: inferFileFormat(existingUpload.source_type, existingUpload.original_file_name, undefined),
+            duplicate: true,
+          },
+          { status: 200 }
+        );
+      }
+
+      return NextResponse.json(
+        { detail: "This file was already uploaded for this organization.", duplicate: true },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json(
       { detail: uploadError?.message || "Failed to store upload metadata" },
       { status: 500 }
@@ -284,9 +351,9 @@ export async function POST(req: NextRequest) {
 
   const entryPayload = sourceType === "manual"
     ? entries.map((entry) => ({
-        organization_id: payload.organizationId,
+        organization_id: resolvedOrganizationId,
         upload_id: upload.id,
-        uploaded_by: payload.userId,
+        uploaded_by: resolvedUserId,
         entry_date: toDateOnlyString(parseDateOrToday(entry.entry_date)),
         category: normalizeCategory(entry.category),
         activity: String(entry.activity || "Manual Entry"),
@@ -295,9 +362,9 @@ export async function POST(req: NextRequest) {
         co2_kg: Number(entry.co2_kg || 0),
       }))
     : computedRows.map((row) => ({
-        organization_id: payload.organizationId,
+      organization_id: resolvedOrganizationId,
         upload_id: upload.id,
-        uploaded_by: payload.userId,
+      uploaded_by: resolvedUserId,
         entry_date: toDateOnlyString(parseDateOrToday(row.date)),
         category: normalizeCategory(row.category || row.source_category),
         activity: String(row.activity_type || "Uploaded Activity"),
@@ -341,7 +408,19 @@ export async function GET(req: NextRequest) {
     supabase = getSupabaseClient();
   } catch (error) {
     const message = error instanceof Error ? error.message : "Server config error";
+    // Local/demo mode: return an empty list so UI can continue to render.
+    if (message.includes("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")) {
+      return NextResponse.json([], { status: 200 });
+    }
     return NextResponse.json({ detail: message }, { status: 500 });
+  }
+
+  const hasValidOrganizationId = isUuid(organizationId);
+  const hasValidUserId = isUuid(userId);
+
+  // Common local/demo placeholders (e.g. demo-org, userId=1) should not hit UUID columns.
+  if (organizationId && !hasValidOrganizationId && userId && !hasValidUserId) {
+    return NextResponse.json([], { status: 200 });
   }
 
   let query = supabase
@@ -351,15 +430,17 @@ export async function GET(req: NextRequest) {
     )
     .order("created_at", { ascending: false });
 
-  if (organizationId) {
+  if (hasValidOrganizationId) {
     query = query.eq("organization_id", organizationId);
-  } else if (userId) {
+  } else if (hasValidUserId) {
     query = query.eq("uploaded_by", userId);
+  } else {
+    return NextResponse.json([], { status: 200 });
   }
 
   let { data, error } = await query;
 
-  if ((!data || data.length === 0) && organizationId && userId) {
+  if ((!data || data.length === 0) && hasValidOrganizationId && hasValidUserId) {
     const fallbackResult = await supabase
       .from("organization_uploads")
       .select(
