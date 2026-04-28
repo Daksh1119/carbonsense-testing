@@ -10,6 +10,7 @@ import { CardSkeleton, ChartSkeleton, ErrorState } from "@/components/ui";
 import Button from "@/components/Button";
 import { Breadcrumb } from "@/components/navigation";
 import { useRouter } from "next/navigation";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import {
   Area,
   AreaChart,
@@ -82,9 +83,9 @@ const formatDeadlineDate = (value?: string | null) => {
 };
 
 const getDeadlineTone = (priority: string) => {
-  if (priority === "critical") return "danger";
-  if (priority === "high") return "warning";
-  return "neutral";
+  if (priority === "critical") return "danger" as const;
+  if (priority === "high") return "warning" as const;
+  return "default" as const;
 };
 
 const getComplianceRingColor = (score: number) => {
@@ -101,37 +102,41 @@ export default function DashboardPage() {
   // Show error state
   if (error && !isLoading) {
     return (
-      <div className="space-y-6">
-        <ErrorState
-          title="Failed to load dashboard"
-          message={error}
-          onRetry={refetch}
-        />
-      </div>
+      <ProtectedRoute requiredRole="admin">
+        <div className="space-y-6">
+          <ErrorState
+            title="Failed to load dashboard"
+            message={error}
+            onRetry={refetch}
+          />
+        </div>
+      </ProtectedRoute>
     );
   }
 
   // Show loading skeletons
   if (isLoading || !data) {
     return (
-      <div className="space-y-6">
-        {/* Stats Grid Skeleton */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <CardSkeleton />
-          <CardSkeleton />
-          <CardSkeleton />
-          <CardSkeleton />
-        </div>
+      <ProtectedRoute requiredRole="admin">
+        <div className="space-y-6">
+          {/* Stats Grid Skeleton */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <CardSkeleton />
+            <CardSkeleton />
+            <CardSkeleton />
+            <CardSkeleton />
+          </div>
 
-        {/* Main Chart Skeleton */}
-        <ChartSkeleton />
+          {/* Main Chart Skeleton */}
+          <ChartSkeleton />
 
-        {/* Two Column Layout Skeleton */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <CardSkeleton />
-          <CardSkeleton />
+          {/* Two Column Layout Skeleton */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <CardSkeleton />
+            <CardSkeleton />
+          </div>
         </div>
-      </div>
+      </ProtectedRoute>
     );
   }
 
@@ -198,6 +203,7 @@ export default function DashboardPage() {
   })();
 
   return (
+    <ProtectedRoute requiredRole="admin">
     <div className="space-y-6">
       {/* Page Header with Breadcrumb */}
       <div className="flex items-center justify-between">
@@ -737,5 +743,6 @@ export default function DashboardPage() {
         </DashboardCard>
       </div>
     </div>
+    </ProtectedRoute>
   );
 }

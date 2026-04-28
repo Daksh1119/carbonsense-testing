@@ -41,3 +41,29 @@ models/*.pth
 
 # Local generated OCR debug outputs
 scripts/ocr_result_*.json
+
+# Node/Next.js build artifacts
+.next/
+.turbo/
+.cache/
+out/
+node_modules/
+
+# Yarn/NPM/PNPM lock and config
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.npmrc
+.yarnrc
+.yarn/
+
+# Additional environment / local secrets
+.envrc
+.env.*.local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# dotenv-linter and direnv
+.envrc

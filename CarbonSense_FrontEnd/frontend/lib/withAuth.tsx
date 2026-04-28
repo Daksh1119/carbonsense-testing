@@ -3,22 +3,25 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUserStore } from '@/store';
+import { getRoleDashboardPath, type Role } from '@/lib/authHelpers';
 
 /**
  * withAuth HOC
- * Higher-order component for protecting page components
+ * Higher-order component for protecting page components.
+ * Updated for strict role separation (admin/manager/viewer).
  * Usage: export default withAuth(YourPage, { requiredRole: 'admin' });
  */
 export interface WithAuthOptions {
-  requiredRole?: 'admin' | 'manager' | 'analyst' | 'viewer' | 'member';
+  requiredRole?: Role;
   redirectTo?: string;
+  approvalRequired?: boolean;
 }
 
 export default function withAuth<P extends object>(
   Component: React.ComponentType<P>,
   options: WithAuthOptions = {}
 ) {
-  const { requiredRole, redirectTo = '/login' } = options;
+  const { requiredRole, redirectTo = '/login', approvalRequired = false } = options;
 
   return function ProtectedComponent(props: P) {
     const router = useRouter();
@@ -27,32 +30,26 @@ export default function withAuth<P extends object>(
     useEffect(() => {
       if (isLoading) return;
 
-      if (!isAuthenticated) {
+      if (!isAuthenticated || !user) {
         sessionStorage.setItem('redirectAfterLogin', window.location.pathname);
         router.push(redirectTo);
         return;
       }
 
-      if (requiredRole && user) {
-        const roleHierarchy: Record<string, number> = {
-          viewer: 1,
-          analyst: 2,
-          member: 2,
-          manager: 3,
-          admin: 4,
-        };
+      // Strict role check — no hierarchy, exact match
+      if (requiredRole && user.role !== requiredRole) {
+        router.push('/unauthorized');
+        return;
+      }
 
-        const userRoleLevel = roleHierarchy[user.role] || 0;
-        const requiredRoleLevel = roleHierarchy[requiredRole] || 0;
-
-        if (userRoleLevel < requiredRoleLevel) {
-          router.push('/unauthorized');
-          return;
-        }
+      // Approval gate for viewers
+      if (approvalRequired && user.role === 'viewer' && !user.approved) {
+        // Stay on page — the component itself should show the pending screen
+        return;
       }
     }, [isAuthenticated, user, isLoading, router]);
 
-    if (isLoading || !isAuthenticated) {
+    if (isLoading) {
       return (
         <div className="flex items-center justify-center min-h-screen bg-slate-900">
           <div className="text-center">
@@ -63,22 +60,9 @@ export default function withAuth<P extends object>(
       );
     }
 
-    if (requiredRole && user) {
-      const roleHierarchy: Record<string, number> = {
-        viewer: 1,
-        analyst: 2,
-        member: 2,
-        manager: 3,
-        admin: 4,
-      };
+    if (!isAuthenticated || !user) return null;
 
-      const userRoleLevel = roleHierarchy[user.role] || 0;
-      const requiredRoleLevel = roleHierarchy[requiredRole] || 0;
-
-      if (userRoleLevel < requiredRoleLevel) {
-        return null;
-      }
-    }
+    if (requiredRole && user.role !== requiredRole) return null;
 
     return <Component {...props} />;
   };

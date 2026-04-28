@@ -11,12 +11,10 @@ function isUuid(value?: string | null): boolean {
 
 function getSafeUserContext(): { organizationId: string; userId: string } {
   const ctx = getCurrentUserContext();
-  const fallbackOrg = process.env.NEXT_PUBLIC_DEFAULT_ORGANIZATION_ID || "";
-  const fallbackUser = process.env.NEXT_PUBLIC_DEFAULT_USER_ID || "";
 
   return {
-    organizationId: isUuid(ctx.organizationId) ? ctx.organizationId : fallbackOrg,
-    userId: isUuid(ctx.userId) ? ctx.userId : fallbackUser,
+    organizationId: isUuid(ctx.organizationId) ? ctx.organizationId : "",
+    userId: isUuid(ctx.userId) ? ctx.userId : "",
   };
 }
 

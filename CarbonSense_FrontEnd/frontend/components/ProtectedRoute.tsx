@@ -3,90 +3,71 @@
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useUserStore } from '@/store';
+import { type Role } from '@/lib/authHelpers';
 import LoadingState from '@/components/ui/LoadingState';
+import ApprovalPendingScreen from '@/components/auth/ApprovalPendingScreen';
 
 export interface ProtectedRouteProps {
   children: React.ReactNode;
-  requiredRole?: 'admin' | 'manager' | 'analyst' | 'viewer' | 'member';
+  requiredRole?: Role;
   redirectTo?: string;
   fallback?: React.ReactNode;
+  approvalRequired?: boolean;
 }
 
 /**
  * ProtectedRoute Component
- * Wrapper component that protects routes requiring authentication
- * Redirects to login if not authenticated or lacks required role
+ * Wrapper component that protects routes requiring authentication.
+ * Uses strict role matching (no hierarchy).
+ * Supports approvalRequired for viewer gates.
  */
 export default function ProtectedRoute({
   children,
   requiredRole,
   redirectTo = '/login',
   fallback,
+  approvalRequired = false,
 }: ProtectedRouteProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { isAuthenticated, user, isLoading } = useUserStore();
 
   useEffect(() => {
-    // Wait for auth state to load
     if (isLoading) return;
 
-    // Only redirect if no fallback is provided
     if (!fallback) {
-      // Redirect if not authenticated
-      if (!isAuthenticated) {
+      if (!isAuthenticated || !user) {
         sessionStorage.setItem('redirectAfterLogin', pathname);
         router.push(redirectTo);
         return;
       }
 
-      // Check role-based access
-      if (requiredRole && user) {
-        const roleHierarchy: Record<string, number> = {
-          viewer: 1,
-          analyst: 2,
-          member: 2,
-          manager: 3,
-          admin: 4,
-        };
-
-        const userRoleLevel = roleHierarchy[user.role] || 0;
-        const requiredRoleLevel = roleHierarchy[requiredRole] || 0;
-
-        if (userRoleLevel < requiredRoleLevel) {
-          router.push('/unauthorized');
-          return;
-        }
+      // Strict role check
+      if (requiredRole && user.role !== requiredRole) {
+        router.push('/unauthorized');
+        return;
       }
     }
   }, [isAuthenticated, user, requiredRole, isLoading, router, redirectTo, pathname, fallback]);
 
-  // Show loading state while checking auth
+  // Loading
   if (isLoading) {
     return fallback || <LoadingState message="Verifying access..." />;
   }
 
-  // Show nothing if redirecting
-  if (!isAuthenticated) {
+  // Not authenticated
+  if (!isAuthenticated || !user) {
     return fallback || null;
   }
 
-  // Check role permission
-  if (requiredRole && user) {
-    const roleHierarchy: Record<string, number> = {
-      viewer: 1,
-      analyst: 2,
-      member: 2,
-      manager: 3,
-      admin: 4,
-    };
+  // Role mismatch
+  if (requiredRole && user.role !== requiredRole) {
+    return fallback || null;
+  }
 
-    const userRoleLevel = roleHierarchy[user.role] || 0;
-    const requiredRoleLevel = roleHierarchy[requiredRole] || 0;
-
-    if (userRoleLevel < requiredRoleLevel) {
-      return fallback || null;
-    }
+  // Approval gate for viewers
+  if (approvalRequired && user.role === 'viewer' && !user.approved) {
+    return <ApprovalPendingScreen />;
   }
 
   return <>{children}</>;

@@ -5,20 +5,63 @@
 
 // ==================== User & Authentication ====================
 
+export type Role = 'admin' | 'manager' | 'viewer';
+
 export interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'manager' | 'analyst' | 'viewer' | 'member';
+  role: Role;
   organization?: string;
   organizationId?: string;
   createdAt: string;
+  // Extended RBAC fields
+  approved?: boolean;
+  department?: string;
+  employeeId?: string;
+  phone?: string;
+  avatar?: string;
+  firstName?: string;
+  lastName?: string;
+  jobTitle?: string;
 }
 
 export interface AuthState {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
+}
+
+export interface EmployeeSignupRequest {
+  id: string;
+  userId: string;
+  organizationName: string;
+  managerEmail: string;
+  status: 'pending' | 'approved' | 'rejected';
+  formData: {
+    firstName: string;
+    lastName: string;
+    jobTitle?: string;
+    department?: string;
+    employeeId?: string;
+    phone?: string;
+    organizationName?: string;
+    organizationId?: string;
+    country?: string;
+    managerEmail: string;
+  };
+  submittedAt: string;
+  reviewedAt?: string;
+  reviewerNotes?: string;
+}
+
+export interface ManagerConsent {
+  id: string;
+  userId: string;
+  consentVersion: string;
+  digitalSignature: string;
+  agreedAt: string;
+  ipAddress?: string;
 }
 
 // ==================== Emissions ====================
@@ -147,7 +190,7 @@ export interface Notification {
 
 // ==================== Team & Permissions ====================
 
-export type UserRole = 'admin' | 'manager' | 'analyst' | 'viewer' | 'member';
+export type UserRole = Role;
 
 export interface TeamMember {
   id: string;

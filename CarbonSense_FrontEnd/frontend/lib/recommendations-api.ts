@@ -82,27 +82,23 @@ function getSupabaseClient(): SupabaseClient {
 }
 
 export function getCurrentUserId(): string {
-  if (typeof window === "undefined") return process.env.NEXT_PUBLIC_DEFAULT_USER_ID || "";
+  if (typeof window === "undefined") return "";
 
   try {
     const raw = localStorage.getItem("carbonsense-user-storage");
-    const fallback = process.env.NEXT_PUBLIC_DEFAULT_USER_ID || "";
-    if (!raw) return fallback;
+    if (!raw) return "";
     const parsed = JSON.parse(raw) as { state?: { user?: { id?: string } } };
-    return preferValidUuid(parsed.state?.user?.id || "", fallback);
+    return preferValidUuid(parsed.state?.user?.id || "", "");
   } catch {
-    return process.env.NEXT_PUBLIC_DEFAULT_USER_ID || "";
+    return "";
   }
 }
 
 export function getCurrentUserContext(): CurrentUserContext {
-  const defaultUserId = process.env.NEXT_PUBLIC_DEFAULT_USER_ID || "";
-  const defaultOrgId = process.env.NEXT_PUBLIC_DEFAULT_ORGANIZATION_ID || "";
-
   if (typeof window === "undefined") {
     return {
-      userId: defaultUserId,
-      organizationId: defaultOrgId,
+      userId: "",
+      organizationId: "",
     };
   }
 
@@ -110,8 +106,8 @@ export function getCurrentUserContext(): CurrentUserContext {
     const raw = localStorage.getItem("carbonsense-user-storage");
     if (!raw) {
       return {
-        userId: defaultUserId,
-        organizationId: defaultOrgId,
+        userId: "",
+        organizationId: "",
       };
     }
 
@@ -119,13 +115,13 @@ export function getCurrentUserContext(): CurrentUserContext {
       state?: { user?: { id?: string; organizationId?: string } };
     };
     return {
-      userId: preferValidUuid(parsed.state?.user?.id || "", defaultUserId),
-      organizationId: preferValidUuid(parsed.state?.user?.organizationId || "", defaultOrgId),
+      userId: preferValidUuid(parsed.state?.user?.id || "", ""),
+      organizationId: preferValidUuid(parsed.state?.user?.organizationId || "", ""),
     };
   } catch {
     return {
-      userId: defaultUserId,
-      organizationId: defaultOrgId,
+      userId: "",
+      organizationId: "",
     };
   }
 }

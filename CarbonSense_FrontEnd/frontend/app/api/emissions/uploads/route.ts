@@ -170,13 +170,9 @@ function isUuid(value?: string | null): boolean {
   );
 }
 
-function resolveUuid(inputValue: string | undefined, fallbackEnvKey: string): string | null {
+function resolveUuid(inputValue: string | undefined): string | null {
   const raw = String(inputValue || "").trim();
   if (isUuid(raw)) return raw;
-
-  const fallback = String(process.env[fallbackEnvKey] || "").trim();
-  if (isUuid(fallback)) return fallback;
-
   return null;
 }
 
@@ -211,17 +207,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ detail: "Missing organizationId or userId" }, { status: 400 });
   }
 
-  const resolvedOrganizationId = resolveUuid(
-    payload.organizationId,
-    "NEXT_PUBLIC_DEFAULT_ORGANIZATION_ID"
-  );
-  const resolvedUserId = resolveUuid(payload.userId, "NEXT_PUBLIC_DEFAULT_USER_ID");
+  const resolvedOrganizationId = resolveUuid(payload.organizationId);
+  const resolvedUserId = resolveUuid(payload.userId);
 
   if (!resolvedOrganizationId || !resolvedUserId) {
     return NextResponse.json(
       {
-        detail:
-          "organizationId/userId must be UUIDs, or set NEXT_PUBLIC_DEFAULT_ORGANIZATION_ID and NEXT_PUBLIC_DEFAULT_USER_ID in frontend .env.local",
+        detail: "organizationId and userId must be valid UUIDs.",
       },
       { status: 400 }
     );

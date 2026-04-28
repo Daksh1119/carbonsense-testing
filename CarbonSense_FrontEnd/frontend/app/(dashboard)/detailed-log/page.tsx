@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ColumnDef } from '@tanstack/react-table';
 import { useEmissions, useEmissionsUploads } from '@/hooks';
@@ -44,7 +44,7 @@ const MONTH_OPTIONS = [
   { value: 12, label: 'Dec' },
 ];
 
-export default function DetailedEmissionsLogPage() {
+function DetailedEmissionsLogContent() {
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1;
@@ -891,5 +891,13 @@ export default function DetailedEmissionsLogPage() {
         </div>
       </FormModal>
     </div>
+  );
+}
+
+export default function DetailedEmissionsLogPage() {
+  return (
+    <Suspense fallback={<div className="space-y-6"><div className="h-32 bg-slate-800 rounded-xl animate-pulse" /><div className="h-64 bg-slate-800 rounded-xl animate-pulse" /></div>}>
+      <DetailedEmissionsLogContent />
+    </Suspense>
   );
 }

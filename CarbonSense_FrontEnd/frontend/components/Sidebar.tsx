@@ -20,6 +20,8 @@ import {
   Users,
 } from "lucide-react";
 import { clsx } from "clsx";
+import { useUserStore } from "@/store";
+import type { Role } from "@/lib/authHelpers";
 
 interface NavItem {
   name: string;
@@ -27,7 +29,8 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
 }
 
-const navItems: NavItem[] = [
+// Default admin nav items (used when no navItems prop is passed)
+const defaultNavItems: NavItem[] = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Emissions", href: "/emissions", icon: Wind },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
@@ -39,12 +42,42 @@ const navItems: NavItem[] = [
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
-export default function Sidebar() {
+const ROLE_BADGE: Record<Role, { label: string; className: string }> = {
+  admin: {
+    label: "Admin",
+    className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  },
+  manager: {
+    label: "Manager",
+    className: "bg-teal-500/10 text-teal-400 border-teal-500/20",
+  },
+  viewer: {
+    label: "Viewer",
+    className: "bg-sky-500/10 text-sky-400 border-sky-500/20",
+  },
+};
+
+interface SidebarProps {
+  navItems?: NavItem[];
+  role?: Role;
+}
+
+export default function Sidebar({ navItems, role }: SidebarProps) {
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const { user, logout } = useUserStore();
+
+  const items = navItems ?? defaultNavItems;
+  const userRole = role ?? (user?.role as Role) ?? "admin";
+  const badge = ROLE_BADGE[userRole];
+
+  const handleLogout = async () => {
+    await logout();
+    window.location.href = "/login";
+  };
 
   return (
-    <aside 
+    <aside
       className={clsx(
         "flex-shrink-0 flex flex-col bg-background-dark border-r border-navy-border/50 transition-all duration-300",
         isCollapsed ? "w-20" : "w-64"
@@ -82,9 +115,23 @@ export default function Sidebar() {
         </button>
       </div>
 
+      {/* Role Badge */}
+      {!isCollapsed && badge && (
+        <div className="px-6 mb-3">
+          <span
+            className={clsx(
+              "inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border",
+              badge.className
+            )}
+          >
+            {badge.label}
+          </span>
+        </div>
+      )}
+
       {/* Navigation */}
       <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
 
@@ -117,6 +164,14 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div className="p-4 border-t border-navy-border/50">
+        {/* User info (when expanded) */}
+        {!isCollapsed && user && (
+          <div className="px-3 py-2 mb-2">
+            <p className="text-sm font-medium text-white truncate">{user.name}</p>
+            <p className="text-xs text-slate-500 truncate">{user.email}</p>
+          </div>
+        )}
+
         <Link
           href="/help"
           className={clsx(
@@ -130,7 +185,8 @@ export default function Sidebar() {
             <span className="text-sm font-medium">Help Center</span>
           )}
         </Link>
-        <button 
+        <button
+          onClick={handleLogout}
           className={clsx(
             "flex items-center gap-3 px-3 py-2 rounded-lg text-rose-400 hover:bg-rose-400/5 transition-colors mt-1 w-full",
             isCollapsed && "justify-center"

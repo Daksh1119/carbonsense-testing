@@ -8,6 +8,7 @@ This repository is the working mono-repo for the current implementation. It cont
 - A FastAPI service layer for ingestion, recommendation orchestration, OCR endpoints, and TEME endpoints.
 - A packaged TEME engine with deterministic and ML-assisted components.
 - OCR processing modules and scripts for local smoke testing.
+- Policy intelligence and compliance services (retrieval, scoring, deadlines, verification, evidence).
 - Dataset generation and model training scripts for TEME survival modeling.
 - Supabase migration SQL for recommendation and emissions persistence.
 
@@ -33,12 +34,7 @@ This repository is the working mono-repo for the current implementation. It cont
 CarbonSense is designed to support end-to-end carbon management workflows for organizations, with emphasis on:
 
 - Operational emissions ingestion from structured data.
-- Category and scope-level analytics for decision support.
-- Recommendation generation with evidence and impact estimates.
-- Transparent offset planning through time-based ecological modeling (TEME).
-- OCR-assisted receipt digitization for emissions accounting use cases.
-
-Guiding principle:
+  Guiding principle:
 
 - Reduction-first strategy, with offsets modeled as projected, delayed mitigation rather than immediate neutralization.
 
@@ -66,6 +62,8 @@ The frontend integrates:
 - Session-aware recommendation context
 - Supabase-backed persistence APIs through Next.js route handlers
 - TEME scenario visualization including Monte Carlo-compatible curves when provided
+- Policy intelligence workflows (policy radar, drawer, structured policy chat, apply/funding/document modals)
+- Compliance command workflows (score ring + trend graph, deadlines, task verification, evidence upload)
 
 ### 2.2 Ingestion and Emissions Engine
 
@@ -76,8 +74,6 @@ The ingestion flow computes emissions from a canonical company CSV schema and re
 - Breakdown by scope
 - Top employees
 - KPI snapshots
-
-Primary formula:
 
 - Emissions (kgCO2e) = Activity Data x Emission Factor
 
@@ -141,6 +137,8 @@ CarbonSense currently runs as a dual-tier application stack in local development
   - /ocr
   - /recommendations
   - /ingestion
+  - /policies
+  - /compliance
 
 ### 3.3 Persistence Layer
 
@@ -228,6 +226,24 @@ Supports location alias normalization and compatibility inputs such as:
 - ml_config.enable_monte_carlo
 - ml_config.monte_carlo_trials
 
+### 5.6 Policy Intelligence Endpoints
+
+- GET /policies
+- GET /policies/{policy_id}
+- POST /policies/ask
+
+### 5.7 Compliance Endpoints
+
+- GET /compliance/results
+- GET /compliance/deadlines
+- GET /compliance/score
+- GET /compliance/score/history
+- GET /compliance/requirements/{requirement_id}
+- GET /compliance/results/{result_id}/steps
+- GET /compliance/results/{result_id}/evidence-history
+- POST /compliance/results/{result_id}/verify
+- POST /compliance/evidence
+
 ## 6) Data Model and Persistence
 
 ### 6.1 Supabase Migrations in Repository
@@ -236,6 +252,9 @@ Supports location alias normalization and compatibility inputs such as:
 - infrastructure/supabase/migrations/20260322_emissions_uploads.sql
 - infrastructure/supabase/migrations/20260322_recommendation_audit_fields.sql
 - infrastructure/supabase/migrations/20260322_seed_tree_species.sql
+- infrastructure/supabase/migrations/20260414100000_policy_compliance_foundation.sql
+- infrastructure/supabase/migrations/20260414100100_seed_policy_compliance_data.sql
+- infrastructure/supabase/migrations/20260414110000_policy_compliance_enhancements.sql
 
 ### 6.2 Emissions Persistence Paths
 
@@ -274,6 +293,12 @@ Common recommendation defaults:
 - LLM_SITE_URL (optional header metadata)
 - LLM_APP_NAME (optional header metadata)
 
+Common policy-chat deployment values used in this repo:
+
+- LLM_PROVIDER=groq
+- LLM_API_BASE_URL=https://api.groq.com/openai/v1
+- LLM_MODEL=llama-3.1-8b-instant
+
 AuthZ enforcement flag:
 
 - OCR_STRICT_AUTHZ (true/false)
@@ -288,6 +313,12 @@ AuthZ enforcement flag:
 - NEXT_PUBLIC_USE_TEME_MOCK (optional for TEME mode switching)
 - SUPABASE_URL (for server route handlers if needed)
 - SUPABASE_SERVICE_ROLE_KEY (for server route handlers)
+
+Important:
+
+- Keep .env and .env.local files local only.
+- .gitignore excludes root .env\* and frontend .env.local.
+- Use example env files for sharing safe configuration templates.
 
 ## 8) Local Development Setup
 
@@ -384,6 +415,8 @@ npm --prefix CarbonSense_FrontEnd/frontend run lint
 4. Verify analytics and detailed log update by upload selection.
 5. Open Recommendations page and verify session/recommendation rows in Supabase.
 6. Run TEME scenario and confirm project persistence and chart rendering.
+7. Open Policy Intelligence and verify policy list, policy document links, and policy advisor chat.
+8. Open Compliance and verify score trend graph, deadlines, and evidence upload flow.
 
 ### 10.2 Common Failure Modes
 
@@ -391,6 +424,8 @@ npm --prefix CarbonSense_FrontEnd/frontend run lint
 - Missing NEXT_PUBLIC_API_URL for frontend-to-backend calls.
 - Missing LLM_API_KEY, causing fallback recommendation path.
 - OCR strict auth enabled without seeded org membership/permissions.
+- Missing policy/compliance migrations in Supabase (empty policy/compliance views).
+- Missing or invalid policy-chat LLM config (policy advisor errors or empty responses).
 
 ## 11) Security and Access Control
 
@@ -433,6 +468,8 @@ Implemented and actively used in this repository:
 - OCR service routes and processors
 - TEME endpoint and dashboard integration
 - Supabase migration baseline for recommendation/emissions flows
+- Policy intelligence backend and frontend integration
+- Compliance scoring, deadlines, task tracking, and OCR-backed evidence flow
 
 Roadmap and expansion themes (tracked in docs):
 
@@ -455,3 +492,48 @@ This repository is licensed under the MIT License.
 **Built with scientific rigor. No greenwashing. Reduction-first, always.**
 
 </div>
+
+## User Authentication & Role-Based Access
+
+- **Role-specific login pages:**
+  - `/login/admin` — Admin login
+  - `/login/manager` — Manager login (with consent modal)
+  - `/login/viewer` — Viewer login
+  - `/signup/employee` — Employee signup (multi-step, Google/email)
+- **RBAC enforcement:**
+  - All privileged API routes require authentication and role checks (admin, manager, viewer)
+  - Admin dashboard and routes are strictly protected; managers and viewers cannot access admin content
+  - Manager dashboard and team approval flows are only accessible to managers
+  - Viewer routes are isolated and only accessible to approved viewer accounts
+- **Consent flow:**
+  - Managers must complete a consent modal before accessing the dashboard (enforced for both email and Google sign-in)
+  - Consent status is stored and checked on every manager session
+- **Security improvements:**
+  - All API routes use a shared server-side auth guard (`requireAuthContext`) that validates the session and role
+  - Bearer token fallback is supported for SPA fetches to ensure authenticated API access
+  - No default-user fallbacks; all privileged actions require a valid session
+  - Environment files and secrets are fully gitignored
+- **OAuth callback/session:**
+  - OAuth callback flow now persists the session and syncs user profile/role metadata
+  - Role-based redirects after login ensure users land on the correct dashboard
+
+---
+
+## Key Features
+
+- **Role-Based Authentication & RBAC**: Admin, manager, viewer, and employee flows with strict route/API protection.
+- **Consent Management**: Manager consent modal and audit trail before dashboard access.
+- **Emissions Data Ingestion**: Upload CSVs, parse, and compute emissions by category/scope.
+- **Analytics Dashboard**: Visualize emissions trends, breakdowns, and KPIs.
+- **Recommendations Engine**: AI-assisted suggestions for emissions reduction, with evidence and impact.
+- **OCR Receipt Processing**: Upload and digitize receipts for emissions accounting.
+- **TEME (Tree-Emission Matching Engine)**: Scenario planning, offset modeling, and ecological impact visualization.
+- **Policy Intelligence & Compliance**: Policy radar, compliance scoring, deadlines, and evidence workflows.
+- **Team Management**: Admin/manager can approve/reject employee signups, manage team roles, and permissions.
+- **Viewer Portal**: Read-only dashboard for approved employees with limited navigation.
+- **Supabase Integration**: Auth, RLS, and persistence for all user and workflow data.
+- **Security & Audit**: All privileged actions require valid session and role; no default-user fallbacks; all secrets gitignored.
+- **API-first Architecture**: All business logic and data flows exposed via Next.js route handlers and FastAPI endpoints.
+- **Extensive Documentation**: Architecture, API, and user guides included in `/docs`.
+
+---

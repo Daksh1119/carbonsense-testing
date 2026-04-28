@@ -38,7 +38,7 @@ interface TeamMember {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'manager' | 'member' | 'viewer';
+  role: 'admin' | 'manager' | 'viewer';
   department: string;
   lastActive: string;
   status: 'active' | 'inactive';
@@ -65,7 +65,7 @@ const generateEmissionsData = (): EmissionEntry[] => {
 const generateTeamData = (): TeamMember[] => {
   const names = ['Alice Johnson', 'Bob Smith', 'Charlie Brown', 'Diana Prince', 'Ethan Hunt', 'Fiona Apple', 'George Lucas', 'Hannah Montana'];
   const departments = ['Engineering', 'Marketing', 'Sales', 'HR', 'Finance'];
-  const roles: ('admin' | 'manager' | 'member' | 'viewer')[] = ['admin', 'manager', 'member', 'viewer'];
+  const roles: ('admin' | 'manager' | 'viewer')[] = ['admin', 'manager', 'viewer'];
 
   return Array.from({ length: 20 }, (_, i) => ({
     id: `USR-${String(i + 1).padStart(3, '0')}`,
@@ -249,7 +249,7 @@ export default function Phase4DemoPage() {
     showSuccessToast('Data exported successfully!');
   };
 
-  const mockLogin = (role: 'admin' | 'manager' | 'member' | 'viewer') => {
+  const mockLogin = (role: 'admin' | 'manager' | 'viewer') => {
     login({
       id: '1',
       name: 'Demo User',
@@ -319,12 +319,7 @@ export default function Phase4DemoPage() {
                   >
                     Viewer
                   </button>
-                  <button
-                    onClick={() => mockLogin('member')}
-                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-                  >
-                    Member
-                  </button>
+
                   <button
                     onClick={() => mockLogin('manager')}
                     className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
