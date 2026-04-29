@@ -51,8 +51,7 @@ export default function LoginPage() {
             Welcome to CarbonSense
           </h1>
           <p className="text-slate-400 text-sm max-w-md mx-auto">
-            Select your portal to access the carbon intelligence platform.
-            Each role has a tailored experience.
+            Select your portal to sign in. Company staff use the Manager or Viewer portals.
           </p>
         </div>
 
@@ -60,20 +59,21 @@ export default function LoginPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <RolePortalCard
             role="admin"
-            title="Admin Portal"
-            description="Full platform access. Manage all features, users, and system configuration."
+            title="Platform Admin"
+            description="CarbonSense internal team only. Manage companies, managers, and platform-level operations."
             href="/login/admin"
+            badge="Internal"
           />
           <RolePortalCard
             role="manager"
             title="Manager Portal"
-            description="Manage your organization's carbon data, teams, and compliance."
+            description="Your company's carbon program hub. Upload data, manage your team, and submit reports."
             href="/login/manager"
           />
           <RolePortalCard
             role="viewer"
             title="Viewer Portal"
-            description="View your organization's carbon insights and personal footprint."
+            description="View your company's carbon dashboards and personal emissions insights."
             href="/login/viewer"
           />
         </div>

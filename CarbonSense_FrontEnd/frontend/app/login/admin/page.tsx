@@ -46,7 +46,7 @@ export default function AdminLoginPage() {
 
       // AuthProvider onAuthStateChange will sync the profile.
       // Redirect immediately — no extra round trip needed.
-      router.push('/dashboard');
+      router.push('/admin/dashboard');
     } catch {
       setError('An unexpected error occurred.');
     } finally {

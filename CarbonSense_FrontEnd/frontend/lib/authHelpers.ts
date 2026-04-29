@@ -45,8 +45,8 @@ export interface UserProfile {
 
 export function getRoleDashboardPath(role: Role): string {
   switch (role) {
-    case 'admin':   return '/dashboard';
-    case 'manager': return '/manager/dashboard';
+    case 'admin':   return '/admin/dashboard';
+    case 'manager': return '/dashboard';
     case 'viewer':  return '/viewer/dashboard';
     default:        return '/login';
   }

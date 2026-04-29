@@ -4,13 +4,13 @@ CarbonSense is a carbon intelligence platform that combines enterprise emissions
 
 This repository is the working mono-repo for the current implementation. It contains:
 
-- A Next.js web application for dashboard, ingestion, analytics, recommendations, TEME, compliance, and team workflows.
+- A Next.js web application with role-based dashboards (Platform Admin, Manager, Viewer), ingestion, analytics, recommendations, TEME, compliance, and team workflows.
 - A FastAPI service layer for ingestion, recommendation orchestration, OCR endpoints, and TEME endpoints.
 - A packaged TEME engine with deterministic and ML-assisted components.
 - OCR processing modules and scripts for local smoke testing.
 - Policy intelligence and compliance services (retrieval, scoring, deadlines, verification, evidence).
 - Dataset generation and model training scripts for TEME survival modeling.
-- Supabase migration SQL for recommendation and emissions persistence.
+- Supabase migrations for auth schema, RBAC RLS policies, and feature table persistence.
 
 ## Table of Contents
 
@@ -42,7 +42,17 @@ CarbonSense is designed to support end-to-end carbon management workflows for or
 
 ### 2.1 Web Platform (Next.js)
 
-Implemented routes under the dashboard group include:
+The platform uses a strict RBAC model with three roles:
+
+| Role | Who | Dashboard Route | Access |
+|------|-----|----------------|--------|
+| **Platform Admin** | CarbonSense internal team | `/admin/dashboard` | Cross-company oversight, manager/company management, platform health |
+| **Manager** | Client company carbon lead | `/dashboard` | Full CRUD on own organization's data: emissions, ingestion, analytics, compliance, policy, TEME, team, settings |
+| **Viewer** | Client company employee | `/viewer/dashboard` | Read-only access to own organization's dashboards and insights |
+
+> **Important:** Admin is _not_ a company role. A client company only needs a Manager (and optionally Viewers).
+
+Manager-scoped modules (under `/(dashboard)` route group):
 
 - Executive Dashboard
 - Emissions workflows and review
@@ -55,6 +65,12 @@ Implemented routes under the dashboard group include:
 - Compliance
 - Team and Team Management
 - Settings
+
+Platform Admin modules (under `/admin` route group):
+
+- Platform Overview (company list, usage metrics)
+- Pending Approvals (manager signups, company registrations)
+- Platform Health (API latency, DB load, service status)
 
 The frontend integrates:
 
@@ -248,6 +264,13 @@ Supports location alias normalization and compatibility inputs such as:
 
 ### 6.1 Supabase Migrations in Repository
 
+Auth and RBAC migrations (run in Supabase SQL Editor):
+
+- supabase/migrations/001_auth_schema.sql — user_profiles, employee_signup_requests, manager_consents tables with RLS
+- supabase/migrations/002_role_redesign_rls.sql — Comprehensive RLS policies for all tables aligned with the 3-role model (Platform Admin / Manager / Viewer)
+
+Feature table migrations:
+
 - infrastructure/supabase/migrations/20260318_recommendation_tables.sql
 - infrastructure/supabase/migrations/20260322_emissions_uploads.sql
 - infrastructure/supabase/migrations/20260322_recommendation_audit_fields.sql
@@ -429,6 +452,37 @@ npm --prefix CarbonSense_FrontEnd/frontend run lint
 
 ## 11) Security and Access Control
 
+### 11.1 RBAC Role Model
+
+CarbonSense uses three strictly isolated roles:
+
+- **Platform Admin (`admin`)**: CarbonSense internal staff. Full read access across all organizations. Can manage companies, approve managers, and configure platform-level settings. Does _not_ operate on any single company's data.
+- **Manager (`manager`)**: Client company's carbon program lead. Full CRUD on their own organization's data (emissions, uploads, compliance, recommendations, team). Gated by a mandatory consent modal on first login.
+- **Viewer (`viewer`)**: Client company employees. Read-only access to their organization's dashboards. Gated by an approval workflow (manager must approve before access is granted).
+
+### 11.2 Frontend Route Guards
+
+- `ProtectedRoute` component wraps each route group with `requiredRole` enforcement
+- `/(dashboard)/*` routes require `manager` role
+- `/admin/*` routes require `admin` role
+- `/viewer/*` routes require `viewer` role with approval gate
+- `AuthProvider` syncs Supabase session → Zustand store on every page load
+
+### 11.3 Database-Level RLS
+
+Row-Level Security policies are defined in `supabase/migrations/002_role_redesign_rls.sql` using two helper functions:
+
+- `is_platform_admin()` — returns true if the authenticated user has role `admin`
+- `user_org_id()` — returns the authenticated user's `organization_id`
+
+All 23 tables have RLS enabled with policies following this pattern:
+- Admin: SELECT on everything, INSERT/UPDATE on reference data
+- Manager: Full CRUD on own organization's operational data
+- Viewer: SELECT only on own organization's data
+- Service Role: Bypasses RLS (used by API routes for cross-cutting operations)
+
+### 11.4 Backend Authorization
+
 Authorization helpers are implemented in:
 
 - packages/ml_services/common/authz.py
@@ -495,45 +549,49 @@ This repository is licensed under the MIT License.
 
 ## User Authentication & Role-Based Access
 
-- **Role-specific login pages:**
-  - `/login/admin` — Admin login
-  - `/login/manager` — Manager login (with consent modal)
-  - `/login/viewer` — Viewer login
-  - `/signup/employee` — Employee signup (multi-step, Google/email)
-- **RBAC enforcement:**
-  - All privileged API routes require authentication and role checks (admin, manager, viewer)
-  - Admin dashboard and routes are strictly protected; managers and viewers cannot access admin content
-  - Manager dashboard and team approval flows are only accessible to managers
-  - Viewer routes are isolated and only accessible to approved viewer accounts
-- **Consent flow:**
-  - Managers must complete a consent modal before accessing the dashboard (enforced for both email and Google sign-in)
-  - Consent status is stored and checked on every manager session
-- **Security improvements:**
-  - All API routes use a shared server-side auth guard (`requireAuthContext`) that validates the session and role
-  - Bearer token fallback is supported for SPA fetches to ensure authenticated API access
-  - No default-user fallbacks; all privileged actions require a valid session
-  - Environment files and secrets are fully gitignored
-- **OAuth callback/session:**
-  - OAuth callback flow now persists the session and syncs user profile/role metadata
-  - Role-based redirects after login ensure users land on the correct dashboard
+### Role Model
+
+| Role | Who | Login | Dashboard | Capabilities |
+|------|-----|-------|-----------|-------------|
+| **Platform Admin** | CarbonSense team | `/login/admin` | `/admin/dashboard` | Cross-company oversight, platform health, manager/company management |
+| **Manager** | Client company lead | `/login/manager` | `/dashboard` | Full emissions ops, data ingestion, analytics, compliance, policy, TEME, team mgmt |
+| **Viewer** | Client company staff | `/login/viewer` | `/viewer/dashboard` | Read-only dashboards, personal insights |
+
+> A client company does **not** need an Admin. Admin is exclusively the CarbonSense internal team. The company only needs a **Manager** and optionally **Viewers**.
+
+### Authentication Flow
+
+- **Login portals:** Three role-specific login pages with email/password, Google OAuth, and OTP support
+- **Signup:** `/signup/employee` for employee self-registration (requires manager approval)
+- **Consent gate:** Managers must accept terms via a consent modal on first login; consent status persisted in `manager_consents`
+- **Approval gate:** Viewers require manager approval before accessing any dashboard content
+- **Session sync:** `AuthProvider` reads role from JWT `user_metadata` (fast path — no DB round-trip) and enriches from `user_profiles` in the background
+
+### Security
+
+- All API routes use `requireAuthContext` server-side guard
+- Bearer token fallback for SPA fetches
+- No default-user fallbacks; all privileged actions require a valid session
+- Environment files and secrets are fully gitignored
+- Database-level RLS enforces role isolation on all 23 tables
 
 ---
 
 ## Key Features
 
-- **Role-Based Authentication & RBAC**: Admin, manager, viewer, and employee flows with strict route/API protection.
-- **Consent Management**: Manager consent modal and audit trail before dashboard access.
-- **Emissions Data Ingestion**: Upload CSVs, parse, and compute emissions by category/scope.
-- **Analytics Dashboard**: Visualize emissions trends, breakdowns, and KPIs.
-- **Recommendations Engine**: AI-assisted suggestions for emissions reduction, with evidence and impact.
+- **3-Tier RBAC**: Platform Admin (internal ops), Manager (company carbon lead), Viewer (read-only employee) with strict route and database-level isolation.
+- **Consent & Approval Gates**: Manager consent modal with digital signature; viewer approval workflow requiring manager action.
+- **Emissions Data Ingestion**: Upload CSVs, receipts, and bank statements; parse and compute emissions by category/scope.
+- **Analytics Dashboard**: Visualize emissions trends, breakdowns, and KPIs with interactive charts.
+- **Recommendations Engine**: AI-assisted suggestions for emissions reduction, with evidence and impact modeling.
 - **OCR Receipt Processing**: Upload and digitize receipts for emissions accounting.
 - **TEME (Tree-Emission Matching Engine)**: Scenario planning, offset modeling, and ecological impact visualization.
 - **Policy Intelligence & Compliance**: Policy radar, compliance scoring, deadlines, and evidence workflows.
-- **Team Management**: Admin/manager can approve/reject employee signups, manage team roles, and permissions.
-- **Viewer Portal**: Read-only dashboard for approved employees with limited navigation.
-- **Supabase Integration**: Auth, RLS, and persistence for all user and workflow data.
-- **Security & Audit**: All privileged actions require valid session and role; no default-user fallbacks; all secrets gitignored.
-- **API-first Architecture**: All business logic and data flows exposed via Next.js route handlers and FastAPI endpoints.
-- **Extensive Documentation**: Architecture, API, and user guides included in `/docs`.
+- **Team Management**: Managers approve/reject employee signups, manage roles, and set permissions.
+- **Viewer Portal**: Read-only dashboard for approved employees with scoped navigation.
+- **Platform Admin Dashboard**: Company registry, manager oversight, pending approvals, and platform health metrics.
+- **Supabase Integration**: Auth, RLS (23 tables), and persistence for all user and workflow data.
+- **API-first Architecture**: All business logic exposed via Next.js route handlers and FastAPI endpoints.
+- **Extensive Documentation**: Architecture, API, and user guides in `/docs`.
 
 ---

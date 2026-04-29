@@ -44,7 +44,7 @@ const defaultNavItems: NavItem[] = [
 
 const ROLE_BADGE: Record<Role, { label: string; className: string }> = {
   admin: {
-    label: "Admin",
+    label: "Platform Admin",
     className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
   },
   manager: {

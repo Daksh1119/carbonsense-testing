@@ -9,6 +9,7 @@ interface RolePortalCardProps {
   title: string;
   description: string;
   href: string;
+  badge?: string;
 }
 
 const ROLE_CONFIG: Record<Role, {
@@ -42,6 +43,7 @@ export default function RolePortalCard({
   title,
   description,
   href,
+  badge,
 }: RolePortalCardProps) {
   const config = ROLE_CONFIG[role];
   const Icon = config.icon;
@@ -66,6 +68,13 @@ export default function RolePortalCard({
             ${role === 'admin' ? 'bg-emerald-500' : role === 'manager' ? 'bg-teal-500' : 'bg-sky-500'}
           `}
         />
+
+        {/* Badge (e.g. "Internal") */}
+        {badge && (
+          <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wider uppercase bg-slate-700/80 text-slate-300 border border-slate-600/50">
+            {badge}
+          </div>
+        )}
 
         <div className="relative z-10">
           {/* Icon */}
