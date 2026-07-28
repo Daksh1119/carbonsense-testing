@@ -9,7 +9,7 @@ import ApprovalPendingScreen from '@/components/auth/ApprovalPendingScreen';
 
 export interface ProtectedRouteProps {
   children: React.ReactNode;
-  requiredRole?: Role;
+  requiredRole?: Role | Role[];
   redirectTo?: string;
   fallback?: React.ReactNode;
   approvalRequired?: boolean;
@@ -18,7 +18,7 @@ export interface ProtectedRouteProps {
 /**
  * ProtectedRoute Component
  * Wrapper component that protects routes requiring authentication.
- * Uses strict role matching (no hierarchy).
+ * Supports single Role or array of Roles for access.
  * Supports approvalRequired for viewer gates.
  */
 export default function ProtectedRoute({
@@ -32,6 +32,12 @@ export default function ProtectedRoute({
   const pathname = usePathname();
   const { isAuthenticated, user, isLoading } = useUserStore();
 
+  const hasRequiredRole = (role: Role) => {
+    if (!requiredRole) return true;
+    if (Array.isArray(requiredRole)) return requiredRole.includes(role);
+    return role === requiredRole;
+  };
+
   useEffect(() => {
     if (isLoading) return;
 
@@ -42,8 +48,8 @@ export default function ProtectedRoute({
         return;
       }
 
-      // Strict role check
-      if (requiredRole && user.role !== requiredRole) {
+      // Role check
+      if (requiredRole && !hasRequiredRole(user.role)) {
         router.push('/unauthorized');
         return;
       }
@@ -61,7 +67,7 @@ export default function ProtectedRoute({
   }
 
   // Role mismatch
-  if (requiredRole && user.role !== requiredRole) {
+  if (requiredRole && !hasRequiredRole(user.role)) {
     return fallback || null;
   }
 

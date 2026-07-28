@@ -38,7 +38,7 @@ const defaultNavItems: NavItem[] = [
   { name: "TEME", href: "/tree-engine", icon: TreePine },
   { name: "Policy", href: "/policy-intelligence", icon: Gavel },
   { name: "Compliance", href: "/compliance", icon: ShieldCheck },
-  { name: "Team", href: "/team", icon: Users },
+  { name: "Team", href: "/team-management", icon: Users },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 

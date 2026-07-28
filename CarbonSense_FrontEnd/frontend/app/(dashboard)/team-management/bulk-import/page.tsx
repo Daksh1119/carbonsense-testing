@@ -1,55 +1,181 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import DashboardCard from "@/components/DashboardCard";
 import Button from "@/components/Button";
 import { Breadcrumb, BackButton } from "@/components/navigation";
 import FileUpload from "@/components/ui/FileUpload";
 import { showSuccessToast, showErrorToast, showInfoToast } from "@/lib/toast";
-import {
-  Upload,
-  Download,
-  CheckCircle,
-  AlertCircle,
-  FileSpreadsheet,
-} from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
+import { useUserStore } from "@/store";
+import { Upload, Download, CheckCircle, AlertCircle, FileSpreadsheet, Loader2, X } from "lucide-react";
+import type { FileRejection } from "react-dropzone";
+
+
+type RbacRole = "manager" | "viewer";
+
+interface ParsedRow {
+  rowNumber: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: RbacRole;
+  department: string;
+  errors: string[];
+}
+
+const VALID_ROLES: RbacRole[] = ["manager", "viewer"];
+
+function parseCSV(text: string): ParsedRow[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length === 0) return [];
+
+  // First line is header — detect columns
+  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+  const colIndex = (names: string[]) =>
+    names.map((n) => headers.indexOf(n)).find((i) => i >= 0) ?? -1;
+
+  const firstNameIdx = colIndex(["firstname", "first_name", "first name"]);
+  const lastNameIdx = colIndex(["lastname", "last_name", "last name"]);
+  const emailIdx = colIndex(["email"]);
+  const roleIdx = colIndex(["role"]);
+  const deptIdx = colIndex(["department", "dept"]);
+
+  const rows: ParsedRow[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(",").map((c) => c.trim());
+    const row: ParsedRow = {
+      rowNumber: i + 1,
+      firstName: firstNameIdx >= 0 ? cols[firstNameIdx] ?? "" : "",
+      lastName: lastNameIdx >= 0 ? cols[lastNameIdx] ?? "" : "",
+      email: emailIdx >= 0 ? cols[emailIdx] ?? "" : "",
+      role: "viewer",
+      department: deptIdx >= 0 ? cols[deptIdx] ?? "" : "",
+      errors: [],
+    };
+
+    // Validate
+    if (!row.firstName) row.errors.push("First name is required");
+    if (!row.email) row.errors.push("Email is required");
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email))
+      row.errors.push("Email is not valid");
+
+    if (roleIdx >= 0) {
+      const rawRole = (cols[roleIdx] ?? "").toLowerCase().trim() as RbacRole;
+      if (VALID_ROLES.includes(rawRole)) {
+        row.role = rawRole;
+      } else if (rawRole) {
+        row.errors.push(`Role "${cols[roleIdx]}" is invalid — must be "manager" or "viewer"`);
+      }
+    }
+
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+function downloadTemplate() {
+  const csv = "FirstName,LastName,Email,Role,Department\nJane,Smith,jane@company.com,viewer,Sustainability\nJohn,Doe,john@company.com,manager,Operations\n";
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "carbonsense_bulk_import_template.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function BulkImportPage() {
   const router = useRouter();
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [isUploading, setIsUploading] = useState(false);
+  const { user } = useUserStore();
 
-  const handleFilesAccepted = async (files: File[]) => {
-    setIsUploading(true);
-    showInfoToast("Processing CSV file...");
+  const [parsedRows, setParsedRows] = useState<ParsedRow[] | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitProgress, setSubmitProgress] = useState(0);
 
-    // Simulate upload progress
-    for (let i = 0; i <= 100; i += 10) {
-      setUploadProgress(i);
-      await new Promise((resolve) => setTimeout(resolve, 200));
+  const validRows = parsedRows?.filter((r) => r.errors.length === 0) ?? [];
+  const invalidRows = parsedRows?.filter((r) => r.errors.length > 0) ?? [];
+
+  const handleFilesAccepted = useCallback(async (files: File[]) => {
+    const file = files[0];
+    if (!file) return;
+
+    setIsProcessing(true);
+    setParsedRows(null);
+    showInfoToast("Parsing CSV file…");
+
+    try {
+      const text = await file.text();
+      const rows = parseCSV(text);
+      if (rows.length === 0) {
+        showErrorToast("CSV is empty or contains only a header row");
+        return;
+      }
+      setParsedRows(rows);
+    } catch (err) {
+      showErrorToast("Could not read CSV file");
+    } finally {
+      setIsProcessing(false);
+    }
+  }, []);
+
+  const handleFilesRejected = (rejections: FileRejection[]) => {
+    rejections.forEach((r) => showErrorToast(`${r.file.name}: ${r.errors[0]?.message}`));
+  };
+
+
+  const handleImport = async () => {
+    if (validRows.length === 0) return;
+    if (!user?.organizationId || !user?.organization) {
+      showErrorToast("Organization context missing — contact your administrator.");
+      return;
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    setIsSubmitting(true);
+    setSubmitProgress(0);
 
-    showSuccessToast(`Successfully imported ${files.length} member(s)!`);
-    setIsUploading(false);
-    setUploadProgress(0);
+    let successCount = 0;
+    let failCount = 0;
 
-    setTimeout(() => {
-      router.push("/team-management");
-    }, 1500);
-  };
+    for (let i = 0; i < validRows.length; i++) {
+      const row = validRows[i];
+      const { error } = await supabase.from("employee_signup_requests").insert({
+        organization_name: user.organization,
+        manager_email: user.email,
+        status: "pending",
+        form_data: {
+          firstName: row.firstName,
+          lastName: row.lastName,
+          invitedEmail: row.email,
+          role: row.role,
+          department: row.department || null,
+          organizationId: user.organizationId,
+          organizationName: user.organization,
+          managerEmail: user.email,
+        },
+      });
 
-  const handleFilesRejected = (rejections: any[]) => {
-    rejections.forEach((rejection) => {
-      showErrorToast(`${rejection.file.name}: ${rejection.errors[0].message}`);
-    });
-  };
+      if (error) {
+        failCount++;
+      } else {
+        successCount++;
+      }
 
-  const downloadTemplate = () => {
-    showInfoToast("CSV template downloaded");
-    // In real app, trigger actual download
+      setSubmitProgress(Math.round(((i + 1) / validRows.length) * 100));
+    }
+
+    setIsSubmitting(false);
+
+    if (failCount === 0) {
+      showSuccessToast(`${successCount} member request(s) created successfully`);
+      setTimeout(() => router.push("/team-management"), 1500);
+    } else {
+      showErrorToast(`${failCount} request(s) failed. ${successCount} succeeded.`);
+    }
   };
 
   return (
@@ -58,17 +184,13 @@ export default function BulkImportPage() {
       <div className="flex items-center justify-between">
         <div>
           <Breadcrumb />
-          <h1 className="text-3xl font-bold text-white mb-2 mt-4">
-            Bulk Import Members
-          </h1>
-          <p className="text-slate-400">
-            Upload a CSV file to add multiple team members at once
-          </p>
+          <h1 className="text-3xl font-bold text-white mb-2 mt-4">Bulk Import Members</h1>
+          <p className="text-slate-400">Upload a CSV to create signup requests for multiple members at once</p>
         </div>
         <BackButton href="/team-management" label="Back" variant="outline" />
       </div>
 
-      {/* Download Template */}
+      {/* Step 1: Template */}
       <DashboardCard
         title="Step 1: Download Template"
         subtitle="Get the CSV template with required columns"
@@ -77,8 +199,7 @@ export default function BulkImportPage() {
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <p className="text-sm text-slate-300 mb-4">
-              Download our CSV template to ensure your file has the correct format.
-              Required columns: Name, Email, Role, Department
+              Required columns: <code className="text-primary">FirstName</code>, <code className="text-primary">Email</code>, <code className="text-primary">Role</code> (manager or viewer). Optional: LastName, Department.
             </p>
             <Button
               variant="outline"
@@ -91,7 +212,7 @@ export default function BulkImportPage() {
         </div>
       </DashboardCard>
 
-      {/* Upload File */}
+      {/* Step 2: Upload */}
       <DashboardCard
         title="Step 2: Upload Your CSV"
         subtitle="Select the file with your team member data"
@@ -102,99 +223,144 @@ export default function BulkImportPage() {
           onFilesRejected={handleFilesRejected}
           acceptedFileTypes={{ "text/csv": [".csv"] }}
           maxFiles={1}
-          maxSize={5 * 1024 * 1024} // 5MB
+          maxSize={5 * 1024 * 1024}
           multiple={false}
-          isUploading={isUploading}
-          uploadProgress={uploadProgress}
+          isUploading={isProcessing}
+          uploadProgress={0}
         />
-        {isUploading && (
-          <div className="mt-4">
-            <div className="flex items-center justify-between text-sm mb-2">
-              <span className="text-slate-400">Processing members...</span>
-              <span className="text-primary font-semibold">{uploadProgress}%</span>
-            </div>
-            <div className="h-2 bg-navy-muted rounded-full overflow-hidden">
-              <div
-                className="h-full bg-primary transition-all duration-300"
-                style={{ width: `${uploadProgress}%` }}
-              />
-            </div>
+        {isProcessing && (
+          <div className="mt-4 flex items-center gap-3 text-slate-400 text-sm">
+            <Loader2 className="size-4 animate-spin" />
+            Parsing CSV…
           </div>
         )}
-        <div className="mt-4 text-xs text-slate-500">
-          <p>• Maximum file size: 5MB</p>
-          <p>• Format: CSV only</p>
-          <p>• Up to 1000 members per file</p>
-        </div>
       </DashboardCard>
 
-      {/* CSV Format Requirements */}
-      <DashboardCard
-        title="CSV Format Requirements"
-        subtitle="Ensure your file follows these guidelines"
-        icon={<CheckCircle className="size-5 text-emerald-400" />}
-      >
-        <div className="space-y-4">
-          <div className="bg-navy-deep border border-navy-border rounded-lg p-4 font-mono text-xs text-slate-300">
-            <div className="text-primary mb-2">Name,Email,Role,Department</div>
-            <div>John Doe,john@company.com,Carbon Analyst,Sustainability</div>
-            <div>Jane Smith,jane@company.com,Data Entry,Operations</div>
-          </div>
+      {/* Step 3: Preview & Confirm */}
+      {parsedRows !== null && !isProcessing && (
+        <DashboardCard
+          title="Step 3: Review & Import"
+          subtitle={`${validRows.length} valid · ${invalidRows.length} with errors`}
+          icon={<CheckCircle className="size-5 text-emerald-400" />}
+        >
+          {/* Error rows */}
+          {invalidRows.length > 0 && (
+            <div className="mb-6">
+              <h4 className="text-sm font-semibold text-red-400 mb-3 flex items-center gap-2">
+                <AlertCircle className="size-4" />
+                {invalidRows.length} row(s) have errors — they will be skipped
+              </h4>
+              <div className="space-y-2">
+                {invalidRows.map((row) => (
+                  <div
+                    key={row.rowNumber}
+                    className="flex items-start gap-3 p-3 bg-red-500/5 border border-red-500/20 rounded-lg"
+                  >
+                    <X className="size-4 text-red-400 mt-0.5 flex-shrink-0" />
+                    <div className="text-xs">
+                      <span className="text-slate-300 font-medium">
+                        Row {row.rowNumber}: {row.email || "(no email)"}
+                      </span>
+                      <ul className="mt-1 space-y-0.5">
+                        {row.errors.map((err, i) => (
+                          <li key={i} className="text-red-400">• {err}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-          <div className="space-y-3">
-            <div className="flex items-start gap-2">
-              <CheckCircle className="size-4 text-emerald-400 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-slate-300">
-                <strong>Name:</strong> Full name of the team member (required)
-              </p>
-            </div>
-            <div className="flex items-start gap-2">
-              <CheckCircle className="size-4 text-emerald-400 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-slate-300">
-                <strong>Email:</strong> Valid email address (required, must be unique)
-              </p>
-            </div>
-            <div className="flex items-start gap-2">
-              <CheckCircle className="size-4 text-emerald-400 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-slate-300">
-                <strong>Role:</strong> One of: Admin, Manager, Analyst, Viewer
-              </p>
-            </div>
-            <div className="flex items-start gap-2">
-              <CheckCircle className="size-4 text-emerald-400 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-slate-300">
-                <strong>Department:</strong> Team or department name (optional)
-              </p>
-            </div>
-          </div>
-        </div>
-      </DashboardCard>
+          {/* Valid rows preview */}
+          {validRows.length > 0 && (
+            <>
+              <div className="mb-4">
+                <h4 className="text-sm font-semibold text-emerald-400 mb-3 flex items-center gap-2">
+                  <CheckCircle className="size-4" />
+                  {validRows.length} row(s) ready to import
+                </h4>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {validRows.map((row) => (
+                    <div
+                      key={row.rowNumber}
+                      className="flex items-center justify-between p-3 bg-navy-muted/50 border border-navy-border rounded-lg text-xs"
+                    >
+                      <div>
+                        <span className="text-white font-medium">
+                          {[row.firstName, row.lastName].filter(Boolean).join(" ")}
+                        </span>
+                        <span className="text-slate-400 ml-2">{row.email}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {row.department && (
+                          <span className="text-slate-500">{row.department}</span>
+                        )}
+                        <span
+                          className={`px-2 py-0.5 rounded-full font-medium ${
+                            row.role === "manager"
+                              ? "bg-teal-500/10 text-teal-400"
+                              : "bg-sky-500/10 text-sky-400"
+                          }`}
+                        >
+                          {row.role}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
-      {/* Common Errors */}
-      <DashboardCard
-        title="Common Errors to Avoid"
-        subtitle="Tips for successful import"
-        icon={<AlertCircle className="size-5 text-amber-400" />}
-      >
-        <div className="space-y-2 text-sm text-slate-300">
-          <div className="flex items-start gap-2">
-            <AlertCircle className="size-4 text-amber-400 mt-0.5 flex-shrink-0" />
-            <span>Ensure the first row contains headers (Name, Email, Role, Department)</span>
-          </div>
-          <div className="flex items-start gap-2">
-            <AlertCircle className="size-4 text-amber-400 mt-0.5 flex-shrink-0" />
-            <span>Check for duplicate email addresses</span>
-          </div>
-          <div className="flex items-start gap-2">
-            <AlertCircle className="size-4 text-amber-400 mt-0.5 flex-shrink-0" />
-            <span>Verify role names match exactly (case-sensitive)</span>
-          </div>
-          <div className="flex items-start gap-2">
-            <AlertCircle className="size-4 text-amber-400 mt-0.5 flex-shrink-0" />
-            <span>Remove any special characters that might break CSV format</span>
-          </div>
-        </div>
-      </DashboardCard>
+              {/* Import progress */}
+              {isSubmitting && (
+                <div className="mb-4">
+                  <div className="flex items-center justify-between text-sm mb-2">
+                    <span className="text-slate-400">Creating requests…</span>
+                    <span className="text-primary font-semibold">{submitProgress}%</span>
+                  </div>
+                  <div className="h-2 bg-navy-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary transition-all duration-300"
+                      style={{ width: `${submitProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-4 border-t border-navy-border">
+                <Button
+                  variant="primary"
+                  icon={
+                    isSubmitting ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Upload className="size-4" />
+                    )
+                  }
+                  onClick={handleImport}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? "Importing…" : `Import ${validRows.length} Member(s)`}
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => setParsedRows(null)}
+                  disabled={isSubmitting}
+                >
+                  Choose Different File
+                </Button>
+              </div>
+            </>
+          )}
+
+          {validRows.length === 0 && (
+            <div className="text-center py-8 text-slate-500 text-sm">
+              No valid rows found. Fix the errors above and re-upload.
+            </div>
+          )}
+        </DashboardCard>
+      )}
     </div>
   );
 }

@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import DashboardCard from "@/components/DashboardCard";
 import Button from "@/components/Button";
-import Badge from "@/components/Badge";
 import { Breadcrumb, BackButton } from "@/components/navigation";
+import { showSuccessToast, showErrorToast } from "@/lib/toast";
+import { supabase } from "@/lib/supabaseClient";
+import { useUserStore } from "@/store";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import {
   Settings as SettingsIcon,
   User,
@@ -14,34 +17,519 @@ import {
   Database,
   Zap,
   Save,
-  Briefcase,
+  Loader2,
+  Clock,
+  AlertCircle,
+  RefreshCcw,
 } from "lucide-react";
 
-export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState("profile");
+// ─── Types ────────────────────────────────────────────────────────
 
-  const tabs = [
-    { id: "profile", name: "Profile", icon: User },
-    { id: "organization", name: "Organization", icon: Building2 },
-    { id: "sme", name: "SME Settings", icon: Briefcase },
-    { id: "notifications", name: "Notifications", icon: Bell },
-    { id: "security", name: "Security", icon: Lock },
-    { id: "integrations", name: "Integrations", icon: Zap },
-    { id: "data", name: "Data Management", icon: Database },
-  ];
+interface UserProfileForm {
+  firstName: string;
+  lastName: string;
+  email: string;
+  jobTitle: string;
+  department: string;
+  phone: string;
+}
+
+interface OrgForm {
+  name: string;
+  domain: string;
+  industry: string;
+  size: string;
+  country: string;
+}
+
+// ─── Tab config ───────────────────────────────────────────────────
+
+type TabId = "profile" | "organization" | "sme" | "notifications" | "security" | "integrations" | "data";
+
+const TABS: { id: TabId; name: string; icon: React.ComponentType<{ className?: string }>; deferred: boolean }[] = [
+  { id: "profile", name: "Profile", icon: User, deferred: false },
+  { id: "organization", name: "Organization", icon: Building2, deferred: false },
+  { id: "sme", name: "SME Settings", icon: SettingsIcon, deferred: true },
+  { id: "notifications", name: "Notifications", icon: Bell, deferred: true },
+  { id: "security", name: "Security", icon: Lock, deferred: true },
+  { id: "integrations", name: "Integrations", icon: Zap, deferred: true },
+  { id: "data", name: "Data Management", icon: Database, deferred: true },
+];
+
+// ─── Deferred placeholder ─────────────────────────────────────────
+
+function ComingSoonTab({ name }: { name: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[300px] space-y-4 text-center">
+      <div className="p-4 bg-slate-800/60 border border-slate-700 rounded-full">
+        <Clock className="w-8 h-8 text-slate-500" />
+      </div>
+      <div>
+        <h3 className="text-lg font-semibold text-white mb-1">{name}</h3>
+        <p className="text-slate-400 text-sm max-w-sm">
+          This section is coming soon and is not yet available. Focus for now is on Profile and Organization settings.
+        </p>
+      </div>
+      <span className="px-3 py-1 text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700 rounded-full">
+        Coming Soon
+      </span>
+    </div>
+  );
+}
+
+// ─── Profile Tab ──────────────────────────────────────────────────
+
+function ProfileTab() {
+  const { user, updateUser } = useUserStore();
+  const [form, setForm] = useState<UserProfileForm>({
+    firstName: user?.firstName ?? "",
+    lastName: user?.lastName ?? "",
+    email: user?.email ?? "",
+    jobTitle: user?.jobTitle ?? "",
+    department: user?.department ?? "",
+    phone: user?.phone ?? "",
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+
+  // Fetch fresh profile data from Supabase on mount
+  useEffect(() => {
+    async function loadProfile() {
+      if (!user?.id) {
+        setIsLoadingProfile(false);
+        return;
+      }
+      const { data, error } = await supabase
+        .from("user_profiles")
+        .select("first_name, last_name, email, job_title, department, phone")
+        .eq("id", user.id)
+        .single();
+
+      if (error) {
+        setLoadError(error.message);
+      } else if (data) {
+        setForm({
+          firstName: data.first_name ?? "",
+          lastName: data.last_name ?? "",
+          email: data.email ?? user.email ?? "",
+          jobTitle: data.job_title ?? "",
+          department: data.department ?? "",
+          phone: data.phone ?? "",
+        });
+      }
+      setIsLoadingProfile(false);
+    }
+    loadProfile();
+  }, [user?.id]);
+
+  const handleSave = async () => {
+    if (!user?.id) return;
+    setIsSaving(true);
+
+    const { error } = await supabase
+      .from("user_profiles")
+      .update({
+        first_name: form.firstName || null,
+        last_name: form.lastName || null,
+        job_title: form.jobTitle || null,
+        department: form.department || null,
+        phone: form.phone || null,
+      })
+      .eq("id", user.id);
+
+    setIsSaving(false);
+
+    if (error) {
+      showErrorToast(`Failed to save profile: ${error.message}`);
+      return;
+    }
+
+    // Sync local store so Navbar/Sidebar reflect changes without full reload
+    updateUser({
+      firstName: form.firstName,
+      lastName: form.lastName,
+      name: [form.firstName, form.lastName].filter(Boolean).join(" ") || user.name,
+      jobTitle: form.jobTitle,
+      department: form.department,
+      phone: form.phone,
+    });
+
+    showSuccessToast("Profile saved successfully");
+  };
+
+  const inputClass =
+    "w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary placeholder:text-slate-600";
+
+  if (isLoadingProfile) {
+    return (
+      <div className="flex items-center gap-3 text-slate-400 py-8">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        <span>Loading profile…</span>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl">
+        <div className="flex items-center gap-2 mb-1">
+          <AlertCircle className="w-4 h-4 text-rose-400" />
+          <span className="text-rose-300 font-medium text-sm">Failed to load profile</span>
+        </div>
+        <p className="text-slate-400 text-xs">{loadError}</p>
+      </div>
+    );
+  }
+
+  return (
+    <DashboardCard
+      title="Profile Settings"
+      subtitle="Manage your personal information"
+      icon={<User className="size-5" />}
+    >
+      <div className="space-y-5">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">First Name</label>
+            <input
+              type="text"
+              value={form.firstName}
+              onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+              className={inputClass}
+              placeholder="Jane"
+              disabled={isSaving}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Last Name</label>
+            <input
+              type="text"
+              value={form.lastName}
+              onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+              className={inputClass}
+              placeholder="Smith"
+              disabled={isSaving}
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Email Address</label>
+          <input
+            type="email"
+            value={form.email}
+            className={`${inputClass} opacity-60 cursor-not-allowed`}
+            disabled
+            title="Email cannot be changed here — contact your administrator"
+          />
+          <p className="text-xs text-slate-500 mt-1">Email is managed by your authentication provider.</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Job Title</label>
+          <input
+            type="text"
+            value={form.jobTitle}
+            onChange={(e) => setForm({ ...form, jobTitle: e.target.value })}
+            className={inputClass}
+            placeholder="Carbon Analyst"
+            disabled={isSaving}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Department</label>
+            <input
+              type="text"
+              value={form.department}
+              onChange={(e) => setForm({ ...form, department: e.target.value })}
+              className={inputClass}
+              placeholder="Sustainability"
+              disabled={isSaving}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Phone</label>
+            <input
+              type="tel"
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              className={inputClass}
+              placeholder="+91 98765 43210"
+              disabled={isSaving}
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <Button
+            variant="primary"
+            icon={
+              isSaving ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Save className="size-4" />
+              )
+            }
+            onClick={handleSave}
+            disabled={isSaving}
+          >
+            {isSaving ? "Saving…" : "Save Changes"}
+          </Button>
+        </div>
+      </div>
+    </DashboardCard>
+  );
+}
+
+// ─── Organization Tab ─────────────────────────────────────────────
+
+function OrganizationTab() {
+  const { user } = useUserStore();
+  const orgId = user?.organizationId ?? "";
+
+  const [form, setForm] = useState<OrgForm>({
+    name: "",
+    domain: "",
+    industry: "",
+    size: "",
+    country: "",
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [hasExtendedFields, setHasExtendedFields] = useState(false);
+
+  const fetchOrg = useCallback(async () => {
+    if (!orgId) {
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    setLoadError(null);
+
+    // First fetch base columns — these always exist
+    const { data: baseData, error: baseError } = await supabase
+      .from("organizations")
+      .select("name, domain")
+      .eq("id", orgId)
+      .single();
+
+    if (baseError) {
+      setLoadError(baseError.message);
+      setIsLoading(false);
+      return;
+    }
+
+    // Then attempt extended columns added by migration 20260728_organizations_settings_fields.sql
+    const { data: extData } = await supabase
+      .from("organizations")
+      .select("industry, size, country")
+      .eq("id", orgId)
+      .single();
+
+    const extended = extData as { industry?: string; size?: string; country?: string } | null;
+    setHasExtendedFields(extData !== null);
+
+    setForm({
+      name: baseData?.name ?? "",
+      domain: baseData?.domain ?? "",
+      industry: extended?.industry ?? "",
+      size: extended?.size ?? "",
+      country: extended?.country ?? "",
+    });
+    setIsLoading(false);
+  }, [orgId]);
+
+  useEffect(() => {
+    fetchOrg();
+  }, [fetchOrg]);
+
+  const handleSave = async () => {
+    if (!orgId) return;
+    setIsSaving(true);
+
+    // Always update base columns
+    const baseUpdate: Record<string, string | null> = {
+      name: form.name || null,
+      domain: form.domain || null,
+    };
+
+    // Only include extended columns if the migration has been applied
+    const updatePayload = hasExtendedFields
+      ? { ...baseUpdate, industry: form.industry || null, size: form.size || null, country: form.country || null }
+      : baseUpdate;
+
+    const { error } = await supabase
+      .from("organizations")
+      .update(updatePayload)
+      .eq("id", orgId);
+
+    setIsSaving(false);
+
+    if (error) {
+      showErrorToast(`Failed to save organization: ${error.message}`);
+      return;
+    }
+
+    showSuccessToast("Organization settings saved");
+  };
+
+  const inputClass =
+    "w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary placeholder:text-slate-600";
+  const selectClass =
+    "w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary";
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-3 text-slate-400 py-8">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        <span>Loading organization settings…</span>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl">
+        <div className="flex items-center gap-2 mb-1">
+          <AlertCircle className="w-4 h-4 text-rose-400" />
+          <span className="text-rose-300 font-medium text-sm">Failed to load organization</span>
+        </div>
+        <p className="text-slate-400 text-xs mb-3">{loadError}</p>
+        <button
+          onClick={fetchOrg}
+          className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-white transition-colors"
+        >
+          <RefreshCcw className="w-3 h-3" /> Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!orgId) {
+    return (
+      <div className="text-center py-12 text-slate-500 text-sm">
+        Your account is not linked to an organization. Contact your administrator.
+      </div>
+    );
+  }
+
+  return (
+    <DashboardCard
+      title="Organization Settings"
+      subtitle="Configure your company profile"
+      icon={<Building2 className="size-5" />}
+    >
+      <div className="space-y-5">
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Organization Name</label>
+          <input
+            type="text"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            className={inputClass}
+            placeholder="Acme Manufacturing Ltd."
+            disabled={isSaving}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Domain</label>
+          <input
+            type="text"
+            value={form.domain}
+            onChange={(e) => setForm({ ...form, domain: e.target.value })}
+            className={inputClass}
+            placeholder="acme.com"
+            disabled={isSaving}
+          />
+          <p className="text-xs text-slate-500 mt-1">Used for auto-associating users from this domain.</p>
+        </div>
+
+        {hasExtendedFields ? (
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Industry Sector</label>
+                <select value={form.industry} onChange={(e) => setForm({ ...form, industry: e.target.value })} className={selectClass} disabled={isSaving}>
+                  <option value="">Select industry…</option>
+                  <option value="manufacturing">Manufacturing</option>
+                  <option value="technology">Technology</option>
+                  <option value="retail">Retail</option>
+                  <option value="healthcare">Healthcare</option>
+                  <option value="agriculture">Agriculture</option>
+                  <option value="logistics">Logistics &amp; Transport</option>
+                  <option value="construction">Construction</option>
+                  <option value="energy">Energy &amp; Utilities</option>
+                  <option value="finance">Finance &amp; Banking</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Company Size</label>
+                <select value={form.size} onChange={(e) => setForm({ ...form, size: e.target.value })} className={selectClass} disabled={isSaving}>
+                  <option value="">Select size…</option>
+                  <option value="1-50">1–50 employees</option>
+                  <option value="51-200">51–200 employees</option>
+                  <option value="201-500">201–500 employees</option>
+                  <option value="501-1000">501–1,000 employees</option>
+                  <option value="1000+">1,000+ employees</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Country</label>
+              <select value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} className={selectClass} disabled={isSaving}>
+                <option value="">Select country…</option>
+                <option value="IN">India</option>
+                <option value="US">United States</option>
+                <option value="GB">United Kingdom</option>
+                <option value="DE">Germany</option>
+                <option value="AU">Australia</option>
+                <option value="SG">Singapore</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+          </>
+        ) : (
+          <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-300">
+            ⚠️ Extended fields (Industry, Size, Country) require running migration{" "}
+            <code className="font-mono">20260728_organizations_settings_fields.sql</code> in Supabase SQL editor.
+          </div>
+        )}
+
+        <div className="flex gap-3 pt-2">
+          <Button
+            variant="primary"
+            icon={isSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            onClick={handleSave}
+            disabled={isSaving}
+          >
+            {isSaving ? "Saving…" : "Save Changes"}
+          </Button>
+        </div>
+      </div>
+    </DashboardCard>
+  );
+}
+
+
+// ─── Page ─────────────────────────────────────────────────────────
+
+function SettingsContent() {
+  const [activeTab, setActiveTab] = useState<TabId>("profile");
 
   return (
     <div className="space-y-6">
-      {/* Breadcrumb */}
       <Breadcrumb />
-      
-      {/* Header */}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-white mb-2">Settings</h1>
-          <p className="text-slate-400">
-            Manage your account, organization, and platform preferences
-          </p>
+          <p className="text-slate-400">Manage your account and organization preferences</p>
         </div>
         <BackButton href="/dashboard" label="Back to Dashboard" variant="outline" />
       </div>
@@ -50,14 +538,37 @@ export default function SettingsPage() {
         {/* Sidebar Tabs */}
         <div className="lg:col-span-1">
           <div className="glass-card rounded-xl p-4 space-y-1">
-            {tabs.map((tab) => {
+            {TABS.map((tab) => {
               const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+
+              if (tab.deferred) {
+                return (
+                  // Deferred tabs: visually present but non-interactive
+                  <div
+                    key={tab.id}
+                    aria-disabled="true"
+                    title="Coming soon"
+                    className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg text-slate-600 cursor-not-allowed select-none"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon className="size-5" />
+                      <span className="text-sm font-medium">{tab.name}</span>
+                    </div>
+                    <span className="text-[9px] font-semibold uppercase tracking-wide bg-slate-800 text-slate-500 border border-slate-700 px-1.5 py-0.5 rounded-full">
+                      Soon
+                    </span>
+                  </div>
+                );
+              }
+
               return (
                 <button
                   key={tab.id}
+                  id={`settings-tab-${tab.id}`}
                   onClick={() => setActiveTab(tab.id)}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                    activeTab === tab.id
+                    isActive
                       ? "bg-primary/10 text-primary border border-primary/20"
                       : "text-slate-400 hover:text-white hover:bg-white/5"
                   }`}
@@ -70,563 +581,26 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Content Area */}
+        {/* Content */}
         <div className="lg:col-span-3">
-          {activeTab === "profile" && (
-            <DashboardCard
-              title="Profile Settings"
-              subtitle="Manage your personal information"
-              icon={<User className="size-5" />}
-            >
-              <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      First Name
-                    </label>
-                    <input
-                      type="text"
-                      defaultValue="Sarah"
-                      className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      Last Name
-                    </label>
-                    <input
-                      type="text"
-                      defaultValue="Chen"
-                      className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    defaultValue="sarah.chen@company.com"
-                    className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Job Title
-                  </label>
-                  <input
-                    type="text"
-                    defaultValue="Chief Climate Officer"
-                    className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-                <div className="flex gap-3">
-                  <Button variant="primary" icon={<Save className="size-4" />}>
-                    Save Changes
-                  </Button>
-                  <Button variant="ghost">Cancel</Button>
-                </div>
-              </div>
-            </DashboardCard>
-          )}
-
-          {activeTab === "organization" && (
-            <DashboardCard
-              title="Organization Settings"
-              subtitle="Configure your company profile"
-              icon={<Building2 className="size-5" />}
-            >
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Organization Name
-                  </label>
-                  <input
-                    type="text"
-                    defaultValue="Acme Manufacturing Ltd."
-                    className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      Industry Sector
-                    </label>
-                    <select className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary">
-                      <option>Manufacturing</option>
-                      <option>Technology</option>
-                      <option>Retail</option>
-                      <option>Healthcare</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      Company Size
-                    </label>
-                    <select className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary">
-                      <option>1-50 employees</option>
-                      <option>51-200 employees</option>
-                      <option>201-500 employees</option>
-                      <option>500+ employees</option>
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Carbon Reduction Target
-                  </label>
-                  <div className="flex gap-3">
-                    <input
-                      type="number"
-                      defaultValue="30"
-                      className="flex-1 px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                    <select className="px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary">
-                      <option>% by 2030</option>
-                      <option>% by 2035</option>
-                      <option>% by 2040</option>
-                      <option>% by 2050</option>
-                    </select>
-                  </div>
-                </div>
-                <Button variant="primary" icon={<Save className="size-4" />}>
-                  Save Changes
-                </Button>
-              </div>
-            </DashboardCard>
-          )}
-
-          {activeTab === "sme" && (
-            <DashboardCard
-              title="SME Settings"
-              subtitle="Small and Medium Enterprise configuration"
-              icon={<Briefcase className="size-5" />}
-            >
-              <div className="space-y-6">
-                {/* Enterprise Classification */}
-                <div>
-                  <h4 className="text-sm font-semibold text-white mb-3">
-                    Enterprise Classification
-                  </h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">
-                        Enterprise Type
-                      </label>
-                      <select className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary">
-                        <option>Small Enterprise (10-50 employees)</option>
-                        <option>Medium Enterprise (51-250 employees)</option>
-                        <option>Large Enterprise (250+ employees)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">
-                        Annual Revenue (INR)
-                      </label>
-                      <select className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary">
-                        <option>₹10-50 Cr</option>
-                        <option>₹50-100 Cr</option>
-                        <option>₹100-250 Cr</option>
-                        <option>₹250Cr+</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Energy Usage Category */}
-                <div className="pt-6 border-t border-navy-border">
-                  <h4 className="text-sm font-semibold text-white mb-3">
-                    Energy Usage Profile
-                  </h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">
-                        Energy Intensity
-                      </label>
-                      <select className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary">
-                        <option>Low (Office-based)</option>
-                        <option>Medium (Light Manufacturing)</option>
-                        <option>High (Heavy Industry)</option>
-                        <option>Very High (Energy-Intensive)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">
-                        Primary Energy Source
-                      </label>
-                      <select className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary">
-                        <option>Grid Electricity</option>
-                        <option>Renewable Energy</option>
-                        <option>Natural Gas</option>
-                        <option>Mixed Sources</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Compliance Region */}
-                <div className="pt-6 border-t border-navy-border">
-                  <h4 className="text-sm font-semibold text-white mb-3">
-                    Compliance & Reporting
-                  </h4>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">
-                        Primary Compliance Region
-                      </label>
-                      <select className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary">
-                        <option>India (BEE, GRIHA)</option>
-                        <option>European Union (CSRD, ETS)</option>
-                        <option>United States (EPA, SEC)</option>
-                        <option>United Kingdom (SECR, CCA)</option>
-                        <option>International (ISO 14064, GHG Protocol)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">
-                        Reporting Framework
-                      </label>
-                      <div className="space-y-2">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input type="checkbox" defaultChecked className="w-4 h-4 rounded border-navy-border bg-navy-muted text-primary focus:ring-2 focus:ring-primary" />
-                          <span className="text-sm text-slate-300">GHG Protocol</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input type="checkbox" className="w-4 h-4 rounded border-navy-border bg-navy-muted text-primary focus:ring-2 focus:ring-primary" />
-                          <span className="text-sm text-slate-300">CDP (Carbon Disclosure Project)</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input type="checkbox" className="w-4 h-4 rounded border-navy-border bg-navy-muted text-primary focus:ring-2 focus:ring-primary" />
-                          <span className="text-sm text-slate-300">TCFD (Task Force on Climate-related Financial Disclosures)</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input type="checkbox" className="w-4 h-4 rounded border-navy-border bg-navy-muted text-primary focus:ring-2 focus:ring-primary" />
-                          <span className="text-sm text-slate-300">SBTi (Science Based Targets initiative)</span>
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Operational Details */}
-                <div className="pt-6 border-t border-navy-border">
-                  <h4 className="text-sm font-semibold text-white mb-3">
-                    Operational Settings
-                  </h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">
-                        Number of Facilities
-                      </label>
-                      <input
-                        type="number"
-                        defaultValue="3"
-                        className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">
-                        Fleet Size (vehicles)
-                      </label>
-                      <input
-                        type="number"
-                        defaultValue="12"
-                        className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <Button variant="primary" icon={<Save className="size-4" />}>
-                  Save SME Settings
-                </Button>
-              </div>
-            </DashboardCard>
-          )}
-
-          {activeTab === "notifications" && (
-            <DashboardCard
-              title="Notification Preferences"
-              subtitle="Manage how you receive updates"
-              icon={<Bell className="size-5" />}
-            >
-              <div className="space-y-4">
-                {[
-                  {
-                    title: "Policy Alerts",
-                    description: "Notifications about upcoming compliance deadlines",
-                    enabled: true,
-                  },
-                  {
-                    title: "Emission Thresholds",
-                    description: "Alerts when emissions exceed set limits",
-                    enabled: true,
-                  },
-                  {
-                    title: "Recommendations",
-                    description: "New AI-generated reduction recommendations",
-                    enabled: false,
-                  },
-                  {
-                    title: "Weekly Reports",
-                    description: "Weekly summary of carbon activities",
-                    enabled: true,
-                  },
-                ].map((notification, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-4 bg-navy-muted/50 border border-navy-border rounded-lg"
-                  >
-                    <div>
-                      <h4 className="text-sm font-semibold text-white">
-                        {notification.title}
-                      </h4>
-                      <p className="text-xs text-slate-400 mt-1">
-                        {notification.description}
-                      </p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        defaultChecked={notification.enabled}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-navy-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                    </label>
-                  </div>
-                ))}
-              </div>
-            </DashboardCard>
-          )}
-
-          {activeTab === "security" && (
-            <DashboardCard
-              title="Security Settings"
-              subtitle="Manage your account security"
-              icon={<Lock className="size-5" />}
-            >
-              <div className="space-y-6">
-                <div>
-                  <h4 className="text-sm font-semibold text-white mb-3">
-                    Change Password
-                  </h4>
-                  <div className="space-y-3">
-                    <input
-                      type="password"
-                      placeholder="Current Password"
-                      className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                    <input
-                      type="password"
-                      placeholder="New Password"
-                      className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                    <input
-                      type="password"
-                      placeholder="Confirm New Password"
-                      className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-                  <Button variant="primary" className="mt-3">
-                    Update Password
-                  </Button>
-                </div>
-                <div className="pt-6 border-t border-navy-border">
-                  <div className="flex items-center justify-between p-4 bg-navy-muted/50 border border-navy-border rounded-lg">
-                    <div>
-                      <h4 className="text-sm font-semibold text-white">
-                        Two-Factor Authentication
-                      </h4>
-                      <p className="text-xs text-slate-400 mt-1">
-                        Add an extra layer of security to your account
-                      </p>
-                    </div>
-                    <Badge variant="warning">Not Enabled</Badge>
-                  </div>
-                  <Button variant="outline" className="mt-3">
-                    Enable 2FA
-                  </Button>
-                </div>
-              </div>
-            </DashboardCard>
-          )}
-
-          {activeTab === "integrations" && (
-            <DashboardCard
-              title="Integrations"
-              subtitle="Connect external services and APIs"
-              icon={<Zap className="size-5" />}
-            >
-              <div className="space-y-3">
-                {[
-                  {
-                    name: "Banking API",
-                    description: "Automatic transaction import",
-                    status: "connected",
-                  },
-                  {
-                    name: "Google Drive",
-                    description: "Receipt and document storage",
-                    status: "connected",
-                  },
-                  {
-                    name: "Slack",
-                    description: "Team notifications",
-                    status: "not-connected",
-                  },
-                  {
-                    name: "Microsoft Teams",
-                    description: "Collaboration integration",
-                    status: "not-connected",
-                  },
-                ].map((integration, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-4 bg-navy-muted/50 border border-navy-border rounded-lg"
-                  >
-                    <div>
-                      <h4 className="text-sm font-semibold text-white">
-                        {integration.name}
-                      </h4>
-                      <p className="text-xs text-slate-400 mt-1">
-                        {integration.description}
-                      </p>
-                    </div>
-                    {integration.status === "connected" ? (
-                      <Badge variant="success">Connected</Badge>
-                    ) : (
-                      <Button variant="outline" size="sm">
-                        Connect
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </DashboardCard>
-          )}
-
-          {activeTab === "data" && (
-            <DashboardCard
-              title="Data Management"
-              subtitle="Export, backup, and manage your emissions data"
-              icon={<Database className="size-5" />}
-            >
-              <div className="space-y-6">
-                {/* Export Data */}
-                <div>
-                  <h4 className="text-sm font-semibold text-white mb-3">
-                    Export Data
-                  </h4>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-4 bg-navy-muted/50 border border-navy-border rounded-lg">
-                      <div>
-                        <h5 className="text-sm font-medium text-white">CSV Export</h5>
-                        <p className="text-xs text-slate-400 mt-1">
-                          Download all emissions data in spreadsheet format
-                        </p>
-                      </div>
-                      <Button variant="outline" size="sm">
-                        Export CSV
-                      </Button>
-                    </div>
-                    <div className="flex items-center justify-between p-4 bg-navy-muted/50 border border-navy-border rounded-lg">
-                      <div>
-                        <h5 className="text-sm font-medium text-white">JSON Export</h5>
-                        <p className="text-xs text-slate-400 mt-1">
-                          Download structured data with full metadata
-                        </p>
-                      </div>
-                      <Button variant="outline" size="sm">
-                        Export JSON
-                      </Button>
-                    </div>
-                    <div className="flex items-center justify-between p-4 bg-navy-muted/50 border border-navy-border rounded-lg">
-                      <div>
-                        <h5 className="text-sm font-medium text-white">PDF Report</h5>
-                        <p className="text-xs text-slate-400 mt-1">
-                          Generate comprehensive emissions report
-                        </p>
-                      </div>
-                      <Button variant="outline" size="sm">
-                        Generate PDF
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Data Backup */}
-                <div className="pt-6 border-t border-navy-border">
-                  <h4 className="text-sm font-semibold text-white mb-3">
-                    Automatic Backup
-                  </h4>
-                  <div className="p-4 bg-navy-muted/50 border border-navy-border rounded-lg">
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <h5 className="text-sm font-medium text-white">Daily Backups</h5>
-                        <p className="text-xs text-slate-400 mt-1">
-                          Last backup: Today at 2:00 AM
-                        </p>
-                      </div>
-                      <Badge variant="success">Active</Badge>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm">
-                        Backup Now
-                      </Button>
-                      <Button variant="ghost" size="sm">
-                        View History
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Data Retention */}
-                <div className="pt-6 border-t border-navy-border">
-                  <h4 className="text-sm font-semibold text-white mb-3">
-                    Data Retention
-                  </h4>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">
-                        Retention Period
-                      </label>
-                      <select className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary">
-                        <option>Keep all data indefinitely</option>
-                        <option>7 years (recommended for compliance)</option>
-                        <option>5 years</option>
-                        <option>3 years</option>
-                        <option>1 year</option>
-                      </select>
-                    </div>
-                    <p className="text-xs text-slate-400">
-                      ℹ️ Most carbon reporting standards require data retention for at least 5-7 years
-                    </p>
-                  </div>
-                </div>
-
-                {/* Danger Zone */}
-                <div className="pt-6 border-t border-red-500/20">
-                  <h4 className="text-sm font-semibold text-red-400 mb-3">
-                    Danger Zone
-                  </h4>
-                  <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
-                    <h5 className="text-sm font-medium text-white mb-2">
-                      Delete All Data
-                    </h5>
-                    <p className="text-xs text-slate-400 mb-3">
-                      Permanently delete all emissions data, reports, and history. This action cannot be undone.
-                    </p>
-                    <Button variant="outline" className="border-red-500 text-red-400 hover:bg-red-500/10">
-                      Delete All Data
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </DashboardCard>
+          {activeTab === "profile" && <ProfileTab />}
+          {activeTab === "organization" && <OrganizationTab />}
+          {/* Deferred tabs — rendered as Coming Soon, never reach dead UI */}
+          {TABS.find((t) => t.id === activeTab)?.deferred && (
+            <div className="glass-card rounded-xl p-6">
+              <ComingSoonTab name={TABS.find((t) => t.id === activeTab)?.name ?? ""} />
+            </div>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <ErrorBoundary>
+      <SettingsContent />
+    </ErrorBoundary>
   );
 }
