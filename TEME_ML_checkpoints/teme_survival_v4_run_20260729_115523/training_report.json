@@ -1,0 +1,74 @@
+{
+  "run_id": "teme_survival_v4_run_20260729_115523",
+  "created_at_utc": "2026-07-29T11:55:26.496122+00:00",
+  "dataset_path": "C:\\Users\\daksh_769tz6y\\Desktop\\CarbonSense-main\\data\\datasets\\v_survival_training_v4.csv",
+  "model_output_path": "C:\\Users\\daksh_769tz6y\\Desktop\\CarbonSense-main\\packages\\ml_services\\teme\\ml\\models\\teme_survival_v4.joblib",
+  "target_column": "survival_ratio",
+  "model_version": "teme-survival-v4.0",
+  "rows_total": 1896,
+  "rows_used": 1896,
+  "rows_real": 0,
+  "rows_synthetic": 1896,
+  "cv": {
+    "splitter": "GroupKFold",
+    "n_splits": 5,
+    "n_unique_groups": 794,
+    "fold_metrics": [
+      {
+        "fold": 1,
+        "rows_train": 1516,
+        "rows_val": 380,
+        "mae": 0.22637007921041336,
+        "r2": 0.12522693395102613,
+        "n": 380
+      },
+      {
+        "fold": 2,
+        "rows_train": 1517,
+        "rows_val": 379,
+        "mae": 0.24058329251114258,
+        "r2": -0.01663996520982436,
+        "n": 379
+      },
+      {
+        "fold": 3,
+        "rows_train": 1517,
+        "rows_val": 379,
+        "mae": 0.24181406396152244,
+        "r2": -0.17408538043563082,
+        "n": 379
+      },
+      {
+        "fold": 4,
+        "rows_train": 1517,
+        "rows_val": 379,
+        "mae": 0.2229370811035658,
+        "r2": 0.19949568768759396,
+        "n": 379
+      },
+      {
+        "fold": 5,
+        "rows_train": 1517,
+        "rows_val": 379,
+        "mae": 0.2312836230867622,
+        "r2": 0.07990886373626782,
+        "n": 379
+      }
+    ],
+    "oof_mixed": {
+      "mae": 0.23259434340254823,
+      "r2": 0.05429022856806709,
+      "n": 1896
+    },
+    "oof_real_only": {
+      "mae": null,
+      "r2": null,
+      "n": 0
+    }
+  },
+  "artifact_path": "C:\\Users\\daksh_769tz6y\\Desktop\\CarbonSense-main\\packages\\ml_services\\teme\\ml\\models\\teme_survival_v4.joblib",
+  "artifact_version": "teme_survival_v4_final_v1",
+  "feature_count": 29,
+  "calibrated": false,
+  "shap_available": false
+}

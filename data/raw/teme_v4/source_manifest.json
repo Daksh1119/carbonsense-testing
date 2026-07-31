@@ -1,0 +1,24 @@
+{
+  "sources": [
+    {
+      "name": "nerc_survival_prepared_v4",
+      "path": "data/raw/teme_v4/nerc_survival_prepared_v4.csv",
+      "row_origin": "real",
+      "source_label": "NERC_EIDC_2023_survival_height",
+      "column_map": {},
+      "defaults": {
+        "dataset_version": "teme_survival_v4_nerc"
+      }
+    },
+    {
+      "name": "legacy_synthetic_relabeled",
+      "path": "data/datasets/v_survival_training_relabeled.csv",
+      "row_origin": "synthetic",
+      "source_label": "legacy_v2_synthetic_relabeled",
+      "column_map": {},
+      "defaults": {
+        "dataset_version": "teme_survival_v2_synthetic"
+      }
+    }
+  ]
+}

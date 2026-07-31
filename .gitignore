@@ -67,3 +67,6 @@ pnpm-lock.yaml
 
 # dotenv-linter and direnv
 .envrc
+
+# Large ML model artifacts (regenerate via: python scripts/train_teme_survival_v4.py)
+packages/ml_services/teme/ml/models/*.joblib

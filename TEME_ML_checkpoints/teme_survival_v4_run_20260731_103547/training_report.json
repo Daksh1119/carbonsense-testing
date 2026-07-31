@@ -1,0 +1,74 @@
+{
+  "run_id": "teme_survival_v4_run_20260731_103547",
+  "created_at_utc": "2026-07-31T10:35:56.967865+00:00",
+  "dataset_path": "C:\\Users\\daksh_769tz6y\\Desktop\\CarbonSense-main\\data\\datasets\\v_survival_training_v4.csv",
+  "model_output_path": "C:\\Users\\daksh_769tz6y\\Desktop\\CarbonSense-main\\packages\\ml_services\\teme\\ml\\models\\teme_survival_v4.joblib",
+  "target_column": "survival_ratio",
+  "model_version": "teme-survival-v4.0",
+  "rows_total": 13896,
+  "rows_used": 13896,
+  "rows_real": 1896,
+  "rows_synthetic": 12000,
+  "cv": {
+    "splitter": "GroupKFold",
+    "n_splits": 5,
+    "n_unique_groups": 813,
+    "fold_metrics": [
+      {
+        "fold": 1,
+        "rows_train": 11116,
+        "rows_val": 2780,
+        "mae": 0.085932438944786,
+        "r2": 0.0006335596945629129,
+        "n": 2780
+      },
+      {
+        "fold": 2,
+        "rows_train": 11117,
+        "rows_val": 2779,
+        "mae": 0.0650475211611798,
+        "r2": 0.11729105024534059,
+        "n": 2779
+      },
+      {
+        "fold": 3,
+        "rows_train": 11117,
+        "rows_val": 2779,
+        "mae": 0.0789566083528452,
+        "r2": 0.21035921212260122,
+        "n": 2779
+      },
+      {
+        "fold": 4,
+        "rows_train": 11117,
+        "rows_val": 2779,
+        "mae": 0.07296985094023516,
+        "r2": 0.16491397572176292,
+        "n": 2779
+      },
+      {
+        "fold": 5,
+        "rows_train": 11117,
+        "rows_val": 2779,
+        "mae": 0.07295294637414834,
+        "r2": 0.00682267866095021,
+        "n": 2779
+      }
+    ],
+    "oof_mixed": {
+      "mae": 0.07517264751890128,
+      "r2": 0.12457344107723234,
+      "n": 13896
+    },
+    "oof_real_only": {
+      "mae": 0.23977306465986983,
+      "r2": -0.06408221937347447,
+      "n": 1896
+    }
+  },
+  "artifact_path": "C:\\Users\\daksh_769tz6y\\Desktop\\CarbonSense-main\\packages\\ml_services\\teme\\ml\\models\\teme_survival_v4.joblib",
+  "artifact_version": "teme_survival_v4_final_v1",
+  "feature_count": 29,
+  "calibrated": true,
+  "shap_available": false
+}

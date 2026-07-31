@@ -1,0 +1,23 @@
+{
+  "built_at_utc": "2026-07-31T10:35:01.005254+00:00",
+  "total_rows": 13896,
+  "rows_real": 1896,
+  "rows_synthetic": 12000,
+  "real_fraction": 0.1364,
+  "rows_with_valid_target": 13896,
+  "missing_required_columns": [],
+  "origin_breakdown": {
+    "synthetic": 12000,
+    "real": 1896
+  },
+  "dataset_version_breakdown": {
+    "teme_survival_v2_synthetic": 12000,
+    "teme_survival_v4_nerc": 1896
+  },
+  "output_csv": "C:\\Users\\daksh_769tz6y\\Desktop\\CarbonSense-main\\data\\datasets\\v_survival_training_v4.csv",
+  "sources_loaded": [
+    "nerc_survival_prepared_v4",
+    "legacy_synthetic_relabeled"
+  ],
+  "sources_skipped": []
+}

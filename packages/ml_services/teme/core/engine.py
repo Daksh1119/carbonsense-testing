@@ -1,4 +1,4 @@
-﻿from typing import Dict, Any, List
+from typing import Dict, Any, List
 
 from ml_services.teme.core.sequestration import generate_sequestration_curve
 from ml_services.teme.core.survival import generate_survival_curve
@@ -8,7 +8,11 @@ from ml_services.teme.core.optimizer import select_species_rule_based
 
 # --- Optional ML import (safe) ---
 try:
-    from ml_services.teme.ml.survival import predict_survival_adjustment
+    from ml_services.teme.ml.survival import (
+        predict_survival_adjustment,
+        get_loaded_model_version,
+        get_last_uncertainty,
+    )
     ML_AVAILABLE = True
 except Exception:
     ML_AVAILABLE = False
@@ -56,7 +60,9 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
     T = input_payload["time_horizon_years"]
     constraints = input_payload["constraints"]
 
-    ml_enabled = input_payload.get("ml", {}).get("enabled", False)
+    ml_config = input_payload.get("ml", {})
+    ml_enabled = ml_config.get("enabled", False)
+    prefer_v4 = ml_config.get("prefer_v4", False)
     mc_config = input_payload.get("monte_carlo", {})
     mc_enabled = mc_config.get("enabled", False)
 
@@ -94,6 +100,8 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
     # --- Annual sequestration computation (deterministic, linear growth) ---
     offset_plan = []
     ml_adjustments = {}
+    ml_uncertainty: dict = {}
+    resolved_model_version = None
 
     for species, cfg in species_config.items():
         alpha = generate_sequestration_curve(
@@ -125,12 +133,13 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
                     disease_score=cfg["disease_score"],
                     planted_count=cfg["count"],
                     rule_based_survival=sigma[0],
+                    prefer_v4=prefer_v4,
                 )
-
-                adjusted_sigma = [
-                    min(1.0, s * adjustment_factor) for s in sigma
-                ]
-
+                adjusted_sigma = [min(1.0, s * adjustment_factor) for s in sigma]
+                resolved_model_version = get_loaded_model_version()
+                uncertainty = get_last_uncertainty()
+                if uncertainty:
+                    ml_uncertainty[species] = uncertainty
             except Exception:
                 # ML failure must NEVER break TEME
                 adjustment_factor = 1.0
@@ -262,12 +271,9 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
         "warnings": list(dict.fromkeys(warnings)),
         "ml_metadata": {
             "enabled": bool(ml_enabled and ML_AVAILABLE),
-            "model_version": (
-                "rf-survival-v1.1" if ml_enabled and ML_AVAILABLE else None
-            ),
-            "adjustment_factors": (
-                ml_adjustments if ml_enabled and ML_AVAILABLE else {}
-            ),
+            "model_version": resolved_model_version if (ml_enabled and ML_AVAILABLE) else None,
+            "adjustment_factors": ml_adjustments if (ml_enabled and ML_AVAILABLE) else {},
+            "uncertainty": ml_uncertainty if ml_uncertainty else None,
         },
     }
 
