@@ -1,3 +1,7 @@
+# =============================================================================
+# CarbonSense — .gitignore
+# =============================================================================
+
 # Python
 __pycache__/
 *.pyc
@@ -10,46 +14,66 @@ build/
 # Virtual environments
 venv/
 .venv/
-.env/
+env/
 
-# Environment / local secrets
+# =============================================================================
+# Environment / secrets — NEVER commit real .env files
+# Safe to commit ONLY: .env.example  (placeholder values, no real secrets)
+# =============================================================================
 .env
 .env.*
 !.env.example
 !**/.env.example
-CarbonSense_FrontEnd/frontend/.env.local
-CarbonSense_FrontEnd/frontend/.env.*.local
 
-# OS
+# All .local variants anywhere in the tree
+.env.local
+.env.*.local
+**/.env.local
+**/.env.*.local
+
+# Explicit frontend paths (belt-and-suspenders)
+CarbonSense_FrontEnd/frontend/.env
+CarbonSense_FrontEnd/frontend/.env.*
+!CarbonSense_FrontEnd/frontend/.env.example
+
+# direnv / dotenv-vault
+.envrc
+.env.vault
+
+# Common secret file names
+secrets.json
+secrets.yaml
+secrets.yml
+service-account*.json
+*-service-account.json
+
+# =============================================================================
+# OS / IDE
+# =============================================================================
 .DS_Store
 Thumbs.db
-
-# IDE
 .vscode/
 .idea/
 
 # Logs
 *.log
 
-# Supabase local tooling artifacts
+# =============================================================================
+# Supabase
+# =============================================================================
 supabase/.temp/
 supabase/migrations_backup/
 
-# Local training artifacts (kept outside git; used in Colab/external training)
-models/*.pt
-models/*.pth
-
-# Local generated OCR debug outputs
-scripts/ocr_result_*.json
-
-# Node/Next.js build artifacts
+# =============================================================================
+# Node / Next.js
+# =============================================================================
 .next/
 .turbo/
 .cache/
 out/
 node_modules/
 
-# Yarn/NPM/PNPM lock and config
+# Lock files (keep package.json, ignore lock files to avoid conflicts)
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
@@ -57,16 +81,14 @@ pnpm-lock.yaml
 .yarnrc
 .yarn/
 
-# Additional environment / local secrets
-.envrc
-.env.*.local
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# dotenv-linter and direnv
-.envrc
-
-# Large ML model artifacts (regenerate via: python scripts/train_teme_survival_v4.py)
+# =============================================================================
+# ML model artifacts (regenerate via: python scripts/train_teme_survival_v4.py)
+# =============================================================================
 packages/ml_services/teme/ml/models/*.joblib
+models/*.pt
+models/*.pth
+
+# =============================================================================
+# Local dev / debug outputs
+# =============================================================================
+scripts/ocr_result_*.json
