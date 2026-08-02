@@ -1,9 +1,10 @@
-﻿from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 
 from ml_services.teme.core.engine import run_teme
 from ml_services.teme.core.exceptions import InfeasiblePlanError
+from ml_services.common.authz import ensure_user_in_org
 
 router = APIRouter(prefix="/teme", tags=["TEME"])
 
@@ -125,6 +126,13 @@ class Constraints(BaseModel):
 
 
 class TEMEInput(BaseModel):
+    # ── Authorization context ──────────────────────────────────────────────
+    # Both fields are required so the API can verify the caller belongs to
+    # the organization before running the optimization. Pass the Supabase
+    # auth.uid() and the active organization UUID from the frontend session.
+    organization_id: str = Field(..., description="Caller's organization UUID (from Supabase session)")
+    user_id: str = Field(..., description="Caller's user UUID (auth.uid() from Supabase session)")
+    # ── TEME parameters ────────────────────────────────────────────────────
     emission_kg: float
     activity_breakdown: Dict[str, float] = Field(default_factory=dict)
     location: str = "India"
@@ -157,6 +165,12 @@ class TEMEOutput(BaseModel):
 
 @router.post("/run", response_model=TEMEOutput)
 def run_teme_api(payload: TEMEInput):
+    # ── Authorization: verify caller belongs to their claimed organization ──
+    # This runs before any computation. If AUTHZ_DISABLED=true in env, the
+    # check is skipped (local dev without Supabase). In all other cases,
+    # an invalid user_id / organization_id pair returns HTTP 403.
+    ensure_user_in_org(payload.user_id, payload.organization_id)
+
     try:
         input_dict = payload.model_dump()
         constraints = input_dict.get("constraints", {})

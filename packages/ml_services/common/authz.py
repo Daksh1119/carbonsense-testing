@@ -7,11 +7,18 @@ from ml_services.common.supabase_client import supabase
 
 def _strict_authz_enabled() -> bool:
     """
-    Feature-flag strict authz so existing environments are not broken.
+    Authz is ENABLED BY DEFAULT — explicitly opt-out with AUTHZ_DISABLED=true.
 
-    Enable by setting OCR_STRICT_AUTHZ=true in environment.
+    Rationale: "secure by default" is the correct fail-safe direction.
+    Previously this was guarded by OCR_STRICT_AUTHZ=true (opt-in), which
+    meant any deployment that forgot to set the flag silently bypassed all
+    authorization checks. Flipped: any deployment that forgets to configure
+    anything now stays secure.
+
+    To disable authz (e.g. local dev without Supabase):
+        AUTHZ_DISABLED=true  in your .env
     """
-    return os.getenv("OCR_STRICT_AUTHZ", "false").strip().lower() == "true"
+    return os.getenv("AUTHZ_DISABLED", "false").strip().lower() != "true"
 
 
 def _is_active_org_member(user_id: str, organization_id: str) -> bool:
@@ -42,7 +49,10 @@ def _has_permission(user_id: str, organization_id: str, permission_key: str) -> 
 
 
 def ensure_user_in_org(user_id: str, organization_id: str) -> None:
-    """Guard: ensure user belongs to organization (optionally strict)."""
+    """Guard: ensure user belongs to organization.
+
+    Always enforced unless AUTHZ_DISABLED=true is explicitly set.
+    """
     if not user_id or not user_id.strip():
         raise HTTPException(status_code=401, detail="Missing user_id")
     if not organization_id or not organization_id.strip():
@@ -60,7 +70,10 @@ def ensure_user_in_org(user_id: str, organization_id: str) -> None:
 
 
 def ensure_permission(user_id: str, organization_id: str, permission_key: str) -> None:
-    """Guard: ensure user has required permission (optionally strict)."""
+    """Guard: ensure user has required permission.
+
+    Always enforced unless AUTHZ_DISABLED=true is explicitly set.
+    """
     if not user_id or not user_id.strip():
         raise HTTPException(status_code=401, detail="Missing user_id")
     if not organization_id or not organization_id.strip():
@@ -82,7 +95,7 @@ def ensure_permission(user_id: str, organization_id: str, permission_key: str) -
 
 
 def get_user_department(user_id: str, organization_id: str) -> Optional[str]:
-    """Resolve user department from organization membership when strict authz is enabled."""
+    """Resolve user department from organization membership."""
     if not user_id or not organization_id:
         return None
     if not _strict_authz_enabled():

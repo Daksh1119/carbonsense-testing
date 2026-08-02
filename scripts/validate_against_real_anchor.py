@@ -1,10 +1,13 @@
 """
-Validate the trained TEME v4 model against the real_anchor_raw.csv holdout.
+Validate the trained TEME v4 model against the real anchor holdout.
 
-This is a TRUE EXTERNAL holdout check: real_anchor_raw.csv was never used
+This is a TRUE EXTERNAL holdout check: the real anchor data was never used
 during training (neither in the NERC source nor the legacy synthetic data).
-Only rows with Total Plant No > 0 are usable (the rest are pure expenditure
-records with no survival outcome).
+
+The script reads from the PREPARED CSV (real_anchor_prepared_v4.csv) which
+has correctly differentiated state-level climate scores (drought_score,
+fire_score) derived from published Koeppen classification via
+prepare_real_anchor_v4.py -- NOT the raw file with hardcoded flat defaults.
 
 Key metric: coverage_rate -- fraction of real holdout rows whose observed
 survival_ratio falls within the model's [p10, p90] uncertainty band.
@@ -13,6 +16,7 @@ A well-calibrated model should achieve ~80% coverage.
 Usage:
     python scripts/validate_against_real_anchor.py
     python scripts/validate_against_real_anchor.py --model path/to/model.joblib
+    python scripts/validate_against_real_anchor.py --holdout data/raw/teme_v4/real_anchor_prepared_v4.csv
 """
 
 from __future__ import annotations
@@ -34,42 +38,66 @@ if str(PACKAGES_DIR) not in sys.path:
 from ml_services.teme.ml.survival_v4 import predict_v4
 
 DEFAULT_MODEL = ROOT / "packages" / "ml_services" / "teme" / "ml" / "models" / "teme_survival_v4.joblib"
-DEFAULT_HOLDOUT = ROOT / "real_anchor_raw.csv"
+# Default: read from the prepared CSV which has differentiated per-state climate scores.
+# To use the raw file instead, pass --holdout real_anchor_raw.csv (not recommended).
+DEFAULT_HOLDOUT = ROOT / "data" / "raw" / "teme_v4" / "real_anchor_prepared_v4.csv"
+
+COL_MAP_PREPARED = {
+    # Maps prepared CSV columns -> model input kwargs
+    "growth_rate_class": "growth_rate_class",
+    "drought_score": "drought_score",
+    "fire_score": "fire_score",
+    "disease_score": "disease_score",
+    "planted_count": "planted_count",
+}
+COL_MAP_RAW = None  # sentinel: raw file needs derive logic
+
+
+def _is_prepared_csv(df: pd.DataFrame) -> bool:
+    """True if the file has the TEME v4 prepared columns (row_origin etc)."""
+    return "row_origin" in df.columns and "drought_score" in df.columns
 
 
 def load_holdout(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path, low_memory=False)
-    # Only rows with actual plant data
-    usable = df[df["Total Plant No"] > 0].copy()
-    usable["survival_ratio"] = (usable["Plant Survived"] / usable["Total Plant No"]).clip(0.0, 1.0)
-    return usable.reset_index(drop=True)
+    if _is_prepared_csv(df):
+        # Already prepared -- use as-is, filter to rows with valid target
+        usable = df[df["survival_ratio"].notna() & (df["planted_count"] > 0)].copy()
+        usable = usable.reset_index(drop=True)
+        print(f"[VALIDATE] Using PREPARED CSV with differentiated climate scores")
+        return usable
+    else:
+        # Raw file fallback -- warn and use flat defaults
+        print("[VALIDATE] WARNING: raw file detected -- using flat climate score defaults.")
+        print("[VALIDATE]          Run prepare_real_anchor_v4.py first for differentiated scores.")
+        usable = df[df["Total Plant No"] > 0].copy()
+        usable["survival_ratio"] = (usable["Plant Survived"] / usable["Total Plant No"]).clip(0.0, 1.0)
+        usable["planted_count"] = usable["Total Plant No"]
+        usable["growth_rate_class"] = usable["Plant height"].apply(
+            lambda h: float(max(1, min(10, int(round(h))))) if pd.notna(h) and h > 0 else 5.0
+        )
+        usable["drought_score"] = 5.0
+        usable["fire_score"] = 5.0
+        usable["disease_score"] = 5.0
+        usable["region"] = usable.get("State", "unknown")
+        return usable.reset_index(drop=True)
 
 
 def map_holdout_to_model_inputs(row: pd.Series) -> dict:
     """
-    Best-effort mapping from real_anchor_raw columns to model features.
-    real_anchor_raw has no species, no drought/fire/disease scores --
-    use neutral defaults (5) so the model prediction is driven primarily
-    by planted_count and growth_rate_class (derived from Plant height).
+    Read model input kwargs directly from the prepared CSV row.
+    All score columns are already correctly populated by prepare_real_anchor_v4.py.
     """
-    # Rough growth_rate_class from Plant height (integer cm values)
-    height = row.get("Plant height", np.nan)
-    if pd.notna(height) and height > 0:
-        # Map height 1-10 to growth_rate_class 1-10 (clamped)
-        growth_rate_class = max(1, min(10, int(round(height))))
-    else:
-        growth_rate_class = 5  # neutral default
-
     return {
-        "growth_rate_class": growth_rate_class,
-        "drought_score": 5,    # no data -- neutral
-        "fire_score": 3,       # Indian plantation, assume low-moderate
-        "disease_score": 5,    # no data -- neutral
-        "planted_count": int(row["Total Plant No"]),
+        "growth_rate_class": float(row.get("growth_rate_class", 5.0)),
+        "drought_score": float(row.get("drought_score", 5.0)),
+        "fire_score": float(row.get("fire_score", 5.0)),
+        "disease_score": float(row.get("disease_score", 5.0)),
+        "planted_count": int(row.get("planted_count", 100)),
     }
 
 
-def run_validation(model_path: Path, holdout_path: Path) -> dict:
+def run_validation(model_path: Path, holdout_path: Path) -> dict:  # noqa: C901
     print(f"[VALIDATE] Loading model: {model_path}")
     bundle = joblib.load(model_path)
     model_version = bundle.get("metadata", {}).get("version", "unknown")
@@ -84,17 +112,18 @@ def run_validation(model_path: Path, holdout_path: Path) -> dict:
         return {"error": "no usable rows", "n_usable": 0}
 
     results = []
+    state_col = "region" if "region" in holdout.columns else "State" if "State" in holdout.columns else None
     for idx, row in holdout.iterrows():
         inputs = map_holdout_to_model_inputs(row)
         pred = predict_v4(bundle, **inputs)
         observed = row["survival_ratio"]
         covered = pred["p10"] <= observed <= pred["p90"]
         results.append({
-            "state": row.get("State", "unknown"),
-            "year": row.get("Year", "unknown"),
-            "stage": row.get("Stage", "unknown"),
-            "planted": int(row["Total Plant No"]),
-            "survived": int(row["Plant Survived"]),
+            "state": row.get(state_col, "unknown") if state_col else "unknown",
+            "drought_score_used": inputs["drought_score"],
+            "fire_score_used": inputs["fire_score"],
+            "planted": int(row.get("planted_count", row.get("Total Plant No", 0))),
+            "survived": int(row.get("actual_alive_count", row.get("Plant Survived", 0))),
             "observed_survival": round(observed, 4),
             "predicted_point": round(pred["point"], 4),
             "p10": round(pred["p10"], 4),

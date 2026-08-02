@@ -1,35 +1,36 @@
+"""
+verify_rls.py — RLS (Row Level Security) verification harness.
+
+Tests Supabase PostgREST RLS policies DIRECTLY (bypassing the FastAPI layer),
+signing in as real users and asserting that data isolation holds.
+
+Requires .env with:
+    SUPABASE_URL, SUPABASE_ANON_KEY
+    ORG_A, ORG_B
+    ADMIN_A_EMAIL, ADMIN_A_PASSWORD     (role=admin,   org=A)
+    MANAGER_A_EMAIL, MANAGER_A_PASSWORD (role=manager, org=A)
+    ANALYST_A_EMAIL, ANALYST_A_PASSWORD (role=analyst, org=A)
+    VIEWER_A_EMAIL, VIEWER_A_PASSWORD   (role=viewer,  org=A)
+    MANAGER_B_EMAIL, MANAGER_B_PASSWORD (role=manager, org=B) -- cross-org
+    VIEWER_B_EMAIL, VIEWER_B_PASSWORD   (role=viewer,  org=B) -- cross-org
+
+Run:
+    python scripts/verify_rls.py
+"""
+
 import os
-import requests
+import uuid
 from dataclasses import dataclass
 
+import requests
 from dotenv import load_dotenv
+
 load_dotenv()
 
-import uuid
 
-SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
-SUPABASE_ANON_KEY = os.environ["SUPABASE_ANON_KEY"]
-
-ORG_A = os.environ["ORG_A"]
-ORG_B = os.environ["ORG_B"]
-
-ADMIN_A_EMAIL = os.environ["ADMIN_A_EMAIL"]
-ADMIN_A_PASSWORD = os.environ["ADMIN_A_PASSWORD"]
-
-ANALYST_A_EMAIL = os.environ["ANALYST_A_EMAIL"]
-ANALYST_A_PASSWORD = os.environ["ANALYST_A_PASSWORD"]
-
-MANAGER_A_EMAIL = os.environ["MANAGER_A_EMAIL"]
-MANAGER_A_PASSWORD = os.environ["MANAGER_A_PASSWORD"]
-
-VIEWER_A_EMAIL = os.environ["VIEWER_A_EMAIL"]
-VIEWER_A_PASSWORD = os.environ["VIEWER_A_PASSWORD"]
-
-
-@dataclass
-class Session:
-    access_token: str
-    user_id: str
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 
 def get_env(name: str) -> str:
     v = os.getenv(name)
@@ -37,10 +38,41 @@ def get_env(name: str) -> str:
         raise RuntimeError(f"Missing required env var: {name}. Check your .env file.")
     return v
 
+
+SUPABASE_URL = get_env("SUPABASE_URL").rstrip("/")
+SUPABASE_ANON_KEY = get_env("SUPABASE_ANON_KEY")
 ORG_A = get_env("ORG_A")
 ORG_B = get_env("ORG_B")
 
-def sign_in(email: str, password: str) -> Session:
+# Org A users
+ADMIN_A_EMAIL    = get_env("ADMIN_A_EMAIL")
+ADMIN_A_PASSWORD = get_env("ADMIN_A_PASSWORD")
+MANAGER_A_EMAIL    = get_env("MANAGER_A_EMAIL")
+MANAGER_A_PASSWORD = get_env("MANAGER_A_PASSWORD")
+ANALYST_A_EMAIL    = get_env("ANALYST_A_EMAIL")
+ANALYST_A_PASSWORD = get_env("ANALYST_A_PASSWORD")
+VIEWER_A_EMAIL    = get_env("VIEWER_A_EMAIL")
+VIEWER_A_PASSWORD = get_env("VIEWER_A_PASSWORD")
+
+# Org B users (cross-org isolation tests)
+MANAGER_B_EMAIL    = os.getenv("MANAGER_B_EMAIL", "")
+MANAGER_B_PASSWORD = os.getenv("MANAGER_B_PASSWORD", "")
+VIEWER_B_EMAIL    = os.getenv("VIEWER_B_EMAIL", "")
+VIEWER_B_PASSWORD = os.getenv("VIEWER_B_PASSWORD", "")
+
+
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Session:
+    access_token: str
+    user_id: str
+    label: str  # human-readable, for test output
+
+
+def sign_in(email: str, password: str, label: str) -> Session:
     url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
     r = requests.post(
         url,
@@ -49,19 +81,23 @@ def sign_in(email: str, password: str) -> Session:
         timeout=30,
     )
     if r.status_code >= 400:
-        print("SIGN-IN FAILED:", email, "status=", r.status_code, "body=", r.text)
+        print(f"[SIGN-IN FAILED] {label} ({email}): status={r.status_code} body={r.text}")
     r.raise_for_status()
     data = r.json()
-    return Session(access_token=data["access_token"], user_id=data["user"]["id"])
+    return Session(access_token=data["access_token"], user_id=data["user"]["id"], label=label)
 
 
-def rest_headers(token: str):
+def rest_headers(token: str) -> dict:
     return {
         "apikey": SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
 
+
+# ---------------------------------------------------------------------------
+# Table operations
+# ---------------------------------------------------------------------------
 
 def select_receipts(token: str, org_id: str):
     url = f"{SUPABASE_URL}/rest/v1/receipts_ocr_results"
@@ -86,7 +122,7 @@ def insert_receipt(token: str, org_id: str, uploaded_by: str, file_name: str):
         "carbon_total_kg": 1.23,
         "mapped_items": [],
         "status": "processed",
-        "receipt_id": str(uuid.uuid4())
+        "receipt_id": str(uuid.uuid4()),
     }]
     r = requests.post(
         url,
@@ -95,7 +131,7 @@ def insert_receipt(token: str, org_id: str, uploaded_by: str, file_name: str):
         timeout=30,
     )
     if r.status_code >= 400:
-        print("INSERT FAILED:", r.status_code, r.text)
+        print(f"INSERT FAILED ({org_id=}): status={r.status_code} body={r.text}")
     return r.status_code, r.json() if r.content else None
 
 
@@ -103,58 +139,158 @@ def delete_one_receipt(token: str, org_id: str):
     sel_code, rows = select_receipts(token, org_id)
     if sel_code != 200 or not rows:
         return 200, []
-
     rid = rows[0]["receipt_id"]
     url = f"{SUPABASE_URL}/rest/v1/receipts_ocr_results"
-    params = {"receipt_id": f"eq.{rid}"}
     r = requests.delete(
         url,
         headers={**rest_headers(token), "Prefer": "return=representation"},
-        params=params,
+        params={"receipt_id": f"eq.{rid}"},
         timeout=30,
     )
-    body = r.json() if r.content else []
-    return r.status_code, body
+    return r.status_code, r.json() if r.content else []
 
 
-def check(name: str, cond: bool, detail=""):
-    print(f"[{'PASS' if cond else 'FAIL'}] {name} {detail}")
+# ---------------------------------------------------------------------------
+# Assertion helper
+# ---------------------------------------------------------------------------
+
+_results: list[tuple[bool, str]] = []
 
 
-def main():
-    admin = sign_in(ADMIN_A_EMAIL, ADMIN_A_PASSWORD)
-    manager = sign_in(MANAGER_A_EMAIL, MANAGER_A_PASSWORD)
-    analyst = sign_in(ANALYST_A_EMAIL, ANALYST_A_PASSWORD)
-    viewer = sign_in(VIEWER_A_EMAIL, VIEWER_A_PASSWORD)
+def check(name: str, cond: bool, detail: str = "") -> None:
+    status = "PASS" if cond else "FAIL"
+    _results.append((cond, name))
+    print(f"[{status}] {name} {detail}")
 
-    # 1) admin A can read org A
+
+# ---------------------------------------------------------------------------
+# Test suites
+# ---------------------------------------------------------------------------
+
+def test_org_a_internal(admin: Session, manager: Session, analyst: Session, viewer: Session) -> None:
+    print("\n── Org A: internal role-based access ─────────────────────────────")
+
+    # Admin reads own org
     code, rows = select_receipts(admin.access_token, ORG_A)
     check("Admin A reads ORG_A", code == 200, f"(rows={len(rows) if isinstance(rows, list) else 'n/a'})")
 
-    # 2) admin A cannot read org B rows (should return 200 with empty list under RLS)
+    # Admin cannot read another org's data (RLS: only own org rows returned)
     code, rows = select_receipts(admin.access_token, ORG_B)
     check("Admin A cannot read ORG_B", code == 200 and isinstance(rows, list) and len(rows) == 0)
 
-    # 3) admin A can insert ORG_A
+    # Admin can insert into own org
     code, body = insert_receipt(admin.access_token, ORG_A, admin.user_id, "admin-a-ok.jpg")
     check("Admin A insert ORG_A", code in (200, 201), f"(status={code})")
 
-    # 4) manager A can read org A data
+    # Manager reads own org
     code, rows = select_receipts(manager.access_token, ORG_A)
     check("Manager A reads ORG_A", code == 200, f"(rows={len(rows) if isinstance(rows, list) else 'n/a'})")
 
-    # 5) manager A insert should fail (manager can approve/report, not edit raw entries)
+    # Manager cannot write raw receipt entries
     code, body = insert_receipt(manager.access_token, ORG_A, manager.user_id, "manager-a-deny.jpg")
     check("Manager A insert denied", code in (401, 403), f"(status={code})")
 
-    # 6) analyst A insert should fail (no edit permission)
+    # Analyst cannot insert
     code, body = insert_receipt(analyst.access_token, ORG_A, analyst.user_id, "analyst-a-deny.jpg")
     check("Analyst A insert denied", code in (401, 403), f"(status={code})")
 
-    # 7) viewer A delete should fail
+    # Viewer cannot delete
     code, body = delete_one_receipt(viewer.access_token, ORG_A)
-    # pass if denied explicitly OR deleted zero rows
-    check("Viewer A delete denied", (code in (401, 403)) or (code == 200 and isinstance(body, list) and len(body) == 0), f"(status={code})")
+    check(
+        "Viewer A delete denied",
+        (code in (401, 403)) or (code == 200 and isinstance(body, list) and len(body) == 0),
+        f"(status={code})",
+    )
+
+
+def test_cross_org_isolation(manager_b: Session, viewer_b: Session) -> None:
+    """Critical: Org B users must NEVER be able to read or write Org A data."""
+    print("\n── Cross-org isolation (Org B users vs Org A data) ───────────────")
+
+    # Manager B cannot read ORG_A receipts
+    code, rows = select_receipts(manager_b.access_token, ORG_A)
+    check(
+        "Manager B cannot read ORG_A",
+        code == 200 and isinstance(rows, list) and len(rows) == 0,
+        f"(status={code}, rows={len(rows) if isinstance(rows, list) else 'n/a'})",
+    )
+
+    # Manager B cannot insert a receipt into ORG_A
+    code, body = insert_receipt(manager_b.access_token, ORG_A, manager_b.user_id, "manager-b-inject.jpg")
+    check("Manager B cannot insert into ORG_A", code in (401, 403), f"(status={code})")
+
+    # Viewer B cannot read ORG_A receipts
+    code, rows = select_receipts(viewer_b.access_token, ORG_A)
+    check(
+        "Viewer B cannot read ORG_A",
+        code == 200 and isinstance(rows, list) and len(rows) == 0,
+        f"(status={code}, rows={len(rows) if isinstance(rows, list) else 'n/a'})",
+    )
+
+    # Viewer B can read own org (ORG_B)
+    code, rows = select_receipts(viewer_b.access_token, ORG_B)
+    check("Viewer B reads own ORG_B", code == 200, f"(rows={len(rows) if isinstance(rows, list) else 'n/a'})")
+
+
+def test_manager_b_cannot_inject_teme_run(manager_b: Session) -> None:
+    """Specific test for the teme_runs cross-tenant RLS fix."""
+    print("\n── teme_runs: cross-org insert injection (org B manager -> org A) ─")
+    url = f"{SUPABASE_URL}/rest/v1/teme_runs"
+    payload = [{
+        "organization_id": ORG_A,   # <-- trying to inject into a DIFFERENT org
+        "user_id": manager_b.user_id,
+        "emission_kg": 500.0,
+        "plan_json": "{}",
+    }]
+    r = requests.post(
+        url,
+        headers={**rest_headers(manager_b.access_token), "Prefer": "return=representation"},
+        json=payload,
+        timeout=30,
+    )
+    check(
+        "Manager B cannot inject teme_run into ORG_A",
+        r.status_code in (401, 403),
+        f"(status={r.status_code})",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    # Sign in all Org A users (required)
+    admin    = sign_in(ADMIN_A_EMAIL, ADMIN_A_PASSWORD, "Admin A")
+    manager  = sign_in(MANAGER_A_EMAIL, MANAGER_A_PASSWORD, "Manager A")
+    analyst  = sign_in(ANALYST_A_EMAIL, ANALYST_A_PASSWORD, "Analyst A")
+    viewer   = sign_in(VIEWER_A_EMAIL, VIEWER_A_PASSWORD, "Viewer A")
+
+    test_org_a_internal(admin, manager, analyst, viewer)
+
+    # Sign in Org B users (optional — skip if not configured)
+    if MANAGER_B_EMAIL and MANAGER_B_PASSWORD:
+        manager_b = sign_in(MANAGER_B_EMAIL, MANAGER_B_PASSWORD, "Manager B")
+        viewer_b  = sign_in(VIEWER_B_EMAIL, VIEWER_B_PASSWORD, "Viewer B") if VIEWER_B_EMAIL else None
+        test_cross_org_isolation(manager_b, viewer_b or manager_b)
+        test_manager_b_cannot_inject_teme_run(manager_b)
+    else:
+        print("\n[SKIP] Cross-org isolation tests skipped — MANAGER_B_EMAIL not configured in .env")
+        print("       Add MANAGER_B_EMAIL, MANAGER_B_PASSWORD, VIEWER_B_EMAIL, VIEWER_B_PASSWORD")
+        print("       to fully verify cross-tenant data isolation.")
+
+    # Summary
+    passed = sum(1 for ok, _ in _results if ok)
+    total  = len(_results)
+    print(f"\n{'='*60}")
+    print(f"Results: {passed}/{total} passed")
+    if passed < total:
+        print("FAILED tests:")
+        for ok, name in _results:
+            if not ok:
+                print(f"  ✗ {name}")
+    else:
+        print("All tests passed ✓")
 
 
 if __name__ == "__main__":

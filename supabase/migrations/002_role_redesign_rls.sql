@@ -366,12 +366,18 @@ CREATE POLICY "teme_runs_own_select"
   ON public.teme_runs FOR SELECT
   USING (user_id = auth.uid()::text);
 
--- Managers can insert runs
+-- Managers can insert runs for their OWN organization only.
+-- FIX: the previous policy checked role='manager' but did NOT verify that
+-- the row being inserted belongs to the manager's own organization — any
+-- authenticated manager from ANY org could insert a row tagged with any
+-- organization_id. Now also checks organization_id = user_org_id().
 CREATE POLICY "teme_runs_manager_insert"
   ON public.teme_runs FOR INSERT
   WITH CHECK (
     public.get_user_role(auth.uid()) = 'manager'
+    AND organization_id = public.user_org_id()
   );
+
 
 -- ═════════════════════════════════════════════
 -- 14. recommendation_sessions — RLS (per-org)
