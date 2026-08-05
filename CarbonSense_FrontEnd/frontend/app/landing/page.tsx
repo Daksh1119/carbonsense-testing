@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
@@ -141,7 +141,7 @@ export default function LandingPage() {
               CarbonSense
             </div>
             <button onClick={scrollToPortals} className="landing-nav-signin">
-              Sign In ΓåÆ
+              Sign In →
             </button>
           </nav>
 
@@ -159,7 +159,7 @@ export default function LandingPage() {
             <div className="landing-cta-group">
               <button onClick={scrollToPortals} className="landing-btn-primary">
                 Get Started
-                <span className="landing-btn-arrow">ΓåÆ</span>
+                <span className="landing-btn-arrow">→</span>
               </button>
               <span className="landing-trust-line">
                 Trusted by sustainability teams across industries

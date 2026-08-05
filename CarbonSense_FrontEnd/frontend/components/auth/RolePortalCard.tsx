@@ -58,6 +58,7 @@ export default function RolePortalCard({
           group-hover:scale-[1.03] group-hover:shadow-2xl
           ${config.glowColor} ${config.borderColor}
           cursor-pointer overflow-hidden
+          min-h-[220px] flex flex-col
         `}
       >
         {/* Animated glow dot */}
@@ -76,7 +77,7 @@ export default function RolePortalCard({
           </div>
         )}
 
-        <div className="relative z-10">
+        <div className="relative z-10 flex flex-col flex-1 justify-between">
           {/* Icon */}
           <div
             className={`
