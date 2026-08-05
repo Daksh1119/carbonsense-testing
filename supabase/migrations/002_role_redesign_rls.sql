@@ -494,25 +494,6 @@ CREATE POLICY "rec_kpi_service_insert"
   ON public.recommendation_kpi_snapshots FOR INSERT
   WITH CHECK (true);
 
--- ═════════════════════════════════════════════
--- 19. receipts_ocr_results — RLS (per-org)
--- ═════════════════════════════════════════════
-ALTER TABLE public.receipts_ocr_results ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "ocr_admin_select"
-  ON public.receipts_ocr_results FOR SELECT
-  USING (public.is_platform_admin());
-
-CREATE POLICY "ocr_org_select"
-  ON public.receipts_ocr_results FOR SELECT
-  USING (organization_id = public.user_org_id());
-
-CREATE POLICY "ocr_manager_insert"
-  ON public.receipts_ocr_results FOR INSERT
-  WITH CHECK (
-    organization_id = public.user_org_id()
-    AND public.get_user_role(auth.uid()) = 'manager'
-  );
 
 -- ═════════════════════════════════════════════
 -- 20. org_member_permissions — RLS

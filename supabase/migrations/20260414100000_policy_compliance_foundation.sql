@@ -96,7 +96,7 @@ create table if not exists public.compliance_results (
     ),
     constraint compliance_results_verification_source_check check (
         verification_source is null
-        or verification_source = any (array['data'::text, 'evidence'::text, 'ocr'::text, 'llm'::text])
+        or verification_source = any (array['data'::text, 'evidence'::text, 'llm'::text])
     ),
     constraint compliance_results_org_requirement_unique unique (organization_id, requirement_id)
 );

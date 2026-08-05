@@ -1,10 +1,9 @@
-﻿from fastapi import FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 
 from ml_services.api.teme_routes import router as teme_router
-from ml_services.api.ocr_routes import router as ocr_router
 from ml_services.api.recommendation_routes import router as recommendation_router
 from ml_services.api.ingestion_routes import router as ingestion_router
 from ml_services.api.policies_routes import router as policies_router
@@ -13,7 +12,7 @@ from ml_services.api.compliance_routes import router as compliance_router
 app = FastAPI(
     title="CarbonSense ML Service",
     version="1.1.0",
-    description="Time-based Ecological Mitigation Engine (TEME) + OCR APIs",
+    description="Time-based Ecological Mitigation Engine (TEME) + Policy Compliance APIs",
 )
 
 app.add_middleware(
@@ -83,7 +82,6 @@ def health():
 
 # --- Mount routers ---
 app.include_router(teme_router)
-app.include_router(ocr_router)
 app.include_router(recommendation_router)
 app.include_router(ingestion_router)
 app.include_router(policies_router)

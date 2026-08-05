@@ -8,7 +8,6 @@ const services = [
   { name: 'Database (PostgreSQL)', status: 'operational', latency: '12ms', uptime: '99.99%', icon: Database },
   { name: 'ML API (FastAPI)', status: 'operational', latency: '142ms', uptime: '99.7%', icon: Zap },
   { name: 'Frontend (Next.js)', status: 'operational', latency: '220ms', uptime: '99.9%', icon: Server },
-  { name: 'OCR Service', status: 'degraded', latency: '890ms', uptime: '97.2%', icon: Activity },
   { name: 'Storage (Supabase)', status: 'operational', latency: '65ms', uptime: '99.95%', icon: Wifi },
 ];
 
@@ -20,7 +19,6 @@ const metrics = [
 ];
 
 const recentErrors = [
-  { time: '17:42', service: 'OCR Service', message: 'Timeout on bulk receipt processing (3 files)', level: 'warning' },
   { time: '14:11', service: 'ML API', message: 'LLM provider rate limit hit — fallback triggered', level: 'warning' },
   { time: '09:05', service: 'Auth', message: 'Failed login attempt from unrecognized IP', level: 'info' },
 ];
@@ -38,7 +36,7 @@ export default function AdminHealthPage() {
         <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
         <div>
           <p className="text-sm font-semibold text-emerald-300">All core systems operational</p>
-          <p className="text-xs text-slate-400 mt-0.5">1 service degraded · Last checked: just now</p>
+          <p className="text-xs text-slate-400 mt-0.5">All services operational · Last checked: just now</p>
         </div>
       </div>
 

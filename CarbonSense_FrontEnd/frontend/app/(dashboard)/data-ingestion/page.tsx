@@ -13,7 +13,6 @@ import { getCurrentUserContext } from '@/lib/recommendations-api';
 import {
   Upload,
   FileText,
-  Receipt,
   Database,
   CheckCircle,
   AlertCircle,
@@ -135,7 +134,7 @@ export default function DataIngestionPage() {
             Data Ingestion
           </h1>
           <p className="text-slate-400">
-            Upload receipts, CSV files, and bank statements for automatic carbon tracking
+            Upload CSV files and bank statements for automatic carbon tracking
           </p>
         </div>
         <BackButton href="/dashboard" label="Back to Dashboard" variant="outline" />
@@ -265,7 +264,7 @@ export default function DataIngestionPage() {
       </div>
 
       {/* Upload Options Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* CSV Upload */}
         <DashboardCard
           title="CSV Import"
@@ -304,45 +303,6 @@ export default function DataIngestionPage() {
             <p>• Supported formats: CSV, TSV, JSON, XLSX, XLS</p>
             <p>• Max file size: 10MB</p>
             <p>• Up to 15 files at once</p>
-          </div>
-        </DashboardCard>
-
-        {/* Receipt Upload */}
-        <DashboardCard
-          title="Receipt Scanner"
-          subtitle="OCR-powered receipt analysis"
-          icon={<Receipt className="size-5" />}
-        >
-          <FileUpload
-            onFilesAccepted={(files) => handleFilesAccepted(files, 'receipt')}
-            onFilesRejected={handleFilesRejected}
-            acceptedFileTypes={{
-              'image/png': ['.png'],
-              'image/jpeg': ['.jpg', '.jpeg'],
-              'application/pdf': ['.pdf'],
-            }}
-            maxFiles={10}
-            maxSize={5 * 1024 * 1024} // 5MB
-            multiple={true}
-          />
-          {uploadingType === 'receipt' && (
-            <div className="mt-4">
-              <div className="flex items-center justify-between text-sm mb-2">
-                <span className="text-slate-400">Scanning receipts...</span>
-                <span className="text-primary font-semibold">{uploadProgress}%</span>
-              </div>
-              <div className="h-2 bg-navy-muted rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary transition-all duration-300"
-                  style={{ width: `${uploadProgress}%` }}
-                />
-              </div>
-            </div>
-          )}
-          <div className="mt-4 text-xs text-slate-500">
-            <p>• Supported: PNG, JPG, PDF</p>
-            <p>• Max file size: 5MB each</p>
-            <p>• Up to 10 files at once</p>
           </div>
         </DashboardCard>
 
@@ -393,10 +353,7 @@ export default function DataIngestionPage() {
               <CheckCircle className="size-4 text-emerald-400 mt-0.5 flex-shrink-0" />
               <span>CSV/TSV/JSON/XLSX/XLS must follow the same emissions schema and activity_type rules</span>
             </li>
-            <li className="flex items-start gap-2">
-              <CheckCircle className="size-4 text-emerald-400 mt-0.5 flex-shrink-0" />
-              <span>Receipts will be automatically scanned for carbon-relevant purchases</span>
-            </li>
+
             <li className="flex items-start gap-2">
               <CheckCircle className="size-4 text-emerald-400 mt-0.5 flex-shrink-0" />
               <span>Bank statements are parsed to identify emissions-related transactions</span>
@@ -414,10 +371,7 @@ export default function DataIngestionPage() {
               <AlertCircle className="size-4 text-amber-400 mt-0.5 flex-shrink-0" />
               <span>Ensure CSV files have headers in the first row</span>
             </li>
-            <li className="flex items-start gap-2">
-              <AlertCircle className="size-4 text-amber-400 mt-0.5 flex-shrink-0" />
-              <span>Receipt images should be clear and well-lit for best OCR results</span>
-            </li>
+
             <li className="flex items-start gap-2">
               <AlertCircle className="size-4 text-amber-400 mt-0.5 flex-shrink-0" />
               <span>Password-protected PDFs cannot be processed</span>

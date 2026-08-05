@@ -1077,7 +1077,7 @@ def top_actions(organization_id: str, industry: Optional[str] = None, top_n: int
             total_by_type[t] += float(req.get("weight") or 0)
 
     dimension_max = {"data": 40.0, "action": 40.0, "reporting": 20.0}
-    effort_map = {"data_change": 1.0, "manual": 2.0, "evidence_upload": 2.0, "ocr_extract": 3.0}
+    effort_map = {"data_change": 1.0, "manual": 2.0, "evidence_upload": 2.0}
 
     candidates: List[Dict[str, Any]] = []
     for req in requirements:

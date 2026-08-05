@@ -7,13 +7,13 @@ alter table public.organization_uploads
 	add column if not exists total_emissions_tco2e numeric,
 	add column if not exists record_count integer;
 
--- Allow manual uploads alongside CSV/receipt/bank_statement/other.
+-- Allow manual uploads alongside CSV/bank_statement/other.
 alter table public.organization_uploads
 	drop constraint if exists organization_uploads_source_type_check;
 
 alter table public.organization_uploads
 	add constraint organization_uploads_source_type_check
-	check (source_type = any (array['csv'::text, 'receipt'::text, 'bank_statement'::text, 'manual'::text, 'other'::text]));
+	check (source_type = any (array['csv'::text, 'bank_statement'::text, 'manual'::text, 'other'::text]));
 
 create table if not exists public.emission_entries (
 	id uuid primary key default gen_random_uuid(),

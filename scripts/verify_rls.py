@@ -96,33 +96,34 @@ def rest_headers(token: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Table operations
+# Table operations (teme_runs)
 # ---------------------------------------------------------------------------
 
-def select_receipts(token: str, org_id: str):
-    url = f"{SUPABASE_URL}/rest/v1/receipts_ocr_results"
+def select_teme_runs(token: str, org_id: str):
+    url = f"{SUPABASE_URL}/rest/v1/teme_runs"
     params = {
-        "select": "receipt_id,organization_id,carbon_total_kg",
+        "select": "id,organization_id,emission_kg",
         "organization_id": f"eq.{org_id}",
     }
     r = requests.get(url, headers=rest_headers(token), params=params, timeout=30)
     return r.status_code, r.json() if r.content else None
 
 
-def insert_receipt(token: str, org_id: str, uploaded_by: str, file_name: str):
-    url = f"{SUPABASE_URL}/rest/v1/receipts_ocr_results"
+def insert_teme_run(token: str, org_id: str, user_id: str):
+    url = f"{SUPABASE_URL}/rest/v1/teme_runs"
+    import uuid as _uuid
     payload = [{
         "organization_id": org_id,
-        "uploaded_by": uploaded_by,
-        "employee_user_id": uploaded_by,
-        "employee_department": "sustainability",
-        "source_file_name": file_name,
-        "ocr_text": "test receipt",
-        "ocr_method": "tesseract",
-        "carbon_total_kg": 1.23,
-        "mapped_items": [],
-        "status": "processed",
-        "receipt_id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "emission_kg": 1.0,
+        "project_name": "rls-verify-test",
+        "input_payload": {},
+        "result": {},
+        "total_trees": 1,
+        "confidence_score": 0.9,
+        "time_to_neutral_years": 10.0,
+        "land_required_hectare": 0.5,
+        "status": "completed",
     }]
     r = requests.post(
         url,
@@ -133,21 +134,6 @@ def insert_receipt(token: str, org_id: str, uploaded_by: str, file_name: str):
     if r.status_code >= 400:
         print(f"INSERT FAILED ({org_id=}): status={r.status_code} body={r.text}")
     return r.status_code, r.json() if r.content else None
-
-
-def delete_one_receipt(token: str, org_id: str):
-    sel_code, rows = select_receipts(token, org_id)
-    if sel_code != 200 or not rows:
-        return 200, []
-    rid = rows[0]["receipt_id"]
-    url = f"{SUPABASE_URL}/rest/v1/receipts_ocr_results"
-    r = requests.delete(
-        url,
-        headers={**rest_headers(token), "Prefer": "return=representation"},
-        params={"receipt_id": f"eq.{rid}"},
-        timeout=30,
-    )
-    return r.status_code, r.json() if r.content else []
 
 
 # ---------------------------------------------------------------------------
@@ -168,68 +154,61 @@ def check(name: str, cond: bool, detail: str = "") -> None:
 # ---------------------------------------------------------------------------
 
 def test_org_a_internal(admin: Session, manager: Session, analyst: Session, viewer: Session) -> None:
-    print("\n── Org A: internal role-based access ─────────────────────────────")
+    print("\n── Org A: internal role-based access (teme_runs) ────────────────")
 
-    # Admin reads own org
-    code, rows = select_receipts(admin.access_token, ORG_A)
-    check("Admin A reads ORG_A", code == 200, f"(rows={len(rows) if isinstance(rows, list) else 'n/a'})")
+    # Admin reads own org runs
+    code, rows = select_teme_runs(admin.access_token, ORG_A)
+    check("Admin A reads ORG_A teme_runs", code == 200,
+          f"(rows={len(rows) if isinstance(rows, list) else 'n/a'})")
 
-    # Admin cannot read another org's data (RLS: only own org rows returned)
-    code, rows = select_receipts(admin.access_token, ORG_B)
-    check("Admin A cannot read ORG_B", code == 200 and isinstance(rows, list) and len(rows) == 0)
+    # Admin cannot see another org's runs (RLS filters them out)
+    code, rows = select_teme_runs(admin.access_token, ORG_B)
+    check("Admin A cannot read ORG_B teme_runs",
+          code == 200 and isinstance(rows, list) and len(rows) == 0)
 
-    # Admin can insert into own org
-    code, body = insert_receipt(admin.access_token, ORG_A, admin.user_id, "admin-a-ok.jpg")
-    check("Admin A insert ORG_A", code in (200, 201), f"(status={code})")
+    # Manager reads own org runs
+    code, rows = select_teme_runs(manager.access_token, ORG_A)
+    check("Manager A reads ORG_A teme_runs", code == 200,
+          f"(rows={len(rows) if isinstance(rows, list) else 'n/a'})")
 
-    # Manager reads own org
-    code, rows = select_receipts(manager.access_token, ORG_A)
-    check("Manager A reads ORG_A", code == 200, f"(rows={len(rows) if isinstance(rows, list) else 'n/a'})")
+    # Manager can insert into own org
+    code, body = insert_teme_run(manager.access_token, ORG_A, manager.user_id)
+    check("Manager A insert ORG_A teme_run", code in (200, 201), f"(status={code})")
 
-    # Manager cannot write raw receipt entries
-    code, body = insert_receipt(manager.access_token, ORG_A, manager.user_id, "manager-a-deny.jpg")
-    check("Manager A insert denied", code in (401, 403), f"(status={code})")
-
-    # Analyst cannot insert
-    code, body = insert_receipt(analyst.access_token, ORG_A, analyst.user_id, "analyst-a-deny.jpg")
-    check("Analyst A insert denied", code in (401, 403), f"(status={code})")
-
-    # Viewer cannot delete
-    code, body = delete_one_receipt(viewer.access_token, ORG_A)
-    check(
-        "Viewer A delete denied",
-        (code in (401, 403)) or (code == 200 and isinstance(body, list) and len(body) == 0),
-        f"(status={code})",
-    )
+    # Viewer reads only own runs (select RLS — just checking it doesn't 403)
+    code, rows = select_teme_runs(viewer.access_token, ORG_A)
+    check("Viewer A select ORG_A allowed", code == 200,
+          f"(rows={len(rows) if isinstance(rows, list) else 'n/a'})")
 
 
 def test_cross_org_isolation(manager_b: Session, viewer_b: Session) -> None:
     """Critical: Org B users must NEVER be able to read or write Org A data."""
-    print("\n── Cross-org isolation (Org B users vs Org A data) ───────────────")
+    print("\n── Cross-org isolation — teme_runs (Org B vs Org A) ───────────────")
 
-    # Manager B cannot read ORG_A receipts
-    code, rows = select_receipts(manager_b.access_token, ORG_A)
+    # Manager B cannot read ORG_A runs
+    code, rows = select_teme_runs(manager_b.access_token, ORG_A)
     check(
-        "Manager B cannot read ORG_A",
+        "Manager B cannot read ORG_A teme_runs",
         code == 200 and isinstance(rows, list) and len(rows) == 0,
         f"(status={code}, rows={len(rows) if isinstance(rows, list) else 'n/a'})",
     )
 
-    # Manager B cannot insert a receipt into ORG_A
-    code, body = insert_receipt(manager_b.access_token, ORG_A, manager_b.user_id, "manager-b-inject.jpg")
-    check("Manager B cannot insert into ORG_A", code in (401, 403), f"(status={code})")
+    # Manager B cannot insert into ORG_A
+    code, body = insert_teme_run(manager_b.access_token, ORG_A, manager_b.user_id)
+    check("Manager B cannot insert into ORG_A teme_runs", code in (401, 403), f"(status={code})")
 
-    # Viewer B cannot read ORG_A receipts
-    code, rows = select_receipts(viewer_b.access_token, ORG_A)
+    # Viewer B cannot read ORG_A runs
+    code, rows = select_teme_runs(viewer_b.access_token, ORG_A)
     check(
-        "Viewer B cannot read ORG_A",
+        "Viewer B cannot read ORG_A teme_runs",
         code == 200 and isinstance(rows, list) and len(rows) == 0,
         f"(status={code}, rows={len(rows) if isinstance(rows, list) else 'n/a'})",
     )
 
-    # Viewer B can read own org (ORG_B)
-    code, rows = select_receipts(viewer_b.access_token, ORG_B)
-    check("Viewer B reads own ORG_B", code == 200, f"(rows={len(rows) if isinstance(rows, list) else 'n/a'})")
+    # Viewer B can read own org
+    code, rows = select_teme_runs(viewer_b.access_token, ORG_B)
+    check("Viewer B reads own ORG_B teme_runs", code == 200,
+          f"(rows={len(rows) if isinstance(rows, list) else 'n/a'})")
 
 
 def test_manager_b_cannot_inject_teme_run(manager_b: Session) -> None:

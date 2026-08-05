@@ -7,7 +7,6 @@ import { Settings, Globe, Mail, Bell, Database, Save, ChevronRight } from 'lucid
 export default function AdminSettingsPage() {
   const [emailNotifs, setEmailNotifs] = useState(true);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
-  const [strictAuthz, setStrictAuthz] = useState(true);
   const [saved, setSaved] = useState(false);
 
   const handleSave = () => {
@@ -67,7 +66,7 @@ export default function AdminSettingsPage() {
       <DashboardCard title="Security" subtitle="Auth and API enforcement settings">
         <div className="space-y-4">
           {[
-            { label: 'Strict API Authorization (OCR_STRICT_AUTHZ)', description: 'Enforce org membership and permission checks on all OCR API calls.', value: strictAuthz, onChange: setStrictAuthz },
+            { label: 'Strict API Authorization', description: 'Enforce org membership and permission checks on all API calls.', value: maintenanceMode, onChange: setMaintenanceMode },
             { label: 'Maintenance Mode', description: 'Redirect all users to a maintenance page. Only admins can access.', value: maintenanceMode, onChange: setMaintenanceMode },
           ].map(setting => (
             <div key={setting.label} className="flex items-center justify-between p-4 bg-slate-900/50 border border-slate-700/30 rounded-lg">

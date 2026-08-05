@@ -22,7 +22,6 @@ from ml_services.policy_compliance.service import (
     upcoming_deadlines,
     verify_result,
 )
-from ml_services.ocr.single_processor import process_single_receipt
 
 
 router = APIRouter(prefix="/compliance", tags=["Compliance"])
@@ -238,37 +237,13 @@ async def upload_evidence(
         ensure_user_in_org(user_id, organization_id)
         ensure_permission(user_id, organization_id, "compliance.verify")
 
-        blob = await file.read()
-        suffix = os.path.splitext(file.filename or "")[1] or ".pdf"
-
-        tmp_path: Optional[str] = None
-        try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                tmp.write(blob)
-                tmp_path = tmp.name
-
-            extraction = process_single_receipt(
-                file_path=tmp_path,
-                file_name=file.filename or "evidence",
-                organization_id=organization_id,
-                uploaded_by_user_id=user_id,
-                employee_user_id=None,
-            )
-
-            return {
-                "organization_id": organization_id,
-                "requirement_id": requirement_id,
-                "file_name": file.filename,
-                "content_type": file.content_type,
-                "size_bytes": file.size,
-                "ocr_extraction": extraction,
-            }
-        finally:
-            try:
-                if tmp_path:
-                    os.remove(tmp_path)
-            except Exception:
-                pass
+        return {
+            "organization_id": organization_id,
+            "requirement_id": requirement_id,
+            "file_name": file.filename,
+            "content_type": file.content_type,
+            "size_bytes": file.size,
+        }
     except HTTPException:
         raise
     except Exception as e:

@@ -419,7 +419,7 @@ def _build_prompt(payload: Dict[str, Any], target_count: int) -> List[Dict[str, 
                 "evidence": [
                     {
                         "evidence_id": "string - must match one of evidence_catalog.evidence_id",
-                        "source_type": "teme_run | ocr_receipt | kpi_snapshot | external | manual",
+                        "source_type": "teme_run | kpi_snapshot | external | manual",
                         "source_table": "string or null",
                         "source_record_id": "string or null",
                         "uri": "string or null",
@@ -532,7 +532,7 @@ def _call_openai_compatible(messages: List[Dict[str, str]]) -> Dict[str, Any]:
 def _normalize_recommendations(items: List[Dict[str, Any]], allowed_evidence_ids: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     allowed_priority = {"low", "medium", "high", "critical"}
-    allowed_sources = {"teme_run", "ocr_receipt", "kpi_snapshot", "external", "manual"}
+    allowed_sources = {"teme_run", "kpi_snapshot", "external", "manual"}
 
     def _to_float(value: Any, default: float = 0.0) -> float:
         try:

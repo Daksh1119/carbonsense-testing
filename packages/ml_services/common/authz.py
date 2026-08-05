@@ -10,11 +10,6 @@ def _strict_authz_enabled() -> bool:
     Authz is ENABLED BY DEFAULT — explicitly opt-out with AUTHZ_DISABLED=true.
 
     Rationale: "secure by default" is the correct fail-safe direction.
-    Previously this was guarded by OCR_STRICT_AUTHZ=true (opt-in), which
-    meant any deployment that forgot to set the flag silently bypassed all
-    authorization checks. Flipped: any deployment that forgets to configure
-    anything now stays secure.
-
     To disable authz (e.g. local dev without Supabase):
         AUTHZ_DISABLED=true  in your .env
     """

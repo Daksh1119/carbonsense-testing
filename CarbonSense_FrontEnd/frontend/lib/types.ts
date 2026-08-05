@@ -331,7 +331,7 @@ export interface ComplianceItem {
 
 // ==================== Data Ingestion ====================
 
-export type DataSource = 'manual' | 'csv' | 'api' | 'ocr' | 'bank-statement';
+export type DataSource = 'manual' | 'csv' | 'api' | 'bank-statement';
 
 export interface DataIngestionRecord {
   id: string;
