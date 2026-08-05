@@ -49,7 +49,7 @@ export default function RolePortalCard({
   const Icon = config.icon;
 
   return (
-    <Link href={href} className="group block">
+    <Link href={href} className="group block h-full">
       <div
         className={`
           relative p-6 rounded-2xl border border-slate-700/50
@@ -58,7 +58,7 @@ export default function RolePortalCard({
           group-hover:scale-[1.03] group-hover:shadow-2xl
           ${config.glowColor} ${config.borderColor}
           cursor-pointer overflow-hidden
-          min-h-[220px] flex flex-col
+          h-full flex flex-col
         `}
       >
         {/* Animated glow dot */}
