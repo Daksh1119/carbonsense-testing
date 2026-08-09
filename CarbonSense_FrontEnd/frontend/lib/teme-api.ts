@@ -1,4 +1,5 @@
 import { SupabaseClient, createClient } from "@supabase/supabase-js";
+import { getCurrentUserContext } from "@/lib/recommendations-api";
 import {
 	TEMERequest,
 	TEMEResult,
@@ -81,15 +82,21 @@ function getSupabaseClient(): SupabaseClient {
 
 function getCurrentUserId(): string {
 	if (typeof window === "undefined") return "anonymous";
-
 	try {
-		const raw = localStorage.getItem("carbonsense-user-storage");
-		if (!raw) return "anonymous";
-
-		const parsed = JSON.parse(raw) as { state?: { user?: { id?: string } } };
-		return parsed.state?.user?.id || "anonymous";
+		const { userId } = getCurrentUserContext();
+		return userId || "anonymous";
 	} catch {
 		return "anonymous";
+	}
+}
+
+function getCurrentOrgId(): string | null {
+	if (typeof window === "undefined") return null;
+	try {
+		const { organizationId } = getCurrentUserContext();
+		return organizationId || null;
+	} catch {
+		return null;
 	}
 }
 
@@ -179,11 +186,13 @@ export async function saveTEMERun(
 ): Promise<TEMERunRecord> {
 	const supabase = getSupabaseClient();
 	const userId = getCurrentUserId();
+	const organizationId = getCurrentOrgId();
 
 	const { data, error } = await supabase
 		.from("teme_runs")
 		.insert({
 			user_id: userId,
+			organization_id: organizationId,
 			project_name: projectName,
 			emission_kg: inputPayload.emission_kg,
 			input_payload: inputPayload,
