@@ -18,6 +18,7 @@ import Badge from "@/components/Badge";
 import { BackButton, Breadcrumb } from "@/components/navigation";
 import NewProjectModal from "@/components/teme/NewProjectModal";
 import TimeDebtChart from "@/components/teme/TimeDebtChart";
+import EmissionDataSourceBanner from "@/components/teme/EmissionDataSourceBanner";
 import { getPlantingProjects, getTEMEHistory } from "@/lib/teme-api";
 import { TEMEResult, TEMERunRecord } from "@/lib/teme-types";
 import { showErrorToast } from "@/lib/toast";
@@ -131,6 +132,8 @@ export default function TEMEDashboard() {
 	type TopCardKey = "active-projects" | "trees-planned" | "current-absorption" | "payback-period";
 
 	const [showModal, setShowModal] = useState(false);
+	const [prefillEmissionKg, setPrefillEmissionKg] = useState<number | undefined>(undefined);
+	const [prefillDataSource, setPrefillDataSource] = useState<string | undefined>(undefined);
 	const [projects, setProjects] = useState<TEMERunRecord[]>([]);
 	const [latestResult, setLatestResult] = useState<TEMEResult | null>(null);
 	const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -276,6 +279,12 @@ export default function TEMEDashboard() {
 		sectionMap[card].current?.scrollIntoView({ behavior: "smooth", block: "start" });
 	};
 
+	const handleQuickAnalyze = (emissionKg: number, sourceLabel: string) => {
+		setPrefillEmissionKg(emissionKg);
+		setPrefillDataSource(sourceLabel);
+		setShowModal(true);
+	};
+
 	return (
 		<div className="space-y-6">
 			<Breadcrumb />
@@ -290,12 +299,19 @@ export default function TEMEDashboard() {
 					<Button
 						variant="primary"
 						icon={<TreePine className="size-4" />}
-						onClick={() => setShowModal(true)}
+						onClick={() => {
+							setPrefillEmissionKg(undefined);
+							setPrefillDataSource(undefined);
+							setShowModal(true);
+						}}
 					>
 						NEW PROJECT
 					</Button>
 				</div>
 			</div>
+
+			{/* Smart data source banner — auto-fills emission from latest upload */}
+			<EmissionDataSourceBanner onQuickAnalyze={handleQuickAnalyze} />
 
 			<div className="grid grid-cols-1 md:grid-cols-4 gap-6">
 				<button
@@ -580,6 +596,8 @@ export default function TEMEDashboard() {
 
 			{showModal && (
 				<NewProjectModal
+					prefillEmissionKg={prefillEmissionKg}
+					prefillDataSource={prefillDataSource}
 					onSuccess={(result) => {
 						setLatestResult(result);
 						setShowModal(false);

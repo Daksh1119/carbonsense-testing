@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { X, ChevronDown, ChevronUp } from "lucide-react";
+import { X, ChevronDown, ChevronUp, Database } from "lucide-react";
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
 import { runTEME, saveTEMERun } from "@/lib/teme-api";
 import { useAutoEmissions } from "@/hooks/useAutoEmissions";
@@ -16,11 +16,15 @@ import {
 interface NewProjectModalProps {
 	onSuccess: (result: TEMEResult) => void;
 	onClose: () => void;
+	/** Pre-fill emission_kg from an uploaded CSV file */
+	prefillEmissionKg?: number;
+	/** Display label for the upload source (filename) */
+	prefillDataSource?: string;
 }
 
 const timeHorizons: Array<5 | 10 | 15 | 20 | 25 | 30> = [5, 10, 15, 20, 25, 30];
 
-export default function NewProjectModal({ onSuccess, onClose }: NewProjectModalProps) {
+export default function NewProjectModal({ onSuccess, onClose, prefillEmissionKg, prefillDataSource }: NewProjectModalProps) {
 	const toNumber = (value: string, fallback: number) => {
 		if (value.trim() === "") return fallback;
 		const parsed = Number(value);
@@ -30,7 +34,9 @@ export default function NewProjectModal({ onSuccess, onClose }: NewProjectModalP
 	const [projectName, setProjectName] = useState("");
 	const [location, setLocation] = useState<string>(VALID_LOCATIONS[0]);
 	const [projectGoal, setProjectGoal] = useState<string>("");
-	const [emissionKgInput, setEmissionKgInput] = useState<string>("1000");
+	const [emissionKgInput, setEmissionKgInput] = useState<string>(
+		prefillEmissionKg != null ? String(Math.round(prefillEmissionKg)) : "1000"
+	);
 	const [startYearInput, setStartYearInput] = useState<string>(String(new Date().getFullYear()));
 
 	const [landAreaInput, setLandAreaInput] = useState<string>("1");
@@ -220,7 +226,15 @@ export default function NewProjectModal({ onSuccess, onClose }: NewProjectModalP
 					</section>
 
 					<section className="space-y-4 rounded-xl border border-slate-700 p-4">
-						<h3 className="text-sm font-semibold text-slate-200">SECTION B - Emission Details</h3>
+						<div className="flex items-center justify-between">
+							<h3 className="text-sm font-semibold text-slate-200">SECTION B - Emission Details</h3>
+							{prefillDataSource && (
+								<span className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300">
+									<Database className="size-3" />
+									From: {prefillDataSource.length > 30 ? prefillDataSource.slice(0, 28) + "…" : prefillDataSource}
+								</span>
+							)}
+						</div>
 						<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
 							<div>
 								<label className="mb-1 block text-xs text-slate-400">Emission (kg CO2e)</label>
