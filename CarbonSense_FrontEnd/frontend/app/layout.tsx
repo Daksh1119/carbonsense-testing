@@ -6,7 +6,6 @@ import ThemeProvider from "@/components/ThemeProvider";
 import AuthProvider from "@/components/AuthProvider";
 import "./globals.css";
 
-import DebugUserOverlay from '@/components/DebugUserOverlay';
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -51,7 +50,6 @@ export default function RootLayout({
               {children}
             </ErrorBoundary>
           </AuthProvider>
-          <DebugUserOverlay />
         </ThemeProvider>
       </body>
     </html>
