@@ -366,6 +366,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data", default=None)
     parser.add_argument("--out", default=None)
     parser.add_argument("--report-only", action="store_true")
+    parser.add_argument(
+        "--no-calibration",
+        action="store_true",
+        help=(
+            "Skip isotonic calibration. Use when real-data row count is too small "
+            "for calibration to have enough resolution (observed: with ~1,900 real "
+            "rows, calibration collapsed the model's realistic input range into a "
+            "flat plateau, producing near-constant predictions regardless of input)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -444,8 +454,12 @@ def main() -> None:
     real_mask = ~np.isnan(oof) & (origin == "real")
     y_all = df[cfg.target_column].to_numpy(dtype=float)
 
-    print("[TEME V4 TRAIN] Fitting calibrator")
-    calibrator = fit_calibrator(y_all[real_mask], oof[real_mask])
+    if args.no_calibration:
+        print("[TEME V4 TRAIN] --no-calibration set, skipping calibration step")
+        calibrator = None
+    else:
+        print("[TEME V4 TRAIN] Fitting calibrator")
+        calibrator = fit_calibrator(y_all[real_mask], oof[real_mask])
 
     print("[TEME V4 TRAIN] Fitting final model on full dataset")
     point_model, encoder_state, feature_cols, x_all_for_shap = train_final_model(df, cfg)
