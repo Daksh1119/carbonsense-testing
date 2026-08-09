@@ -61,8 +61,8 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
     constraints = input_payload["constraints"]
 
     ml_config = input_payload.get("ml", {})
-    ml_enabled = ml_config.get("enabled", False)
-    prefer_v4 = ml_config.get("prefer_v4", False)
+    ml_enabled = ml_config.get("enabled", True)   # ML on by default
+    prefer_v4 = ml_config.get("prefer_v4", True)  # V4 is the active model
     mc_config = input_payload.get("monte_carlo", {})
     mc_enabled = mc_config.get("enabled", False)
 

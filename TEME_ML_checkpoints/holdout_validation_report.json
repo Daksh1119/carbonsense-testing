@@ -1,11 +1,11 @@
 {
-  "model_version": "teme-survival-v4.0",
+  "model_version": "teme-survival-v4.1-realonly-uncalibrated",
   "model_path": "C:\\Users\\daksh_769tz6y\\Desktop\\CarbonSense-main\\packages\\ml_services\\teme\\ml\\models\\teme_survival_v4.joblib",
   "holdout_path": "C:\\Users\\daksh_769tz6y\\Desktop\\CarbonSense-main\\data\\raw\\teme_v4\\real_anchor_prepared_v4.csv",
   "n_holdout_rows": 26,
   "n_covered": 15,
   "coverage_rate": 0.5769,
-  "mae": 0.2011,
+  "mae": 0.1879,
   "rows": [
     {
       "state": "Sikkim",
@@ -14,11 +14,11 @@
       "planted": 500,
       "survived": 150,
       "observed_survival": 0.3,
-      "predicted_point": 0.5345,
-      "p10": 0.1646,
-      "p90": 0.6096,
-      "covered": true,
-      "residual": 0.2345
+      "predicted_point": 0.6079,
+      "p10": 0.4785,
+      "p90": 0.7282,
+      "covered": false,
+      "residual": 0.3079
     },
     {
       "state": "Sikkim",
@@ -27,11 +27,11 @@
       "planted": 500,
       "survived": 200,
       "observed_survival": 0.4,
-      "predicted_point": 0.5345,
-      "p10": 0.1691,
-      "p90": 0.6146,
-      "covered": true,
-      "residual": 0.1345
+      "predicted_point": 0.5984,
+      "p10": 0.4495,
+      "p90": 0.7325,
+      "covered": false,
+      "residual": 0.1984
     },
     {
       "state": "Sikkim",
@@ -40,11 +40,11 @@
       "planted": 3500,
       "survived": 2000,
       "observed_survival": 0.5714,
-      "predicted_point": 0.5345,
-      "p10": 0.0959,
-      "p90": 0.6229,
+      "predicted_point": 0.5593,
+      "p10": 0.3525,
+      "p90": 0.6837,
       "covered": true,
-      "residual": -0.0369
+      "residual": -0.0121
     },
     {
       "state": "Sikkim",
@@ -53,11 +53,11 @@
       "planted": 500,
       "survived": 150,
       "observed_survival": 0.3,
-      "predicted_point": 0.5345,
-      "p10": 0.1736,
-      "p90": 0.6019,
-      "covered": true,
-      "residual": 0.2345
+      "predicted_point": 0.6091,
+      "p10": 0.4811,
+      "p90": 0.7186,
+      "covered": false,
+      "residual": 0.3091
     },
     {
       "state": "Sikkim",
@@ -66,11 +66,11 @@
       "planted": 500,
       "survived": 150,
       "observed_survival": 0.3,
-      "predicted_point": 0.5345,
-      "p10": 0.1646,
-      "p90": 0.6096,
-      "covered": true,
-      "residual": 0.2345
+      "predicted_point": 0.6079,
+      "p10": 0.4785,
+      "p90": 0.7282,
+      "covered": false,
+      "residual": 0.3079
     },
     {
       "state": "Sikkim",
@@ -79,11 +79,11 @@
       "planted": 500,
       "survived": 150,
       "observed_survival": 0.3,
-      "predicted_point": 0.5345,
-      "p10": 0.1691,
-      "p90": 0.6146,
-      "covered": true,
-      "residual": 0.2345
+      "predicted_point": 0.5984,
+      "p10": 0.4495,
+      "p90": 0.7325,
+      "covered": false,
+      "residual": 0.2984
     },
     {
       "state": "Sikkim",
@@ -92,11 +92,11 @@
       "planted": 500,
       "survived": 200,
       "observed_survival": 0.4,
-      "predicted_point": 0.5589,
-      "p10": 0.1605,
-      "p90": 0.6398,
+      "predicted_point": 0.569,
+      "p10": 0.323,
+      "p90": 0.7191,
       "covered": true,
-      "residual": 0.1589
+      "residual": 0.169
     },
     {
       "state": "Sikkim",
@@ -105,11 +105,11 @@
       "planted": 1500,
       "survived": 500,
       "observed_survival": 0.3333,
-      "predicted_point": 0.5345,
-      "p10": 0.0977,
-      "p90": 0.6019,
-      "covered": true,
-      "residual": 0.2012
+      "predicted_point": 0.6014,
+      "p10": 0.4779,
+      "p90": 0.716,
+      "covered": false,
+      "residual": 0.2681
     },
     {
       "state": "Sikkim",
@@ -118,11 +118,11 @@
       "planted": 2200,
       "survived": 1500,
       "observed_survival": 0.6818,
-      "predicted_point": 0.5589,
-      "p10": 0.1218,
-      "p90": 0.6199,
-      "covered": false,
-      "residual": -0.1229
+      "predicted_point": 0.5995,
+      "p10": 0.4403,
+      "p90": 0.7165,
+      "covered": true,
+      "residual": -0.0824
     },
     {
       "state": "Sikkim",
@@ -131,11 +131,11 @@
       "planted": 4000,
       "survived": 2500,
       "observed_survival": 0.625,
-      "predicted_point": 0.5345,
-      "p10": 0.0977,
-      "p90": 0.6095,
-      "covered": false,
-      "residual": -0.0905
+      "predicted_point": 0.5976,
+      "p10": 0.4567,
+      "p90": 0.7164,
+      "covered": true,
+      "residual": -0.0274
     },
     {
       "state": "Sikkim",
@@ -144,11 +144,11 @@
       "planted": 800,
       "survived": 200,
       "observed_survival": 0.25,
-      "predicted_point": 0.5589,
-      "p10": 0.215,
-      "p90": 0.6387,
-      "covered": true,
-      "residual": 0.3089
+      "predicted_point": 0.6064,
+      "p10": 0.4739,
+      "p90": 0.7218,
+      "covered": false,
+      "residual": 0.3564
     },
     {
       "state": "Sikkim",
@@ -157,11 +157,11 @@
       "planted": 2600,
       "survived": 500,
       "observed_survival": 0.1923,
-      "predicted_point": 0.5345,
-      "p10": 0.116,
-      "p90": 0.6209,
-      "covered": true,
-      "residual": 0.3422
+      "predicted_point": 0.5985,
+      "p10": 0.4403,
+      "p90": 0.716,
+      "covered": false,
+      "residual": 0.4062
     },
     {
       "state": "Punjab",
@@ -170,11 +170,11 @@
       "planted": 2500,
       "survived": 2500,
       "observed_survival": 1.0,
-      "predicted_point": 0.5345,
-      "p10": 0.1043,
-      "p90": 0.761,
+      "predicted_point": 0.5843,
+      "p10": 0.386,
+      "p90": 0.7484,
       "covered": false,
-      "residual": -0.4655
+      "residual": -0.4157
     },
     {
       "state": "Punjab",
@@ -183,11 +183,11 @@
       "planted": 3500,
       "survived": 3500,
       "observed_survival": 1.0,
-      "predicted_point": 0.5345,
-      "p10": 0.1043,
-      "p90": 0.761,
+      "predicted_point": 0.5843,
+      "p10": 0.386,
+      "p90": 0.7484,
       "covered": false,
-      "residual": -0.4655
+      "residual": -0.4157
     },
     {
       "state": "Punjab",
@@ -196,11 +196,11 @@
       "planted": 4000,
       "survived": 4000,
       "observed_survival": 1.0,
-      "predicted_point": 0.5345,
-      "p10": 0.1043,
-      "p90": 0.761,
+      "predicted_point": 0.5843,
+      "p10": 0.386,
+      "p90": 0.7484,
       "covered": false,
-      "residual": -0.4655
+      "residual": -0.4157
     },
     {
       "state": "Rajasthan",
@@ -209,76 +209,11 @@
       "planted": 10000,
       "survived": 6500,
       "observed_survival": 0.65,
-      "predicted_point": 0.5668,
-      "p10": 0.1385,
-      "p90": 0.6187,
-      "covered": false,
-      "residual": -0.0832
-    },
-    {
-      "state": "Rajasthan",
-      "drought_score_used": 8.0,
-      "fire_score_used": 6.0,
-      "planted": 10000,
-      "survived": 7000,
-      "observed_survival": 0.7,
-      "predicted_point": 0.5668,
-      "p10": 0.1385,
-      "p90": 0.6187,
-      "covered": false,
-      "residual": -0.1332
-    },
-    {
-      "state": "Rajasthan",
-      "drought_score_used": 8.0,
-      "fire_score_used": 6.0,
-      "planted": 10000,
-      "survived": 7000,
-      "observed_survival": 0.7,
-      "predicted_point": 0.5668,
-      "p10": 0.1221,
-      "p90": 0.6302,
-      "covered": false,
-      "residual": -0.1332
-    },
-    {
-      "state": "Rajasthan",
-      "drought_score_used": 8.0,
-      "fire_score_used": 6.0,
-      "planted": 10000,
-      "survived": 7000,
-      "observed_survival": 0.7,
-      "predicted_point": 0.5668,
-      "p10": 0.1221,
-      "p90": 0.6302,
-      "covered": false,
-      "residual": -0.1332
-    },
-    {
-      "state": "Rajasthan",
-      "drought_score_used": 8.0,
-      "fire_score_used": 6.0,
-      "planted": 10000,
-      "survived": 7000,
-      "observed_survival": 0.7,
-      "predicted_point": 0.5668,
-      "p10": 0.1221,
-      "p90": 0.6302,
-      "covered": false,
-      "residual": -0.1332
-    },
-    {
-      "state": "Rajasthan",
-      "drought_score_used": 8.0,
-      "fire_score_used": 6.0,
-      "planted": 10000,
-      "survived": 7000,
-      "observed_survival": 0.7,
-      "predicted_point": 0.5668,
-      "p10": 0.1218,
-      "p90": 0.8314,
+      "predicted_point": 0.6162,
+      "p10": 0.4479,
+      "p90": 0.7823,
       "covered": true,
-      "residual": -0.1332
+      "residual": -0.0338
     },
     {
       "state": "Rajasthan",
@@ -287,11 +222,76 @@
       "planted": 10000,
       "survived": 7000,
       "observed_survival": 0.7,
-      "predicted_point": 0.5668,
-      "p10": 0.1218,
-      "p90": 0.8314,
+      "predicted_point": 0.6162,
+      "p10": 0.4479,
+      "p90": 0.7823,
       "covered": true,
-      "residual": -0.1332
+      "residual": -0.0838
+    },
+    {
+      "state": "Rajasthan",
+      "drought_score_used": 8.0,
+      "fire_score_used": 6.0,
+      "planted": 10000,
+      "survived": 7000,
+      "observed_survival": 0.7,
+      "predicted_point": 0.6169,
+      "p10": 0.4479,
+      "p90": 0.784,
+      "covered": true,
+      "residual": -0.0831
+    },
+    {
+      "state": "Rajasthan",
+      "drought_score_used": 8.0,
+      "fire_score_used": 6.0,
+      "planted": 10000,
+      "survived": 7000,
+      "observed_survival": 0.7,
+      "predicted_point": 0.6169,
+      "p10": 0.4479,
+      "p90": 0.784,
+      "covered": true,
+      "residual": -0.0831
+    },
+    {
+      "state": "Rajasthan",
+      "drought_score_used": 8.0,
+      "fire_score_used": 6.0,
+      "planted": 10000,
+      "survived": 7000,
+      "observed_survival": 0.7,
+      "predicted_point": 0.6169,
+      "p10": 0.4479,
+      "p90": 0.784,
+      "covered": true,
+      "residual": -0.0831
+    },
+    {
+      "state": "Rajasthan",
+      "drought_score_used": 8.0,
+      "fire_score_used": 6.0,
+      "planted": 10000,
+      "survived": 7000,
+      "observed_survival": 0.7,
+      "predicted_point": 0.6287,
+      "p10": 0.4479,
+      "p90": 0.7877,
+      "covered": true,
+      "residual": -0.0713
+    },
+    {
+      "state": "Rajasthan",
+      "drought_score_used": 8.0,
+      "fire_score_used": 6.0,
+      "planted": 10000,
+      "survived": 7000,
+      "observed_survival": 0.7,
+      "predicted_point": 0.6287,
+      "p10": 0.4479,
+      "p90": 0.7877,
+      "covered": true,
+      "residual": -0.0713
     },
     {
       "state": "Rajasthan",
@@ -300,11 +300,11 @@
       "planted": 10000,
       "survived": 7500,
       "observed_survival": 0.75,
-      "predicted_point": 0.5668,
-      "p10": 0.1221,
-      "p90": 0.6302,
-      "covered": false,
-      "residual": -0.1832
+      "predicted_point": 0.6169,
+      "p10": 0.4479,
+      "p90": 0.784,
+      "covered": true,
+      "residual": -0.1331
     },
     {
       "state": "Rajasthan",
@@ -313,11 +313,11 @@
       "planted": 10000,
       "survived": 7500,
       "observed_survival": 0.75,
-      "predicted_point": 0.5668,
-      "p10": 0.1218,
-      "p90": 0.8314,
+      "predicted_point": 0.6287,
+      "p10": 0.4479,
+      "p90": 0.7877,
       "covered": true,
-      "residual": -0.1832
+      "residual": -0.1213
     },
     {
       "state": "Rajasthan",
@@ -326,11 +326,11 @@
       "planted": 10000,
       "survived": 7500,
       "observed_survival": 0.75,
-      "predicted_point": 0.5668,
-      "p10": 0.1218,
-      "p90": 0.8314,
+      "predicted_point": 0.6287,
+      "p10": 0.4479,
+      "p90": 0.7877,
       "covered": true,
-      "residual": -0.1832
+      "residual": -0.1213
     },
     {
       "state": "Uttar Pradesh",
@@ -339,11 +339,11 @@
       "planted": 10,
       "survived": 5,
       "observed_survival": 0.5,
-      "predicted_point": 0.5668,
-      "p10": 0.2497,
-      "p90": 0.8294,
+      "predicted_point": 0.5109,
+      "p10": 0.3209,
+      "p90": 0.7433,
       "covered": true,
-      "residual": 0.0668
+      "residual": 0.0109
     }
   ]
 }

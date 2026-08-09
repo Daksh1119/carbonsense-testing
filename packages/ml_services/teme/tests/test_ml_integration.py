@@ -1,4 +1,4 @@
-﻿import copy
+import copy
 
 from ml_services.teme.core.engine import run_teme
 
@@ -33,9 +33,11 @@ BASE_INPUT = {
 
 def test_engine_without_ml():
     """
-    ML disabled â†’ no ml_metadata, deterministic behavior
+    ML is now enabled by default (prefer_v4=True). Verify that explicitly
+    passing ml.enabled=False turns it off.
     """
     payload = copy.deepcopy(BASE_INPUT)
+    payload["ml"] = {"enabled": False}  # explicitly disable
 
     result = run_teme(payload)
 
