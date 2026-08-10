@@ -84,7 +84,33 @@ function DetailedEmissionsLogContent() {
     co2Amount: '',
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [recomputedCycleId, setRecomputedCycleId] = useState<string | null>(null);
   const router = useRouter();
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+  const { organizationId, userId } = getCurrentUserContext();
+
+  // Group 1.10 — call backend to recompute cycle after edit/delete
+  const callEntryRecompute = async (entryId: string, method: 'PUT' | 'DELETE', body?: object): Promise<string | null> => {
+    try {
+      const params = method === 'DELETE'
+        ? new URLSearchParams({ organization_id: organizationId || '', user_id: userId || '' })
+        : null;
+      const url = method === 'DELETE'
+        ? `${apiUrl}/ingestion/entries/${entryId}?${params}`
+        : `${apiUrl}/ingestion/entries/${entryId}`;
+      const res = await fetch(url, {
+        method,
+        headers: method === 'PUT' ? { 'Content-Type': 'application/json' } : undefined,
+        body: method === 'PUT' ? JSON.stringify({ organization_id: organizationId, user_id: userId, ...body }) : undefined,
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return (data.recomputed_cycle_id as string | null) ?? null;
+    } catch {
+      return null; // non-fatal
+    }
+  };
 
   const parseDateValue = (value?: string | null): Date | null => {
     if (!value) return null;
@@ -350,7 +376,14 @@ function DetailedEmissionsLogContent() {
 
                 try {
                   await deleteEmission(row.id);
-                  showSuccessToast('Entry deleted successfully.');
+                  // Group 1.10 — recompute affected cycle
+                  const cycleId = await callEntryRecompute(row.id, 'DELETE');
+                  if (cycleId) {
+                    setRecomputedCycleId(cycleId);
+                    showSuccessToast('Entry deleted — cycle totals recomputed automatically.');
+                  } else {
+                    showSuccessToast('Entry deleted successfully.');
+                  }
                 } catch (err) {
                   showErrorToast(err instanceof Error ? err.message : 'Failed to delete entry.');
                 }
@@ -454,6 +487,17 @@ function DetailedEmissionsLogContent() {
     <div className="space-y-6">
       {/* Breadcrumb */}
       <Breadcrumb />
+
+      {/* Group 1.10 — recompute banner */}
+      {recomputedCycleId && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-300 text-sm">
+          <BarChart3 className="size-4 flex-shrink-0" />
+          <span>Cycle totals recomputed — dashboard and analytics are now up-to-date.</span>
+          <button onClick={() => setRecomputedCycleId(null)} className="ml-auto text-teal-400 hover:text-white">
+            ✕
+          </button>
+        </div>
+      )}
       
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -823,7 +867,17 @@ function DetailedEmissionsLogContent() {
               unit: editForm.unit,
               co2Amount: computedEditCo2,
             });
-            showSuccessToast('Entry updated successfully.');
+            // Group 1.10 — recompute affected cycle
+            const cycleId = await callEntryRecompute(editEntry.id, 'PUT', {
+              kg_co2e: computedEditCo2,
+              date: editForm.date,
+            });
+            if (cycleId) setRecomputedCycleId(cycleId);
+            showSuccessToast(
+              cycleId
+                ? 'Entry updated — cycle totals recomputed automatically.'
+                : 'Entry updated successfully.'
+            );
             setEditEntryId(null);
           } catch (err) {
             showErrorToast(err instanceof Error ? err.message : 'Failed to update entry.');

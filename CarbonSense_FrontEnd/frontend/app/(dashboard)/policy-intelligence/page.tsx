@@ -15,8 +15,12 @@ import {
   fetchImpactSummary,
   fetchPolicies,
   fetchTopActions,
+  fetchPolicyAdoptions,
+  upsertPolicyAdoption,
   type PolicyRecord,
   type TopActionRecord,
+  type PolicyAdoptionRecord,
+  type PolicyAdoptionStatus,
 } from "@/lib/policy-compliance-api";
 import { getCurrentUserContext } from "@/lib/recommendations-api";
 import {
@@ -27,6 +31,9 @@ import {
   Download,
   ExternalLink,
   Shield,
+  PlayCircle,
+  XCircle,
+  Info,
 } from "lucide-react";
 
 function formatDate(value?: string | null): string {
@@ -57,7 +64,7 @@ function actionToFunding(action: TopActionRecord) {
 }
 
 export default function PolicyIntelligencePage() {
-  const { organizationId } = getCurrentUserContext();
+  const { organizationId, userId } = getCurrentUserContext();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [policies, setPolicies] = useState<PolicyRecord[]>([]);
@@ -82,6 +89,9 @@ export default function PolicyIntelligencePage() {
   const [readOpen, setReadOpen] = useState(false);
   const [showAllPolicies, setShowAllPolicies] = useState(false);
   const [showAllFunding, setShowAllFunding] = useState(false);
+  // Group 3B.3 — adoption tracking
+  const [adoptions, setAdoptions] = useState<Record<string, PolicyAdoptionStatus>>({});
+  const [adoptionUpdating, setAdoptionUpdating] = useState<Set<string>>(new Set());
 
   const resultIdByRequirementId = useMemo(() => {
     return complianceResults.reduce<Record<string, string>>((map, result) => {
@@ -127,6 +137,16 @@ export default function PolicyIntelligencePage() {
             verifier: r.verified ? "Verified" : "Completed",
           }));
         setCompletedActions(completed);
+
+        // Group 3B.3 — load policy adoptions
+        if (organizationId) {
+          try {
+            const adoptionRows: PolicyAdoptionRecord[] = await fetchPolicyAdoptions(organizationId);
+            const map: Record<string, PolicyAdoptionStatus> = {};
+            adoptionRows.forEach((r) => { map[r.policy_id] = r.status; });
+            setAdoptions(map);
+          } catch { /* non-fatal */ }
+        }
       } catch (err) {
         if (!isMounted) return;
         setError(err instanceof Error ? err.message : "Failed to load policy intelligence data");
@@ -140,6 +160,19 @@ export default function PolicyIntelligencePage() {
       isMounted = false;
     };
   }, [organizationId]);
+
+  // Adoption update handler
+  async function handleAdoptionUpdate(policyId: string, newStatus: PolicyAdoptionStatus) {
+    if (!organizationId || !userId) return;
+    setAdoptionUpdating((prev) => new Set(prev).add(policyId));
+    try {
+      await upsertPolicyAdoption(organizationId, policyId, newStatus, userId);
+      setAdoptions((prev) => ({ ...prev, [policyId]: newStatus }));
+    } catch { /* non-fatal */ }
+    finally {
+      setAdoptionUpdating((prev) => { const s = new Set(prev); s.delete(policyId); return s; });
+    }
+  }
 
   const policyAlerts = useMemo(() => {
     const terms = search.trim().toLowerCase();
@@ -274,23 +307,61 @@ export default function PolicyIntelligencePage() {
           ) : null}
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {visiblePolicyAlerts.map((policy) => (
-            <DashboardCard key={policy.id} title={policy.short_name || policy.name} subtitle={policy.description || policy.match_reason || "Policy detail"} className="hover:border-primary/30 transition-colors" headerAction={<div className="flex flex-wrap items-center gap-2"><Badge variant="info">Match {Math.round(policy.match_score || 0)}%</Badge><Badge variant="default">{String(policy.category || 'General').toUpperCase()}</Badge><Badge variant={String(policy.layer || 'core') === 'core' ? 'success' : 'warning'}>{String(policy.layer || 'core').toUpperCase()}</Badge></div>}>
-              <div className="space-y-4">
-                <div className="rounded-lg bg-navy-muted/40 p-3 text-sm text-slate-300">{policy.match_reason || 'Matched to your organization profile.'}</div>
-                <div className="h-2 rounded-full bg-navy-border">
-                  <div className="h-2 rounded-full bg-primary" style={{ width: `${Math.max(8, Math.min(100, policy.match_score || 0))}%` }} />
+          {visiblePolicyAlerts.map((policy) => {
+            const adoptionStatus: PolicyAdoptionStatus = adoptions[policy.id] ?? 'not_started';
+            const isAdopting = adoptionUpdating.has(policy.id);
+            const ADOPTION_OPTIONS: { value: PolicyAdoptionStatus; label: string; color: string }[] = [
+              { value: 'not_started',    label: 'Not Started',     color: 'text-slate-400' },
+              { value: 'in_progress',    label: 'In Progress',     color: 'text-amber-400' },
+              { value: 'adopted',        label: 'Adopted ✓',       color: 'text-emerald-400' },
+              { value: 'not_applicable', label: 'Not Applicable',  color: 'text-slate-500' },
+            ];
+            return (
+              <DashboardCard key={policy.id} title={policy.short_name || policy.name} subtitle={policy.description || policy.match_reason || 'Policy detail'} className="hover:border-primary/30 transition-colors" headerAction={<div className="flex flex-wrap items-center gap-2"><Badge variant="info">Match {Math.round(policy.match_score || 0)}%</Badge><Badge variant="default">{String(policy.category || 'General').toUpperCase()}</Badge><Badge variant={String(policy.layer || 'core') === 'core' ? 'success' : 'warning'}>{String(policy.layer || 'core').toUpperCase()}</Badge></div>}>
+                <div className="space-y-4">
+                  <div className="rounded-lg bg-navy-muted/40 p-3 text-sm text-slate-300">{policy.match_reason || 'Matched to your organization profile.'}</div>
+                  <div className="h-2 rounded-full bg-navy-border">
+                    <div className="h-2 rounded-full bg-primary" style={{ width: `${Math.max(8, Math.min(100, policy.match_score || 0))}%` }} />
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-slate-400"><span>Status: {policy.status || 'Applicable'}</span><span>{policy.compliance_progress?.completed || 0} / {policy.compliance_progress?.total || policy.requirements?.length || 0} complete</span></div>
+
+                  {/* Group 3B.3 — adoption status control */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-slate-500 flex items-center gap-1">
+                      Your adoption status
+                      <span className="relative group">
+                        <Info className="size-3 text-slate-600 hover:text-teal-400 cursor-help" />
+                        <span className="absolute left-4 top-0 z-50 hidden group-hover:block w-52 bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-300 shadow-xl">
+                          Marking a policy as &ldquo;Adopted&rdquo; raises your Compliance Action Score.
+                        </span>
+                      </span>
+                    </span>
+                    <select
+                      value={adoptionStatus}
+                      disabled={isAdopting}
+                      onChange={(e) => handleAdoptionUpdate(policy.id, e.target.value as PolicyAdoptionStatus)}
+                      className={`text-xs px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 focus:outline-none focus:border-teal-500 transition-colors disabled:opacity-50 ${
+                        adoptionStatus === 'adopted' ? 'text-emerald-400' :
+                        adoptionStatus === 'in_progress' ? 'text-amber-400' :
+                        adoptionStatus === 'not_applicable' ? 'text-slate-500' : 'text-slate-400'
+                      }`}
+                    >
+                      {ADOPTION_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" onClick={() => openPolicy(policy)}>View Details</Button>
+                    <Button size="sm" variant="outline" onClick={() => openApply(policy)}>Apply Now</Button>
+                    <Button size="sm" variant="ghost" onClick={() => openRead(policy)}>Read Policy Document</Button>
+                    <Button size="sm" variant="outline" onClick={() => openFunding(policy)}>View Funding</Button>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between text-xs text-slate-400"><span>Status: {policy.status || 'Applicable'}</span><span>{policy.compliance_progress?.completed || 0} / {policy.compliance_progress?.total || policy.requirements?.length || 0} complete</span></div>
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" onClick={() => openPolicy(policy)}>View Details</Button>
-                  <Button size="sm" variant="outline" onClick={() => openApply(policy)}>Apply Now</Button>
-                  <Button size="sm" variant="ghost" onClick={() => openRead(policy)}>Read Policy Document</Button>
-                  <Button size="sm" variant="outline" onClick={() => openFunding(policy)}>View Funding</Button>
-                </div>
-              </div>
-            </DashboardCard>
-          ))}
+              </DashboardCard>
+            );
+          })}
           {!isLoading && policyAlerts.length === 0 ? <p className="text-sm text-slate-400">No policies returned for the current filter.</p> : null}
         </div>
       </div>

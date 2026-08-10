@@ -1,0 +1,23 @@
+{
+  "pythonVersion": "3.12",
+  "pythonPlatform": "Windows",
+  "pythonInterpreterPath": ".venv/Scripts/python.exe",
+  "extraPaths": [
+    "packages"
+  ],
+  "include": [
+    "packages",
+    "scripts",
+    "tests"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/.venv",
+    "**/node_modules",
+    "CarbonSense_FrontEnd"
+  ],
+  "reportMissingImports": "warning",
+  "reportMissingModuleSource": "none",
+  "typeCheckingMode": "basic",
+  "useLibraryCodeForTypes": true
+}

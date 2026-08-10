@@ -93,6 +93,12 @@ function ProfileTab() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
+  // Group 2.11 — email change flow
+  const [newEmail, setNewEmail] = useState("");
+  const [emailChangePending, setEmailChangePending] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [showEmailChange, setShowEmailChange] = useState(false);
+
   // Fetch fresh profile data from Supabase on mount
   useEffect(() => {
     async function loadProfile() {
@@ -158,6 +164,30 @@ function ProfileTab() {
     showSuccessToast("Profile saved successfully");
   };
 
+  // Group 2.11 — initiate Supabase Auth email change
+  const handleEmailChange = async () => {
+    if (!newEmail.trim() || !newEmail.includes('@')) {
+      showErrorToast("Enter a valid email address.");
+      return;
+    }
+    if (newEmail === form.email) {
+      showErrorToast("New email is the same as your current email.");
+      return;
+    }
+    setIsSendingEmail(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ email: newEmail });
+      if (error) throw error;
+      setEmailChangePending(true);
+      setShowEmailChange(false);
+      showSuccessToast(`Verification link sent to ${newEmail} — click it to confirm your new email.`);
+    } catch (err) {
+      showErrorToast(`Email change failed: ${(err as Error).message}`);
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
   const inputClass =
     "w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary placeholder:text-slate-600";
 
@@ -214,16 +244,70 @@ function ProfileTab() {
           </div>
         </div>
 
+        {/* Group 2.11 — editable email with Supabase Auth change flow */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">Email Address</label>
-          <input
-            type="email"
-            value={form.email}
-            className={`${inputClass} opacity-60 cursor-not-allowed`}
-            disabled
-            title="Email cannot be changed here — contact your administrator"
-          />
-          <p className="text-xs text-slate-500 mt-1">Email is managed by your authentication provider.</p>
+          {emailChangePending ? (
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-3">
+              <p className="text-sm text-amber-300">
+                📧 Verification link sent to <strong>{newEmail}</strong>.
+                Click the link in that email to confirm your new address.
+              </p>
+              <button
+                type="button"
+                className="text-xs text-slate-400 underline mt-2 hover:text-slate-300"
+                onClick={() => { setEmailChangePending(false); setNewEmail(""); }}
+              >
+                Cancel / use different email
+              </button>
+            </div>
+          ) : showEmailChange ? (
+            <div className="flex gap-2">
+              <input
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                className={`${inputClass} flex-1`}
+                placeholder="new.email@company.com"
+                disabled={isSendingEmail}
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={handleEmailChange}
+                disabled={isSendingEmail}
+                className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
+              >
+                {isSendingEmail ? "Sending…" : "Send Verification"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowEmailChange(false)}
+                className="px-3 py-2 text-slate-400 hover:text-white text-sm rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <input
+                type="email"
+                value={form.email}
+                className={`${inputClass} opacity-60 cursor-not-allowed flex-1`}
+                disabled
+              />
+              <button
+                type="button"
+                onClick={() => setShowEmailChange(true)}
+                className="px-4 py-2 text-sm text-teal-400 border border-teal-500/30 hover:border-teal-400 bg-teal-500/5 hover:bg-teal-500/10 rounded-lg transition-colors flex-shrink-0"
+              >
+                Change Email
+              </button>
+            </div>
+          )}
+          <p className="text-xs text-slate-500 mt-1">
+            A verification link will be sent to your new address before the change takes effect.
+          </p>
         </div>
 
         <div>

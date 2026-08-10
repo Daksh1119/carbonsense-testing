@@ -13,13 +13,14 @@ from ml_services.common.supabase_client import supabase
 
 # Load backend env deterministically from repository root (.env).
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-load_dotenv(_REPO_ROOT / ".env", override=False)
+load_dotenv(_REPO_ROOT / ".env", override=True)
 
 
 def _llm_config() -> Dict[str, str]:
     provider = os.getenv("LLM_PROVIDER", "openrouter").strip().lower()
     api_key = os.getenv("LLM_API_KEY", "").strip()
-    base_url = os.getenv("LLM_API_BASE_URL", "https://openrouter.ai/api/v1").strip().rstrip("/")
+    base_url = os.getenv("LLM_API_BASE_URL",
+                         "https://openrouter.ai/api/v1").strip().rstrip("/")
     model = os.getenv("LLM_MODEL", "openrouter/auto").strip()
     return {
         "provider": provider,
@@ -49,9 +50,11 @@ def _model_fallbacks() -> List[str]:
 
 def _hash_payload(payload: Dict[str, Any]) -> str:
     try:
-        canonical = json.dumps(payload, sort_keys=True, ensure_ascii=True, default=str)
+        canonical = json.dumps(payload, sort_keys=True,
+                               ensure_ascii=True, default=str)
     except Exception:
-        canonical = json.dumps({"error": "payload_not_serializable"}, ensure_ascii=True)
+        canonical = json.dumps(
+            {"error": "payload_not_serializable"}, ensure_ascii=True)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -133,7 +136,8 @@ def _build_evidence_catalog(payload: Dict[str, Any], org_profile: Dict[str, Any]
         result = teme_run.get("result") or payload.get("teme_result") or {}
         total_trees = _safe_int(result.get("total_trees"), 0)
         maturity = _safe_int(result.get("avg_maturity_years"), 0)
-        emission_kg = _safe_float(teme_run.get("emission_kg") or payload.get("emission_kg"), 0.0)
+        emission_kg = _safe_float(teme_run.get(
+            "emission_kg") or payload.get("emission_kg"), 0.0)
         catalog.append(
             {
                 "evidence_id": "teme::latest_run",
@@ -179,7 +183,8 @@ def _derive_focus_areas(payload: Dict[str, Any]) -> List[str]:
         key=lambda k: _safe_float(k.get("kpi_value"), 0.0),
         reverse=True,
     )
-    top_names = [str(k.get("kpi_name") or "").strip().lower() for k in ranked[:5] if str(k.get("kpi_name") or "").strip()]
+    top_names = [str(k.get("kpi_name") or "").strip().lower()
+                 for k in ranked[:5] if str(k.get("kpi_name") or "").strip()]
 
     areas: List[str] = []
     for name in top_names:
@@ -249,7 +254,8 @@ def _heuristic_fallback(
             if any(t.lower() in ev_tags for t in tags):
                 selected.append(ev)
         if len(selected) < fallback_min:
-            selected.extend([ev for ev in evidence_catalog if ev not in selected])
+            selected.extend(
+                [ev for ev in evidence_catalog if ev not in selected])
         trimmed = selected[: max(2, fallback_min)]
         out = []
         for ev in trimmed:
@@ -391,7 +397,8 @@ def _heuristic_fallback(
     ]
 
     if "purchases" in focus and "scope_2_energy" not in focus:
-        templates = [t for t in templates if t["title"] != "Optimize HVAC and lighting schedules"] + [templates[0]]
+        templates = [t for t in templates if t["title"] !=
+                     "Optimize HVAC and lighting schedules"] + [templates[0]]
 
     return templates[: max(2, min(target_count, len(templates)))]
 
@@ -476,7 +483,8 @@ def _call_openai_compatible(messages: List[Dict[str, str]]) -> Dict[str, Any]:
             }
 
             if os.getenv("LLM_OPENROUTER_DATA_COLLECTION", "deny").strip().lower() in {"allow", "deny"}:
-                body["provider"]["data_collection"] = os.getenv("LLM_OPENROUTER_DATA_COLLECTION", "deny").strip().lower()
+                body["provider"]["data_collection"] = os.getenv(
+                    "LLM_OPENROUTER_DATA_COLLECTION", "deny").strip().lower()
 
             if os.getenv("LLM_OPENROUTER_ZDR", "false").strip().lower() == "true":
                 body["provider"]["zdr"] = True
@@ -497,7 +505,8 @@ def _call_openai_compatible(messages: List[Dict[str, str]]) -> Dict[str, Any]:
         )
 
         if resp.status_code >= 400:
-            raise HTTPException(status_code=502, detail=f"LLM provider error: {resp.status_code} {resp.text[:500]}")
+            raise HTTPException(
+                status_code=502, detail=f"LLM provider error: {resp.status_code} {resp.text[:500]}")
 
         return resp.json()
 
@@ -517,22 +526,25 @@ def _call_openai_compatible(messages: List[Dict[str, str]]) -> Dict[str, Any]:
             try:
                 data = _request_with_model("openrouter/auto")
             except Exception as e2:
-                raise HTTPException(status_code=502, detail=f"LLM provider error: {e2}")
+                raise HTTPException(
+                    status_code=502, detail=f"LLM provider error: {e2}")
         else:
-            raise HTTPException(status_code=502, detail=f"LLM provider error: {last_error}")
+            raise HTTPException(
+                status_code=502, detail=f"LLM provider error: {last_error}")
 
     try:
         content = data["choices"][0]["message"]["content"]
         parsed = json.loads(_strip_json_block(content))
         return parsed
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Invalid LLM response format: {e}")
+        raise HTTPException(
+            status_code=502, detail=f"Invalid LLM response format: {e}")
 
 
 def _normalize_recommendations(items: List[Dict[str, Any]], allowed_evidence_ids: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     allowed_priority = {"low", "medium", "high", "critical"}
-    allowed_sources = {"teme_run", "kpi_snapshot", "external", "manual"}
+    allowed_sources = {"teme_run", "ocr_receipt", "kpi_snapshot", "external", "manual"}
 
     def _to_float(value: Any, default: float = 0.0) -> float:
         try:
@@ -565,8 +577,10 @@ def _normalize_recommendations(items: List[Dict[str, Any]], allowed_evidence_ids
         confidence = max(0.0, min(1.0, confidence))
 
         impact = _to_float(rec.get("estimated_impact_kg_co2e"), 0.0)
-        impact_low = _to_float(rec.get("estimated_impact_kg_co2e_low"), max(0.0, impact * 0.8))
-        impact_high = _to_float(rec.get("estimated_impact_kg_co2e_high"), max(impact, impact * 1.2))
+        impact_low = _to_float(
+            rec.get("estimated_impact_kg_co2e_low"), max(0.0, impact * 0.8))
+        impact_high = _to_float(
+            rec.get("estimated_impact_kg_co2e_high"), max(impact, impact * 1.2))
 
         evidence = rec.get("evidence", []) or []
         normalized_evidence = []
@@ -636,9 +650,12 @@ def _rank_and_filter(recs: List[Dict[str, Any]], emission_kg: float, target_coun
         return []
     if len(offsets) > 1:
         offsets = offsets[:1]
-        filtered = reductions + offsets + [r for r in filtered if r.get("action_type") not in {"reduction", "offset"}]
+        filtered = reductions + offsets + \
+            [r for r in filtered if r.get("action_type") not in {
+                "reduction", "offset"}]
 
-    max_impact = max([_safe_float(r.get("estimated_impact_kg_co2e"), 0.0) for r in filtered] + [1.0])
+    max_impact = max([_safe_float(r.get("estimated_impact_kg_co2e"), 0.0)
+                     for r in filtered] + [1.0])
 
     # Rank by weighted realism score, not only impact/cost.
     def _score(rec: Dict[str, Any]) -> float:
@@ -648,7 +665,8 @@ def _rank_and_filter(recs: List[Dict[str, Any]], emission_kg: float, target_coun
         months = _safe_float(rec.get("time_to_impact_months"), 6.0)
         evidence_score = _safe_float(rec.get("evidence_score"), 0.0)
 
-        kpi_refs = [str(x).lower() for x in ((rec.get("impact_model") or {}).get("kpi_refs") or [])]
+        kpi_refs = [str(x).lower() for x in (
+            (rec.get("impact_model") or {}).get("kpi_refs") or [])]
         relevance = 0.0
         for area in focus_areas:
             if area in " ".join(kpi_refs):
@@ -673,13 +691,17 @@ def _rank_and_filter(recs: List[Dict[str, Any]], emission_kg: float, target_coun
     # Cap total impact to 90% of emissions to avoid overclaiming.
     if emission_kg > 0:
         cap = emission_kg * 0.9
-        total = sum(float(r.get("estimated_impact_kg_co2e") or 0) for r in filtered)
+        total = sum(float(r.get("estimated_impact_kg_co2e") or 0)
+                    for r in filtered)
         if total > cap and total > 0:
             scale = cap / total
             for r in filtered:
-                r["estimated_impact_kg_co2e"] = round(float(r.get("estimated_impact_kg_co2e") or 0) * scale, 2)
-                r["estimated_impact_kg_co2e_low"] = round(float(r.get("estimated_impact_kg_co2e_low") or 0) * scale, 2)
-                r["estimated_impact_kg_co2e_high"] = round(float(r.get("estimated_impact_kg_co2e_high") or 0) * scale, 2)
+                r["estimated_impact_kg_co2e"] = round(
+                    float(r.get("estimated_impact_kg_co2e") or 0) * scale, 2)
+                r["estimated_impact_kg_co2e_low"] = round(
+                    float(r.get("estimated_impact_kg_co2e_low") or 0) * scale, 2)
+                r["estimated_impact_kg_co2e_high"] = round(
+                    float(r.get("estimated_impact_kg_co2e_high") or 0) * scale, 2)
 
     for idx, rec in enumerate(filtered, start=1):
         rec["rank"] = idx
@@ -748,8 +770,10 @@ def generate_and_store_recommendations(payload: Dict[str, Any]) -> Dict[str, Any
         "created_at": org_profile.get("created_at"),
     }
     llm_payload["focus_areas"] = _derive_focus_areas(llm_payload)
-    llm_payload["evidence_catalog"] = _build_evidence_catalog(llm_payload, org_profile, teme_run)
-    llm_payload["target_recommendation_count"] = _target_recommendation_count(llm_payload, llm_payload["evidence_catalog"])
+    llm_payload["evidence_catalog"] = _build_evidence_catalog(
+        llm_payload, org_profile, teme_run)
+    llm_payload["target_recommendation_count"] = _target_recommendation_count(
+        llm_payload, llm_payload["evidence_catalog"])
     llm_payload["recommendation_constraints"] = {
         "min_evidence_items_per_recommendation": 2,
         "min_implementation_steps": 3,
@@ -759,11 +783,14 @@ def generate_and_store_recommendations(payload: Dict[str, Any]) -> Dict[str, Any
 
     llm_used = True
     llm_warning = None
-    messages = _build_prompt(llm_payload, llm_payload["target_recommendation_count"])
-    allowed_evidence_ids = {str(e.get("evidence_id")) for e in llm_payload["evidence_catalog"] if e.get("evidence_id")}
+    messages = _build_prompt(
+        llm_payload, llm_payload["target_recommendation_count"])
+    allowed_evidence_ids = {str(e.get("evidence_id"))
+                            for e in llm_payload["evidence_catalog"] if e.get("evidence_id")}
     try:
         raw = _call_openai_compatible(messages)
-        recs = _normalize_recommendations(raw.get("recommendations", []), allowed_evidence_ids=allowed_evidence_ids)
+        recs = _normalize_recommendations(
+            raw.get("recommendations", []), allowed_evidence_ids=allowed_evidence_ids)
         recs = _rank_and_filter(
             recs,
             float(llm_payload.get("emission_kg") or 0),
@@ -812,9 +839,11 @@ def generate_and_store_recommendations(payload: Dict[str, Any]) -> Dict[str, Any
         "assumptions": llm_payload.get("assumptions", []),
     }
 
-    session_ins = supabase.table("recommendation_sessions").insert(session_row).execute()
+    session_ins = supabase.table(
+        "recommendation_sessions").insert(session_row).execute()
     if not session_ins.data:
-        raise HTTPException(status_code=500, detail="Failed to create recommendation session")
+        raise HTTPException(
+            status_code=500, detail="Failed to create recommendation session")
     session = session_ins.data[0]
 
     kpi_rows = []
@@ -832,7 +861,8 @@ def generate_and_store_recommendations(payload: Dict[str, Any]) -> Dict[str, Any
             }
         )
     if kpi_rows:
-        supabase.table("recommendation_kpi_snapshots").insert(kpi_rows).execute()
+        supabase.table("recommendation_kpi_snapshots").insert(
+            kpi_rows).execute()
 
     rec_rows: List[Dict[str, Any]] = []
     evidence_rows: List[Dict[str, Any]] = []
@@ -888,7 +918,8 @@ def generate_and_store_recommendations(payload: Dict[str, Any]) -> Dict[str, Any
             )
 
     if evidence_rows:
-        supabase.table("recommendation_evidence").insert(evidence_rows).execute()
+        supabase.table("recommendation_evidence").insert(
+            evidence_rows).execute()
 
     return {
         "session_id": session["id"],
@@ -908,7 +939,8 @@ def list_session_recommendations(session_id: str, user_id: str) -> Dict[str, Any
         .execute()
     )
     if not session_q.data:
-        raise HTTPException(status_code=404, detail="Recommendation session not found")
+        raise HTTPException(
+            status_code=404, detail="Recommendation session not found")
 
     rec_q = (
         supabase.table("recommendations")
@@ -937,5 +969,6 @@ def save_feedback(session_id: str, recommendation_id: str, user_id: str, feedbac
 
     ins = supabase.table("recommendation_feedback").insert(row).execute()
     if not ins.data:
-        raise HTTPException(status_code=500, detail="Failed to save recommendation feedback")
+        raise HTTPException(
+            status_code=500, detail="Failed to save recommendation feedback")
     return ins.data[0]

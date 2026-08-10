@@ -1,8 +1,17 @@
 "use client";
 
+/**
+ * PolicyChat — Group 3B.4
+ * Enriches the /policies/ask request with live org context:
+ * sector, company size, and total emissions so the LLM answer
+ * is tailored to this specific organisation rather than generic.
+ */
+
 import { useMemo, useState } from "react";
 import Button from "@/components/Button";
 import { askPolicyQuestion } from "@/lib/policy-compliance-api";
+import { getCurrentUserContext } from "@/lib/recommendations-api";
+import { supabase } from "@/lib/supabaseClient";
 
 const SECTION_HEADERS = [
   "Applicability",
@@ -54,6 +63,38 @@ function parseStructuredAssistantMessage(content: string): Array<{ title: string
   return [{ title: "Response", bullets: lines.map(cleanLine).filter(Boolean) }];
 }
 
+// ---------------------------------------------------------------------------
+// Group 3B.4 — fetch org context once for enrichment
+// ---------------------------------------------------------------------------
+
+async function fetchOrgContext(organizationId: string) {
+  try {
+    const { data } = await supabase
+      .from("organizations")
+      .select("sector, company_size_category, industry, name")
+      .eq("id", organizationId)
+      .single();
+
+    // Pull latest cycle emissions for context
+    const { data: cycleData } = await supabase
+      .from("assessment_cycles")
+      .select("total_emissions_kg")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    return {
+      sector: data?.sector || data?.industry || "manufacturing",
+      size: data?.company_size_category || "sme",
+      totalEmissionsKg: cycleData?.total_emissions_kg ?? 0,
+      orgName: data?.name,
+    };
+  } catch {
+    return { sector: "manufacturing", size: "sme", totalEmissionsKg: 0, orgName: undefined };
+  }
+}
+
 export default function PolicyChat({
   policyId,
   policyName,
@@ -63,9 +104,11 @@ export default function PolicyChat({
   policyName: string;
   category?: string | null;
 }) {
+  const { organizationId } = getCurrentUserContext();
   const [messages, setMessages] = useState<Array<{ role: "assistant" | "user"; content: string }>>([]);
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
+
   const chips = useMemo(() => {
     const group = String(category || "").toLowerCase();
     if (group === "waste") return ["What documents do we need?", "Do we need a vendor tie-up?", "What are our EPR targets?"];
@@ -79,7 +122,20 @@ export default function PolicyChat({
     setMessages((current) => [...current, { role: "user", content: text }]);
     setQuestion("");
     try {
-      const response = await askPolicyQuestion({ policyId, question: text });
+      // Group 3B.4 — enrich with live org context before calling the LLM
+      let orgContext = { sector: "manufacturing", size: "sme", totalEmissionsKg: 0 };
+      if (organizationId) {
+        orgContext = await fetchOrgContext(organizationId);
+      }
+
+      const response = await askPolicyQuestion({
+        policyId,
+        question: text,
+        organizationId: organizationId || undefined,
+        industry: orgContext.sector,
+        organizationSize: orgContext.size,
+        totalEmissionsKg: orgContext.totalEmissionsKg,
+      });
       setMessages((current) => [...current, { role: "assistant", content: response.answer || "No response returned." }]);
     } catch (error) {
       setMessages((current) => [...current, { role: "assistant", content: error instanceof Error ? error.message : "Could not reach advisor." }]);
@@ -90,6 +146,12 @@ export default function PolicyChat({
 
   return (
     <div className="space-y-3 rounded-xl border border-navy-border bg-navy-muted/30 p-4">
+      {/* Context enrichment notice */}
+      {organizationId && (
+        <p className="text-[11px] text-teal-500/70">
+          ✦ Answers are tailored to your organisation&apos;s sector, size, and emissions footprint.
+        </p>
+      )}
       <div className="flex flex-wrap gap-2">
         {chips.map((chip) => (
           <button key={chip} onClick={() => sendQuestion(chip)} className="rounded-full border border-navy-border bg-navy-card px-3 py-1 text-xs text-slate-200 hover:border-primary hover:text-primary">
@@ -126,7 +188,13 @@ export default function PolicyChat({
         ))}
       </div>
       <div className="flex gap-2">
-        <input value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") sendQuestion(question); }} placeholder="Type your question..." className="flex-1 rounded-lg border border-navy-border bg-background-dark px-3 py-2 text-sm text-white outline-none focus:border-primary" />
+        <input
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          onKeyDown={(event) => { if (event.key === "Enter") sendQuestion(question); }}
+          placeholder="Type your question..."
+          className="flex-1 rounded-lg border border-navy-border bg-background-dark px-3 py-2 text-sm text-white outline-none focus:border-primary"
+        />
         <Button onClick={() => sendQuestion(question)} size="sm" disabled={loading}>
           {loading ? "Sending..." : "Send"}
         </Button>

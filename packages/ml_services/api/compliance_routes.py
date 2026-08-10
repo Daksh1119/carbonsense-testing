@@ -22,6 +22,7 @@ from ml_services.policy_compliance.service import (
     upcoming_deadlines,
     verify_result,
 )
+from ml_services.ocr.single_processor import process_single_receipt
 
 
 router = APIRouter(prefix="/compliance", tags=["Compliance"])
@@ -52,7 +53,8 @@ def get_requirements(level: Optional[str] = None, industry: Optional[str] = None
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch requirements: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch requirements: {e}")
 
 
 @router.get("/requirements/{requirement_id}")
@@ -62,7 +64,8 @@ def get_requirement_detail(requirement_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch requirement: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch requirement: {e}")
 
 
 @router.get("/results")
@@ -71,12 +74,14 @@ def get_results(organization_id: str, user_id: str, level: Optional[str] = None,
         ensure_user_in_org(user_id, organization_id)
         ensure_permission(user_id, organization_id, "compliance.read")
 
-        data = list_results(organization_id=organization_id, level=level, status=status)
+        data = list_results(organization_id=organization_id,
+                            level=level, status=status)
         return {"results": data, "count": len(data)}
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch compliance results: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch compliance results: {e}")
 
 
 @router.get("/results/{result_id}/steps")
@@ -85,12 +90,14 @@ def get_result_steps_route(result_id: str, organization_id: str, user_id: str):
         ensure_user_in_org(user_id, organization_id)
         ensure_permission(user_id, organization_id, "compliance.read")
 
-        steps = get_result_steps(organization_id=organization_id, result_id=result_id)
+        steps = get_result_steps(
+            organization_id=organization_id, result_id=result_id)
         return {"steps": steps, "count": len(steps)}
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch result steps: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch result steps: {e}")
 
 
 @router.get("/results/{result_id}/evidence-history")
@@ -99,19 +106,22 @@ def get_result_evidence_history_route(result_id: str, organization_id: str, user
         ensure_user_in_org(user_id, organization_id)
         ensure_permission(user_id, organization_id, "compliance.read")
 
-        history = get_evidence_history(organization_id=organization_id, result_id=result_id)
+        history = get_evidence_history(
+            organization_id=organization_id, result_id=result_id)
         return {"history": history, "count": len(history)}
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch evidence history: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch evidence history: {e}")
 
 
 @router.post("/results/{result_id}/verify")
 def verify_result_route(result_id: str, payload: VerifyResultInput):
     try:
         ensure_user_in_org(payload.user_id, payload.organization_id)
-        ensure_permission(payload.user_id, payload.organization_id, "compliance.verify")
+        ensure_permission(
+            payload.user_id, payload.organization_id, "compliance.verify")
 
         row = verify_result(
             organization_id=payload.organization_id,
@@ -127,21 +137,25 @@ def verify_result_route(result_id: str, payload: VerifyResultInput):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to verify compliance result: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to verify compliance result: {e}")
 
 
 @router.post("/score")
 def recalculate_score_route(payload: RecalculateScoreInput):
     try:
         ensure_user_in_org(payload.user_id, payload.organization_id)
-        ensure_permission(payload.user_id, payload.organization_id, "compliance.score")
+        ensure_permission(
+            payload.user_id, payload.organization_id, "compliance.score")
 
-        rec = recalculate_score(payload.organization_id, snapshot_date=payload.snapshot_date)
+        rec = recalculate_score(payload.organization_id,
+                                snapshot_date=payload.snapshot_date)
         return {"score": rec}
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to recalculate score: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to recalculate score: {e}")
 
 
 @router.get("/score")
@@ -155,7 +169,8 @@ def get_score(organization_id: str, user_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch compliance score: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch compliance score: {e}")
 
 
 @router.get("/score/history")
@@ -169,7 +184,8 @@ def get_score_history(organization_id: str, user_id: str, days: int = 365):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch score history: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch score history: {e}")
 
 
 @router.get("/deadlines")
@@ -183,7 +199,8 @@ def get_deadlines(organization_id: str, user_id: str, days: int = 90):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch deadlines: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch deadlines: {e}")
 
 
 @router.get("/top-actions")
@@ -192,12 +209,14 @@ def get_top_actions(organization_id: str, user_id: str, industry: Optional[str] 
         ensure_user_in_org(user_id, organization_id)
         ensure_permission(user_id, organization_id, "compliance.read")
 
-        data = top_actions(organization_id=organization_id, industry=industry, top_n=top_n)
+        data = top_actions(organization_id=organization_id,
+                           industry=industry, top_n=top_n)
         return {"actions": data, "count": len(data)}
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch top actions: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch top actions: {e}")
 
 
 @router.get("/benchmark")
@@ -210,7 +229,8 @@ def get_benchmark(organization_id: str, user_id: str, industry: str = "sme"):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch benchmark: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch benchmark: {e}")
 
 
 @router.get("/impact")
@@ -223,7 +243,8 @@ def get_impact_summary(organization_id: str, user_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch impact summary: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch impact summary: {e}")
 
 
 @router.post("/evidence")
@@ -237,14 +258,59 @@ async def upload_evidence(
         ensure_user_in_org(user_id, organization_id)
         ensure_permission(user_id, organization_id, "compliance.verify")
 
-        return {
-            "organization_id": organization_id,
-            "requirement_id": requirement_id,
-            "file_name": file.filename,
-            "content_type": file.content_type,
-            "size_bytes": file.size,
-        }
+        blob = await file.read()
+        suffix = os.path.splitext(file.filename or "")[1] or ".pdf"
+
+        tmp_path: Optional[str] = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(blob)
+                tmp_path = tmp.name
+
+            extraction = None
+            try:
+                extraction = process_single_receipt(
+                    file_path=tmp_path,
+                    file_name=file.filename or "evidence",
+                    organization_id=organization_id,
+                    uploaded_by_user_id=user_id,
+                    employee_user_id=None,
+                )
+            except Exception as ocr_err:
+                print(f"[Evidence Upload] OCR Warning: {ocr_err}")
+                extraction = {"status": "unprocessed", "warning": str(ocr_err)}
+
+            # Automatically mark the compliance result as verified in Supabase
+            try:
+                verify_result(
+                    result_id=requirement_id,
+                    organization_id=organization_id,
+                    user_id=user_id,
+                    status="verified",
+                    verified=True,
+                    verification_source="evidence_upload",
+                    evidence_url=file.filename,
+                    notes=f"Evidence uploaded: {file.filename}",
+                )
+            except Exception as verify_err:
+                print(f"[Evidence Upload] Result verify warning: {verify_err}")
+
+            return {
+                "organization_id": organization_id,
+                "requirement_id": requirement_id,
+                "file_name": file.filename,
+                "content_type": file.content_type,
+                "size_bytes": len(blob),
+                "ocr_extraction": extraction,
+            }
+        finally:
+            try:
+                if tmp_path and os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to process evidence: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to process evidence: {e}")

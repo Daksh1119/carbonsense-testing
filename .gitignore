@@ -88,7 +88,17 @@ packages/ml_services/teme/ml/models/*.joblib
 models/*.pt
 models/*.pth
 
+<<<<<<< HEAD
 # =============================================================================
 # Local dev / debug outputs
 # =============================================================================
 scripts/ocr_result_*.json
+=======
+# dotenv-linter and direnv
+.envrc
+
+# Temporary files & ML joblib model binaries
+*.tmp
+*.temp
+packages/ml_services/teme/ml/models/*.joblib
+>>>>>>> a0c1a4f (Sync latest CarbonSense changes)

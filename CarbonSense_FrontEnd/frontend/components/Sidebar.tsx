@@ -1,6 +1,12 @@
 "use client";
 
-import { useState } from "react";
+/**
+ * Sidebar component — upgraded for Group 2.8
+ * Supports optional `alertCount` per nav item (shows red badge).
+ * Policy + Compliance items get live deadline counts fetched from Supabase.
+ */
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -21,12 +27,18 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useUserStore } from "@/store";
+import { supabase } from "@/lib/supabaseClient";
 import type { Role } from "@/lib/authHelpers";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 interface NavItem {
   name: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
+  alertCount?: number; // if > 0, renders a red badge
 }
 
 // Default admin nav items (used when no navItems prop is passed)
@@ -62,12 +74,110 @@ interface SidebarProps {
   role?: Role;
 }
 
+// ---------------------------------------------------------------------------
+// Alert badge sub-component
+// ---------------------------------------------------------------------------
+
+function AlertBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="ml-auto flex-shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-rose-500 text-white text-[10px] font-bold px-1">
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Hook — deadline alert counts (Group 2.8)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetches upcoming compliance deadlines (within 30 days) and overdue items
+ * for the organization, returning counts per module.
+ */
+function useAlertCounts(organizationId?: string) {
+  const [policyCount, setPolicyCount] = useState(0);
+  const [complianceCount, setComplianceCount] = useState(0);
+
+  useEffect(() => {
+    if (!organizationId) return;
+
+    async function fetchCounts() {
+      try {
+        const in30Days = new Date();
+        in30Days.setDate(in30Days.getDate() + 30);
+
+        // Compliance: count overdue + due within 30 days
+        const { data: deadlines } = await supabase
+          .from("compliance_results")
+          .select("id, due_date, status")
+          .eq("organization_id", organizationId)
+          .not("status", "in", '("completed","verified")')
+          .lte("due_date", in30Days.toISOString());
+
+        setComplianceCount((deadlines ?? []).length);
+
+        // Policy: count adopted = "not_started" for policies with mandatory layer
+        // Proxy: policies that exist in the catalog but have no adoption row yet
+        const { data: adoptions } = await supabase
+          .from("organization_policy_adoption")
+          .select("policy_id, status")
+          .eq("organization_id", organizationId)
+          .in("status", ["not_started", "in_progress"]);
+
+        // Count non-adopted (not_started + in_progress) policies as actionable
+        setPolicyCount((adoptions ?? []).filter((a) => a.status === "not_started").length);
+      } catch {
+        // non-fatal — sidebar still renders without counts
+      }
+    }
+
+    fetchCounts();
+
+    // Realtime subscription for compliance_results changes
+    const channel = supabase
+      .channel(`sidebar-alerts-${organizationId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "compliance_results", filter: `organization_id=eq.${organizationId}` },
+        () => fetchCounts()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "organization_policy_adoption", filter: `organization_id=eq.${organizationId}` },
+        () => fetchCounts()
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [organizationId]);
+
+  return { policyCount, complianceCount };
+}
+
+// ---------------------------------------------------------------------------
+// Sidebar
+// ---------------------------------------------------------------------------
+
 export default function Sidebar({ navItems, role }: SidebarProps) {
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { user, logout } = useUserStore();
 
-  const items = navItems ?? defaultNavItems;
+  const { policyCount, complianceCount } = useAlertCounts(user?.organizationId);
+
+  // Merge alert counts into nav items
+  const baseItems = navItems ?? defaultNavItems;
+  const items: NavItem[] = baseItems.map((item) => {
+    if (item.href === "/policy-intelligence" || item.href.includes("policy")) {
+      return { ...item, alertCount: policyCount };
+    }
+    if (item.href === "/compliance" || item.href.includes("compliance")) {
+      return { ...item, alertCount: complianceCount };
+    }
+    return item;
+  });
+
   const userRole = role ?? (user?.role as Role) ?? "admin";
   const badge = ROLE_BADGE[userRole];
 
@@ -90,9 +200,7 @@ export default function Sidebar({ navItems, role }: SidebarProps) {
         </div>
         {!isCollapsed && (
           <div className="flex-1">
-            <h1 className="text-white text-lg font-bold leading-tight">
-              CarbonSense
-            </h1>
+            <h1 className="text-white text-lg font-bold leading-tight">CarbonSense</h1>
             <p className="text-primary text-[10px] font-bold tracking-widest uppercase">
               Intelligence Platform
             </p>
@@ -133,7 +241,8 @@ export default function Sidebar({ navItems, role }: SidebarProps) {
       <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
         {items.map((item) => {
           const Icon = item.icon;
-          const isActive = pathname === item.href;
+          const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+          const count = item.alertCount ?? 0;
 
           return (
             <Link
@@ -148,14 +257,26 @@ export default function Sidebar({ navItems, role }: SidebarProps) {
               )}
               title={isCollapsed ? item.name : undefined}
             >
-              <Icon
-                className={clsx(
-                  "size-4 flex-shrink-0",
-                  isActive && "drop-shadow-[0_0_8px_rgba(11,213,176,0.6)]"
+              {/* Icon with optional red dot when collapsed */}
+              <div className="relative flex-shrink-0">
+                <Icon
+                  className={clsx(
+                    "size-4",
+                    isActive && "drop-shadow-[0_0_8px_rgba(11,213,176,0.6)]"
+                  )}
+                />
+                {/* Collapsed state: tiny dot indicator */}
+                {isCollapsed && count > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-rose-500" />
                 )}
-              />
+              </div>
+
+              {/* Expanded state: label + badge */}
               {!isCollapsed && (
-                <span className="text-sm font-medium">{item.name}</span>
+                <>
+                  <span className="text-sm font-medium flex-1">{item.name}</span>
+                  <AlertBadge count={count} />
+                </>
               )}
             </Link>
           );
@@ -181,9 +302,7 @@ export default function Sidebar({ navItems, role }: SidebarProps) {
           title={isCollapsed ? "Help Center" : undefined}
         >
           <HelpCircle className="size-4 flex-shrink-0" />
-          {!isCollapsed && (
-            <span className="text-sm font-medium">Help Center</span>
-          )}
+          {!isCollapsed && <span className="text-sm font-medium">Help Center</span>}
         </Link>
         <button
           onClick={handleLogout}
@@ -194,9 +313,7 @@ export default function Sidebar({ navItems, role }: SidebarProps) {
           title={isCollapsed ? "Logout" : undefined}
         >
           <LogOut className="size-4 flex-shrink-0" />
-          {!isCollapsed && (
-            <span className="text-sm font-medium">Logout</span>
-          )}
+          {!isCollapsed && <span className="text-sm font-medium">Logout</span>}
         </button>
       </div>
     </aside>

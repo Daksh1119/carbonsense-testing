@@ -32,8 +32,14 @@ def _normalize_multiline_text(value: str) -> str:
 
 
 def _llm_config() -> Dict[str, str]:
+    from dotenv import load_dotenv
+    from pathlib import Path
+    _REPO_ROOT = Path(__file__).resolve().parents[3]
+    load_dotenv(_REPO_ROOT / ".env", override=True)
+
     provider = os.getenv("LLM_PROVIDER", "openrouter").strip().lower()
-    base_url = os.getenv("LLM_API_BASE_URL", "https://openrouter.ai/api/v1").strip().rstrip("/")
+    base_url = os.getenv("LLM_API_BASE_URL",
+                         "https://openrouter.ai/api/v1").strip().rstrip("/")
     model = os.getenv("LLM_MODEL", "openrouter/auto").strip()
     api_key = os.getenv("LLM_API_KEY", "").strip()
     site_url = os.getenv("LLM_SITE_URL", "").strip()
@@ -58,7 +64,8 @@ def _embedding_enabled() -> bool:
 def _call_embeddings(texts: List[str]) -> List[List[float]]:
     cfg = _llm_config()
     if not cfg["api_key"] or not cfg["embed_model"]:
-        raise HTTPException(status_code=500, detail="Missing embedding configuration")
+        raise HTTPException(
+            status_code=500, detail="Missing embedding configuration")
 
     resp = requests.post(
         f"{cfg['base_url']}/embeddings",
@@ -74,7 +81,8 @@ def _call_embeddings(texts: List[str]) -> List[List[float]]:
     )
 
     if resp.status_code >= 400:
-        raise HTTPException(status_code=502, detail=f"Embedding request failed: {resp.status_code} {resp.text[:300]}")
+        raise HTTPException(
+            status_code=502, detail=f"Embedding request failed: {resp.status_code} {resp.text[:300]}")
 
     data = resp.json()
     items = data.get("data") or []
@@ -84,7 +92,8 @@ def _call_embeddings(texts: List[str]) -> List[List[float]]:
         vectors.append([float(v) for v in embedding])
 
     if len(vectors) != len(texts):
-        raise HTTPException(status_code=502, detail="Embedding response size mismatch")
+        raise HTTPException(
+            status_code=502, detail="Embedding response size mismatch")
 
     return vectors
 
@@ -183,8 +192,10 @@ def _extract_org_identity(
     total_emissions_kg: Optional[float] = None,
 ) -> Dict[str, Any]:
     profile = _get_org_profile(organization_id)
-    org_industry = industry or profile.get("industry") or profile.get("sector") or profile.get("business_type") or "sme"
-    org_size = size or profile.get("size") or profile.get("organization_size") or profile.get("company_size") or "sme"
+    org_industry = industry or profile.get("industry") or profile.get(
+        "sector") or profile.get("business_type") or "sme"
+    org_size = size or profile.get("size") or profile.get(
+        "organization_size") or profile.get("company_size") or "sme"
     emissions = total_emissions_kg
     if emissions is None:
         for key in ("total_emissions_kg", "scope1_kg", "scope2_kg", "emissions_kg"):
@@ -221,7 +232,8 @@ def _build_document_summary(policy: Dict[str, Any]) -> Dict[str, Any]:
     requirements = _to_text_list(policy.get("requirements"))
     benefits = _to_text_list(policy.get("benefits"))
     applicability = _to_text_list(policy.get("applicability"))
-    summary = policy.get("document_summary") if isinstance(policy.get("document_summary"), dict) else None
+    summary = policy.get("document_summary") if isinstance(
+        policy.get("document_summary"), dict) else None
     if summary:
         return summary
 
@@ -238,7 +250,8 @@ def _build_document_summary(policy: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _build_policy_steps(policy: Dict[str, Any], requirements_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    steps = policy.get("steps") if isinstance(policy.get("steps"), list) else None
+    steps = policy.get("steps") if isinstance(
+        policy.get("steps"), list) else None
     if steps:
         return steps
 
@@ -327,13 +340,15 @@ def _policy_official_url(policy: Dict[str, Any]) -> str:
 
 
 def _build_policy_funding(policy: Dict[str, Any], requirements_rows: List[Dict[str, Any]], match_score: int) -> Dict[str, Any]:
-    funding = policy.get("funding") if isinstance(policy.get("funding"), dict) else None
+    funding = policy.get("funding") if isinstance(
+        policy.get("funding"), dict) else None
     if funding:
         if not funding.get("application_url"):
             funding["application_url"] = _policy_official_url(policy)
         return funding
 
-    rupee_values = [float(v or 0) for v in [policy.get("estimated_rupee_impact")]]
+    rupee_values = [float(v or 0)
+                    for v in [policy.get("estimated_rupee_impact")]]
     rupee_values.extend(
         float(req.get("estimated_rupee_impact") or 0)
         for req in requirements_rows
@@ -341,7 +356,8 @@ def _build_policy_funding(policy: Dict[str, Any], requirements_rows: List[Dict[s
     )
     estimate = max(rupee_values) if rupee_values else 0
     if estimate <= 0:
-        requirements_weight = sum(float(req.get("weight") or 0) for req in requirements_rows)
+        requirements_weight = sum(float(req.get("weight") or 0)
+                                  for req in requirements_rows)
         category_factor = {
             "energy": 62000,
             "renewable": 80000,
@@ -355,8 +371,10 @@ def _build_policy_funding(policy: Dict[str, Any], requirements_rows: List[Dict[s
             "carbon_market": 76000,
             "climate": 50000,
         }.get(_safe_lower(policy.get("category")), 45000)
-        seed = sum(ord(ch) for ch in str(policy.get("id") or policy.get("name") or "")) % 11
-        estimate = category_factor + (match_score * 650) + (requirements_weight * 2400) + (seed * 1800)
+        seed = sum(ord(ch) for ch in str(policy.get(
+            "id") or policy.get("name") or "")) % 11
+        estimate = category_factor + \
+            (match_score * 650) + (requirements_weight * 2400) + (seed * 1800)
 
     floor = int(round(max(12000.0, estimate * 0.55) / 1000.0) * 1000)
     ceiling = int(round(max(floor + 3000.0, estimate * 1.35) / 1000.0) * 1000)
@@ -376,7 +394,8 @@ def _build_policy_funding(policy: Dict[str, Any], requirements_rows: List[Dict[s
 
 
 def _match_score_for_policy(policy: Dict[str, Any], org: Dict[str, Any]) -> int:
-    applicability = {_safe_lower(item) for item in _to_text_list(policy.get("applicability"))}
+    applicability = {_safe_lower(item) for item in _to_text_list(
+        policy.get("applicability"))}
     category = _safe_lower(policy.get("category"))
     score = 0
 
@@ -407,13 +426,15 @@ def _match_score_for_policy(policy: Dict[str, Any], org: Dict[str, Any]) -> int:
 
 def _policy_match_reason(policy: Dict[str, Any], org: Dict[str, Any]) -> str:
     reasons: List[str] = []
-    applicability = {_safe_lower(item) for item in _to_text_list(policy.get("applicability"))}
+    applicability = {_safe_lower(item) for item in _to_text_list(
+        policy.get("applicability"))}
     if org.get("industry") and org.get("industry") in applicability:
         reasons.append(f"your {org['industry']} profile")
     if org.get("size") and org.get("size") in applicability:
         reasons.append(f"your {org['size']} organization size")
     if float(org.get("total_emissions_kg") or 0) > 0:
-        reasons.append(f"current emissions footprint ({int(float(org.get('total_emissions_kg') or 0))} kgCO2e)")
+        reasons.append(
+            f"current emissions footprint ({int(float(org.get('total_emissions_kg') or 0))} kgCO2e)")
     if not reasons:
         reasons.append("your compliance profile")
     return f"Chosen because {', '.join(reasons)} align with {policy.get('authority') or policy.get('name')} requirements."
@@ -464,7 +485,8 @@ def _policy_status_from_results(policy_id: str, organization_id: Optional[str]) 
 
 
 def _enrich_policy(policy: Dict[str, Any], organization_id: Optional[str], industry: Optional[str], size: Optional[str], total_emissions_kg: Optional[float]) -> Dict[str, Any]:
-    org = _extract_org_identity(organization_id=organization_id, industry=industry, size=size, total_emissions_kg=total_emissions_kg)
+    org = _extract_org_identity(organization_id=organization_id,
+                                industry=industry, size=size, total_emissions_kg=total_emissions_kg)
     requirements_rows = (
         supabase.table("compliance_requirements")
         .select("*")
@@ -475,17 +497,20 @@ def _enrich_policy(policy: Dict[str, Any], organization_id: Optional[str], indus
         or []
     )
     match_score = _match_score_for_policy(policy, org)
-    status_info = _policy_status_from_results(str(policy.get("id")), organization_id)
+    status_info = _policy_status_from_results(
+        str(policy.get("id")), organization_id)
 
     enriched = dict(policy)
     enriched["match_score"] = match_score
     enriched["match_reason"] = _policy_match_reason(policy, org)
     enriched["status"] = status_info["status"]
-    enriched["compliance_progress"] = {"completed": status_info["completed"], "total": status_info["total"]}
+    enriched["compliance_progress"] = {
+        "completed": status_info["completed"], "total": status_info["total"]}
     enriched["external_url"] = _policy_official_url(policy)
     enriched["document_summary"] = _build_document_summary(policy)
     enriched["steps"] = _build_policy_steps(policy, requirements_rows)
-    enriched["funding"] = _build_policy_funding(policy, requirements_rows, match_score)
+    enriched["funding"] = _build_policy_funding(
+        policy, requirements_rows, match_score)
     return enriched
 
 
@@ -495,7 +520,8 @@ def _keyword_score(text: str, keywords: List[str]) -> int:
 
 
 def _load_policy_chunks(policy_id: Optional[str] = None, limit: int = 300) -> List[Dict[str, Any]]:
-    q = supabase.table("policy_chunks").select("id,policy_id,chunk_text,chunk_order,embedding,source")
+    q = supabase.table("policy_chunks").select(
+        "id,policy_id,chunk_text,chunk_order,embedding,source")
     if policy_id:
         q = q.eq("policy_id", policy_id)
     return q.order("chunk_order").limit(limit).execute().data or []
@@ -508,7 +534,8 @@ def _backfill_policy_embeddings(policy_id: Optional[str] = None, limit: int = 50
     q = supabase.table("policy_chunks").select("id,chunk_text")
     if policy_id:
         q = q.eq("policy_id", policy_id)
-    rows = q.is_("embedding", "null").order("chunk_order").limit(limit).execute().data or []
+    rows = q.is_("embedding", "null").order(
+        "chunk_order").limit(limit).execute().data or []
     if not rows:
         return 0
 
@@ -518,7 +545,8 @@ def _backfill_policy_embeddings(policy_id: Optional[str] = None, limit: int = 50
     updated = 0
     for row, vector in zip(rows, vectors):
         try:
-            supabase.table("policy_chunks").update({"embedding": vector}).eq("id", row["id"]).execute()
+            supabase.table("policy_chunks").update(
+                {"embedding": vector}).eq("id", row["id"]).execute()
             updated += 1
         except Exception:
             continue
@@ -562,7 +590,8 @@ def _lexical_retrieve_policy_context(question: str, policy_id: Optional[str] = N
     if not question:
         return []
 
-    words = [w for w in re.findall(r"[a-zA-Z0-9_]{3,}", question.lower()) if len(w) >= 3]
+    words = [w for w in re.findall(
+        r"[a-zA-Z0-9_]{3,}", question.lower()) if len(w) >= 3]
     chunks = _load_policy_chunks(policy_id=policy_id, limit=300)
 
     scored: List[Tuple[float, Dict[str, Any]]] = []
@@ -603,8 +632,10 @@ def _retrieve_policy_context(question: str, policy_id: Optional[str] = None, top
     if not question:
         return []
 
-    vector_rows = _vector_retrieve_policy_context(question, policy_id=policy_id, top_k=top_k)
-    lexical_rows = _lexical_retrieve_policy_context(question, policy_id=policy_id, top_k=top_k)
+    vector_rows = _vector_retrieve_policy_context(
+        question, policy_id=policy_id, top_k=top_k)
+    lexical_rows = _lexical_retrieve_policy_context(
+        question, policy_id=policy_id, top_k=top_k)
 
     if vector_rows:
         return _dedupe_context_rows(vector_rows + lexical_rows, top_k=top_k)
@@ -639,12 +670,14 @@ def _chat_completion(system_prompt: str, user_prompt: str) -> Tuple[str, str]:
 
     resp = requests.post(url, headers=headers, json=body, timeout=45)
     if resp.status_code >= 400:
-        raise HTTPException(status_code=502, detail=f"LLM request failed: {resp.status_code} {resp.text[:300]}")
+        raise HTTPException(
+            status_code=502, detail=f"LLM request failed: {resp.status_code} {resp.text[:300]}")
 
     data = resp.json()
     choices = data.get("choices") or []
     if not choices:
-        raise HTTPException(status_code=502, detail="LLM response had no choices")
+        raise HTTPException(
+            status_code=502, detail="LLM response had no choices")
 
     text = (choices[0].get("message") or {}).get("content") or ""
     return _normalize_multiline_text(text), cfg["model"]
@@ -662,7 +695,8 @@ def ask_policy(
     if policy_id:
         policy_context = get_policy(policy_id)
 
-    chunks = _retrieve_policy_context(user_question, policy_id=policy_id, top_k=5)
+    chunks = _retrieve_policy_context(
+        user_question, policy_id=policy_id, top_k=5)
     context_block = "\n\n".join(
         [
             f"[chunk {idx + 1} | {c.get('retrieval_mode', 'lexical')} | similarity={round(float(c.get('similarity') or 0), 3)}]\n{c.get('chunk_text', '')}"
@@ -670,9 +704,11 @@ def ask_policy(
         ]
     )
 
-    policy_name = policy_context.get("name") if policy_context else "General Indian policy context"
+    policy_name = policy_context.get(
+        "name") if policy_context else "General Indian policy context"
     policy_desc = policy_context.get("description") if policy_context else ""
-    requirements_summary = "; ".join([str(r.get("name") or "") for r in policy_context.get("requirements_rows", [])[:6]])
+    requirements_summary = "; ".join(
+        [str(r.get("name") or "") for r in policy_context.get("requirements_rows", [])[:6]])
 
     system_prompt = (
         "You are a carbon compliance advisor for Indian SMEs. "
@@ -724,14 +760,16 @@ def ask_policy(
 
 
 def list_requirements(level: Optional[str] = None, industry: Optional[str] = None) -> List[Dict[str, Any]]:
-    q = supabase.table("compliance_requirements").select("*, policies(name, short_name, category, layer)").order("created_at")
+    q = supabase.table("compliance_requirements").select(
+        "*, policies(name, short_name, category, layer)").order("created_at")
     if level:
         q = q.eq("level", level)
 
     rows = q.execute().data or []
     if industry:
         ind = industry.strip().lower()
-        rows = [r for r in rows if ind in [str(x).lower() for x in (r.get("industry") or [])] or "sme" in [str(x).lower() for x in (r.get("industry") or [])]]
+        rows = [r for r in rows if ind in [str(x).lower() for x in (r.get(
+            "industry") or [])] or "sme" in [str(x).lower() for x in (r.get("industry") or [])]]
     return rows
 
 
@@ -746,7 +784,8 @@ def get_requirement(requirement_id: str) -> Dict[str, Any]:
         or []
     )
     if not rows:
-        raise HTTPException(status_code=404, detail="Compliance requirement not found")
+        raise HTTPException(
+            status_code=404, detail="Compliance requirement not found")
     return rows[0]
 
 
@@ -762,17 +801,20 @@ def get_result_steps(organization_id: str, result_id: str) -> List[Dict[str, Any
         or []
     )
     if not rows:
-        raise HTTPException(status_code=404, detail="Compliance result not found")
+        raise HTTPException(
+            status_code=404, detail="Compliance result not found")
 
     result = rows[0]
     req = result.get("compliance_requirements") or {}
     policy = req.get("policies") or {}
-    steps = policy.get("steps") if isinstance(policy.get("steps"), list) else None
+    steps = policy.get("steps") if isinstance(
+        policy.get("steps"), list) else None
     if steps:
         return steps
 
     synthesized = []
-    synthesized.append({"step_number": 1, "title": req.get("name"), "status": result.get("status"), "verification_type": req.get("verification_method")})
+    synthesized.append({"step_number": 1, "title": req.get("name"), "status": result.get(
+        "status"), "verification_type": req.get("verification_method")})
     return synthesized
 
 
@@ -788,7 +830,8 @@ def get_evidence_history(organization_id: str, result_id: str) -> List[Dict[str,
         or []
     )
     if not rows:
-        raise HTTPException(status_code=404, detail="Compliance result not found")
+        raise HTTPException(
+            status_code=404, detail="Compliance result not found")
 
     row = rows[0]
     history: List[Dict[str, Any]] = []
@@ -821,7 +864,8 @@ def _default_due_date_for_requirement(requirement: Dict[str, Any]) -> str:
 
 
 def _ensure_compliance_results_initialized(organization_id: str) -> int:
-    requirements = supabase.table("compliance_requirements").select("id, level").execute().data or []
+    requirements = supabase.table("compliance_requirements").select(
+        "id, level").execute().data or []
     if not requirements:
         return 0
 
@@ -833,9 +877,11 @@ def _ensure_compliance_results_initialized(organization_id: str) -> int:
         .data
         or []
     )
-    existing_ids = {str(row.get("requirement_id")) for row in existing if row.get("requirement_id")}
+    existing_ids = {str(row.get("requirement_id"))
+                    for row in existing if row.get("requirement_id")}
 
-    missing = [req for req in requirements if str(req.get("id")) not in existing_ids]
+    missing = [req for req in requirements if str(
+        req.get("id")) not in existing_ids]
     if not missing:
         return 0
 
@@ -851,7 +897,8 @@ def _ensure_compliance_results_initialized(organization_id: str) -> int:
         for req in missing
     ]
 
-    supabase.table("compliance_results").upsert(rows, on_conflict="organization_id,requirement_id").execute()
+    supabase.table("compliance_results").upsert(
+        rows, on_conflict="organization_id,requirement_id").execute()
     return len(rows)
 
 
@@ -861,7 +908,8 @@ def list_results(organization_id: str, level: Optional[str] = None, status: Opti
     req_rows = list_requirements(level=level)
     req_by_id = {r["id"]: r for r in req_rows}
 
-    q = supabase.table("compliance_results").select("*").eq("organization_id", organization_id)
+    q = supabase.table("compliance_results").select(
+        "*").eq("organization_id", organization_id)
     if status:
         q = q.eq("status", status)
     results = q.execute().data or []
@@ -908,9 +956,12 @@ def _score_from_requirements_and_results(requirements: List[Dict[str, Any]], res
     def pct(num: float, den: float) -> float:
         return (num / den) if den > 0 else 0.0
 
-    data_score = round(pct(achieved_by_type["data"], total_by_type["data"]) * 40, 2)
-    action_score = round(pct(achieved_by_type["action"], total_by_type["action"]) * 40, 2)
-    reporting_score = round(pct(achieved_by_type["reporting"], total_by_type["reporting"]) * 20, 2)
+    data_score = round(
+        pct(achieved_by_type["data"], total_by_type["data"]) * 40, 2)
+    action_score = round(
+        pct(achieved_by_type["action"], total_by_type["action"]) * 40, 2)
+    reporting_score = round(
+        pct(achieved_by_type["reporting"], total_by_type["reporting"]) * 20, 2)
     total_score = round(data_score + action_score + reporting_score, 2)
 
     return {
@@ -926,8 +977,10 @@ def _score_from_requirements_and_results(requirements: List[Dict[str, Any]], res
 
 
 def recalculate_score(organization_id: str, snapshot_date: Optional[date] = None) -> Dict[str, Any]:
-    req_rows = supabase.table("compliance_requirements").select("*").execute().data or []
-    res_rows = supabase.table("compliance_results").select("*").eq("organization_id", organization_id).execute().data or []
+    req_rows = supabase.table("compliance_requirements").select(
+        "*").execute().data or []
+    res_rows = supabase.table("compliance_results").select(
+        "*").eq("organization_id", organization_id).execute().data or []
 
     scores = _score_from_requirements_and_results(req_rows, res_rows)
     snap = snapshot_date or datetime.now(timezone.utc).date()
@@ -942,7 +995,8 @@ def recalculate_score(organization_id: str, snapshot_date: Optional[date] = None
         "breakdown": scores["breakdown"],
     }
 
-    supabase.table("compliance_score_history").upsert(record, on_conflict="organization_id,snapshot_date").execute()
+    supabase.table("compliance_score_history").upsert(
+        record, on_conflict="organization_id,snapshot_date").execute()
     return record
 
 
@@ -963,7 +1017,8 @@ def get_current_score(organization_id: str) -> Dict[str, Any]:
 
 
 def score_history(organization_id: str, days: int = 365) -> List[Dict[str, Any]]:
-    since = (datetime.now(timezone.utc).date() - timedelta(days=max(days, 1))).isoformat()
+    since = (datetime.now(timezone.utc).date() -
+             timedelta(days=max(days, 1))).isoformat()
     return (
         supabase.table("compliance_score_history")
         .select("*")
@@ -997,7 +1052,8 @@ def verify_result(
         or []
     )
     if not rows:
-        raise HTTPException(status_code=404, detail="Compliance result not found")
+        raise HTTPException(
+            status_code=404, detail="Compliance result not found")
 
     current = rows[0]
     patch: Dict[str, Any] = {}
@@ -1029,7 +1085,8 @@ def verify_result(
         or []
     )
     req_weight = float((req[0] if req else {}).get("weight") or 0)
-    achieved = bool(patch.get("verified", current.get("verified"))) or str(patch.get("status", current.get("status", ""))).lower() in {"completed", "verified"}
+    achieved = bool(patch.get("verified", current.get("verified"))) or str(patch.get(
+        "status", current.get("status", ""))).lower() in {"completed", "verified"}
     patch["score_contribution"] = req_weight if achieved else 0
 
     upd = (
@@ -1067,7 +1124,8 @@ def upcoming_deadlines(organization_id: str, within_days: int = 90) -> List[Dict
 
 def top_actions(organization_id: str, industry: Optional[str] = None, top_n: int = 3) -> List[Dict[str, Any]]:
     requirements = list_requirements(industry=industry)
-    results = supabase.table("compliance_results").select("*").eq("organization_id", organization_id).execute().data or []
+    results = supabase.table("compliance_results").select(
+        "*").eq("organization_id", organization_id).execute().data or []
     result_by_req = {r.get("requirement_id"): r for r in results}
 
     total_by_type = {"data": 0.0, "action": 0.0, "reporting": 0.0}
@@ -1077,7 +1135,7 @@ def top_actions(organization_id: str, industry: Optional[str] = None, top_n: int
             total_by_type[t] += float(req.get("weight") or 0)
 
     dimension_max = {"data": 40.0, "action": 40.0, "reporting": 20.0}
-    effort_map = {"data_change": 1.0, "manual": 2.0, "evidence_upload": 2.0}
+    effort_map = {"data_change": 1.0, "manual": 2.0, "evidence_upload": 2.0, "ocr_extract": 3.0}
 
     candidates: List[Dict[str, Any]] = []
     for req in requirements:
@@ -1088,13 +1146,16 @@ def top_actions(organization_id: str, industry: Optional[str] = None, top_n: int
         req_type = str(req.get("type") or "")
         req_weight = float(req.get("weight") or 0)
         max_for_type = total_by_type.get(req_type, 0)
-        score_gain = (req_weight / max_for_type) * dimension_max.get(req_type, 0) if max_for_type > 0 else 0
+        score_gain = (req_weight / max_for_type) * \
+            dimension_max.get(req_type, 0) if max_for_type > 0 else 0
 
         rupee_impact = float(req.get("estimated_rupee_impact") or 0)
         co2_impact = float(req.get("estimated_co2_kg_impact") or 0)
-        effort = effort_map.get(str(req.get("verification_method") or "manual"), 2.0)
+        effort = effort_map.get(
+            str(req.get("verification_method") or "manual"), 2.0)
 
-        value = (score_gain + (rupee_impact / 50000.0) + (co2_impact / 1000.0)) / effort
+        value = (score_gain + (rupee_impact / 50000.0) +
+                 (co2_impact / 1000.0)) / effort
         candidates.append(
             {
                 "requirement_id": req["id"],
@@ -1152,10 +1213,12 @@ def benchmark(organization_id: str, industry: str = "sme") -> Dict[str, Any]:
 
 
 def rupee_impact_summary(organization_id: str) -> Dict[str, Any]:
-    requirements = supabase.table("compliance_requirements").select("id, estimated_rupee_impact, estimated_co2_kg_impact").execute().data or []
+    requirements = supabase.table("compliance_requirements").select(
+        "id, estimated_rupee_impact, estimated_co2_kg_impact").execute().data or []
     req_map = {r["id"]: r for r in requirements}
 
-    results = supabase.table("compliance_results").select("requirement_id,status,verified").eq("organization_id", organization_id).execute().data or []
+    results = supabase.table("compliance_results").select("requirement_id,status,verified").eq(
+        "organization_id", organization_id).execute().data or []
 
     unlocked_rupees = 0.0
     unlocked_co2 = 0.0
@@ -1169,8 +1232,10 @@ def rupee_impact_summary(organization_id: str) -> Dict[str, Any]:
         rupees = float(req.get("estimated_rupee_impact") or 0)
         co2 = float(req.get("estimated_co2_kg_impact") or 0)
 
-        achieved = bool(row.get("verified")) or str(row.get("status") or "").lower() in {"completed", "verified"}
-        in_progress = str(row.get("status") or "").lower() in {"in_progress", "not_started", "overdue"}
+        achieved = bool(row.get("verified")) or str(
+            row.get("status") or "").lower() in {"completed", "verified"}
+        in_progress = str(row.get("status") or "").lower() in {
+            "in_progress", "not_started", "overdue"}
 
         if achieved:
             unlocked_rupees += rupees

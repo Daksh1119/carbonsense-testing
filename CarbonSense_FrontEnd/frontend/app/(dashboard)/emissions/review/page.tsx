@@ -105,15 +105,46 @@ export default function ReviewPage() {
       });
 
       clearAll();
-      showSuccessToast("All emission entries saved successfully!");
+
+      // Group 4.2 — show progress toast with % change vs last cycle
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+      try {
+        const trendRes = await fetch(`${apiUrl}/assessment-cycles/${organizationId}/trend`);
+        if (trendRes.ok) {
+          const trend = await trendRes.json();
+          const series = trend?.series ?? [];
+          if (series.length >= 2) {
+            const latest = series[series.length - 1];
+            const changePct: number | null = latest.change_pct;
+            if (changePct !== null && changePct !== undefined) {
+              const down = changePct < 0;
+              const absChange = Math.abs(changePct).toFixed(1);
+              const msg = down
+                ? `📉 Emissions down ${absChange}% from last period — great progress!`
+                : `📈 Emissions up ${absChange}% from last period. Check Recommendations for next steps.`;
+              showSuccessToast(msg);
+            } else {
+              showSuccessToast("All emission entries saved successfully!");
+            }
+          } else {
+            showSuccessToast("All emission entries saved! This is your first recorded period.");
+          }
+        } else {
+          showSuccessToast("All emission entries saved successfully!");
+        }
+      } catch {
+        showSuccessToast("All emission entries saved successfully!");
+      }
+
       setTimeout(() => {
         router.push("/detailed-log");
-      }, 1500);
+      }, 2000);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit entries";
       showErrorToast(message);
     }
   };
+
 
   const handleEdit = (category: string) => {
     const paths: { [key: string]: string } = {

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useDashboardData } from "@/hooks";
 import StatsCard from "@/components/StatsCard";
 import DashboardCard from "@/components/DashboardCard";
@@ -10,6 +11,8 @@ import { CardSkeleton, ChartSkeleton, ErrorState } from "@/components/ui";
 import Button from "@/components/Button";
 import { Breadcrumb } from "@/components/navigation";
 import { useRouter } from "next/navigation";
+import { useUserStore } from "@/store";
+
 
 import {
   Area,
@@ -98,6 +101,31 @@ const getComplianceRingColor = (score: number) => {
 export default function DashboardPage() {
   const { data, isLoading, error, refetch } = useDashboardData();
   const router = useRouter();
+  const { user } = useUserStore();
+
+  // Group 4.3 — fetch cycle boundary data for ReferenceLine markers
+  const [cycleMarkers, setCycleMarkers] = useState<Array<{ monthLabel: string; label: string }>>([]);
+
+  useEffect(() => {
+    const orgId = user?.organizationId;
+    if (!orgId) return;
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+    fetch(`${apiUrl}/assessment-cycles/${orgId}/trend`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((trend) => {
+        const series = trend?.series ?? [];
+        const markers = series
+          .filter((s: { period_start?: string }) => s.period_start)
+          .map((s: { period_start: string; source_type?: string }) => ({
+            monthLabel: formatMonthLabel(s.period_start),
+            label: s.source_type === 'company_profile' ? 'Profile'
+                 : s.source_type === 'manual_entry' ? 'Manual'
+                 : 'Upload',
+          }));
+        setCycleMarkers(markers);
+      })
+      .catch(() => {});
+  }, [user?.organizationId]);
 
   // Show error state
   if (error && !isLoading) {
@@ -447,6 +475,25 @@ export default function DashboardPage() {
                   label={{ value: "Current", fill: "#94a3b8", fontSize: 11, position: "insideTopRight" }}
                 />
               )}
+
+              {/* Group 4.3 — cycle boundary markers */}
+              {cycleMarkers.map((marker, idx) => (
+                <ReferenceLine
+                  key={`cycle-${idx}`}
+                  x={marker.monthLabel}
+                  stroke="#0bd5b0"
+                  strokeOpacity={0.35}
+                  strokeWidth={1.5}
+                  strokeDasharray="2 4"
+                  label={{
+                    value: marker.label,
+                    fill: "#0bd5b0",
+                    fontSize: 9,
+                    position: "insideTopLeft",
+                    opacity: 0.7,
+                  }}
+                />
+              ))}
 
               <Area
                 type="monotone"

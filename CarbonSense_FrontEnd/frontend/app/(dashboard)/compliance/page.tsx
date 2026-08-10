@@ -51,7 +51,16 @@ function daysUntil(value?: string | null): number {
 function normalizeTask(item: ComplianceResultRecord) {
   const level = (item.requirement?.level || "L3").toUpperCase();
   const priority = level === "L1" ? "critical" : level === "L2" ? "high" : "medium";
-  const status = item.status === "not_started" ? "pending" : item.status;
+  const isDone = item.verified || item.status === "verified" || item.status === "completed";
+  const rawPct = Number(item.progress_pct || 0);
+  const calculatedProgress = isDone
+    ? 100
+    : rawPct > 0
+    ? rawPct
+    : item.status === "in_progress"
+    ? 50
+    : 0;
+
   return {
     id: item.id,
     requirementId: item.requirement_id,
@@ -61,11 +70,11 @@ function normalizeTask(item: ComplianceResultRecord) {
     deadline: formatDate(item.due_date),
     dueDateRaw: item.due_date || null,
     daysLeft: daysUntil(item.due_date),
-    status,
-    progress: Math.max(0, Math.min(100, Number(item.progress_pct || 0))),
+    status: isDone ? "completed" : (item.status === "not_started" ? "pending" : item.status),
+    progress: Math.max(0, Math.min(100, calculatedProgress)),
     priority,
     completedDate: formatDate(item.completed_at),
-    verifiedBy: item.verified ? "Verified" : "Pending verification",
+    verifiedBy: item.verified ? "Verified via Evidence Upload" : "Pending verification",
   };
 }
 
@@ -269,6 +278,28 @@ export default function CompliancePage() {
           Live compliance data is currently unavailable. Showing available task data only.
         </div>
       ) : null}
+
+      {/* Group 3C.1 — Compliance score framing (plain language) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="bg-sky-500/8 border border-sky-500/20 rounded-xl px-4 py-3">
+          <p className="text-xs font-semibold text-sky-400 uppercase tracking-wider mb-1">Data Score</p>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            How much of your required emissions data is recorded. Increases as you upload or enter data.
+          </p>
+        </div>
+        <div className="bg-teal-500/8 border border-teal-500/20 rounded-xl px-4 py-3">
+          <p className="text-xs font-semibold text-teal-400 uppercase tracking-wider mb-1">Action Score</p>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Rises when you mark a Recommendation as <strong className="text-white">Implemented</strong> or a Policy as <strong className="text-white">Adopted</strong>. Real actions, not paperwork.
+          </p>
+        </div>
+        <div className="bg-purple-500/8 border border-purple-500/20 rounded-xl px-4 py-3">
+          <p className="text-xs font-semibold text-purple-400 uppercase tracking-wider mb-1">Reporting Score</p>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Tracks regulatory disclosure progress — submission of reports, evidence, and audit documentation.
+          </p>
+        </div>
+      </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
@@ -490,9 +521,9 @@ export default function CompliancePage() {
         </div>
       </DashboardCard>
 
-      <RequirementDetailModal isOpen={detailOpen} onClose={() => setDetailOpen(false)} requirement={selectedTask?.requirement || null} />
-      <UpdateProgressModal isOpen={progressOpen} onClose={() => setProgressOpen(false)} steps={stepRows} />
-      <EvidenceUploadPanel isOpen={evidenceOpen} onClose={() => setEvidenceOpen(false)} requirementId={selectedTask?.requirementId || null} />
+      <RequirementDetailModal isOpen={detailOpen} onClose={() => setDetailOpen(false)} requirement={selectedTask?.requirement || null} policyId={String((selectedTask?.requirement as Record<string, unknown>)?.policy_id || "")} />
+      <UpdateProgressModal isOpen={progressOpen} onClose={() => setProgressOpen(false)} steps={stepRows} onSuccess={refresh} />
+      <EvidenceUploadPanel isOpen={evidenceOpen} onClose={() => setEvidenceOpen(false)} requirementId={selectedTask?.requirementId || null} onSuccess={refresh} />
     </div>
   );
 }

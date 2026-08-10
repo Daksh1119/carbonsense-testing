@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:clean": "npx rimraf@5 .next && next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -12,16 +13,19 @@
     "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/supabase-js": "^2.49.1",
     "@tanstack/react-table": "^8.21.3",
+    "@types/nodemailer": "^8.0.1",
     "clsx": "^2.1.1",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.378.0",
     "next": "14.2.3",
     "next-themes": "^0.4.6",
+    "nodemailer": "^9.0.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-dropzone": "^15.0.0",
     "react-hot-toast": "^2.6.0",
     "recharts": "^2.15.4",
+    "resend": "^6.18.1",
     "tailwind-merge": "^2.3.0",
     "zustand": "^5.0.11"
   },

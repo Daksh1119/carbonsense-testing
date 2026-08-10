@@ -11,10 +11,12 @@ function isUuid(value?: string | null): boolean {
 
 function getSafeUserContext(): { organizationId: string; userId: string } {
   const ctx = getCurrentUserContext();
+  const defaultOrg = process.env.NEXT_PUBLIC_DEFAULT_ORGANIZATION_ID || "8b8f7ce2-35c8-4b1a-9eb4-de7d4f29ea1f";
+  const defaultUser = process.env.NEXT_PUBLIC_DEFAULT_USER_ID || "17ee8f62-8a18-42b1-be0c-b0498f122034";
 
   return {
-    organizationId: isUuid(ctx.organizationId) ? ctx.organizationId : "",
-    userId: isUuid(ctx.userId) ? ctx.userId : "",
+    organizationId: isUuid(ctx.organizationId) ? ctx.organizationId : defaultOrg,
+    userId: isUuid(ctx.userId) ? ctx.userId : defaultUser,
   };
 }
 
@@ -31,13 +33,27 @@ function buildUrl(path: string, query?: Record<string, string | number | boolean
   return `${apiBaseUrl}${path}${suffix}`;
 }
 
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(body?.detail || body?.message || `Request failed: ${response.status}`);
+async function fetchJson<T>(url: string, init?: RequestInit, retries = 1): Promise<T> {
+  try {
+    const response = await fetch(url, init);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(body?.detail || body?.message || `Request failed: ${response.status}`);
+    }
+    return body as T;
+  } catch (err) {
+    if (
+      retries > 0 &&
+      err instanceof Error &&
+      (err.message.includes("ConnectionTerminated") ||
+        err.message.includes("Failed to fetch") ||
+        err.message.includes("Server disconnected"))
+    ) {
+      await new Promise((res) => setTimeout(res, 300));
+      return fetchJson<T>(url, init, retries - 1);
+    }
+    throw err;
   }
-  return body as T;
 }
 
 export interface PolicyRecord {
@@ -351,3 +367,57 @@ export async function askPolicyQuestion(payload: {
     interaction: body?.interaction,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Group 3B.3 — Policy adoption status
+// ---------------------------------------------------------------------------
+
+export type PolicyAdoptionStatus = "not_started" | "in_progress" | "adopted" | "not_applicable";
+
+export interface PolicyAdoptionRecord {
+  id: string;
+  organization_id: string;
+  policy_id: string;
+  status: PolicyAdoptionStatus;
+  status_updated_at: string | null;
+  evidence_url: string | null;
+  notes: string | null;
+}
+
+/** Fetch all adoption rows for an org (from organization_policy_adoption table via Supabase). */
+export async function fetchPolicyAdoptions(organizationId: string): Promise<PolicyAdoptionRecord[]> {
+  const { supabase } = await import("@/lib/supabaseClient");
+  const { data, error } = await supabase
+    .from("organization_policy_adoption")
+    .select("*")
+    .eq("organization_id", organizationId);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as PolicyAdoptionRecord[];
+}
+
+/** Upsert a policy adoption row (insert or update). */
+export async function upsertPolicyAdoption(
+  organizationId: string,
+  policyId: string,
+  status: PolicyAdoptionStatus,
+  userId: string
+): Promise<PolicyAdoptionRecord> {
+  const { supabase } = await import("@/lib/supabaseClient");
+  const { data, error } = await supabase
+    .from("organization_policy_adoption")
+    .upsert(
+      {
+        organization_id: organizationId,
+        policy_id: policyId,
+        status,
+        status_updated_at: new Date().toISOString(),
+        status_updated_by: userId,
+      },
+      { onConflict: "organization_id,policy_id" }
+    )
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as PolicyAdoptionRecord;
+}
+

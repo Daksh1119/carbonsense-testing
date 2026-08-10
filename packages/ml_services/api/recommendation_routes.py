@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from ml_services.common.authz import ensure_permission, ensure_user_in_org
+from ml_services.common.supabase_client import supabase
 from ml_services.recommendations.service import (
     generate_and_store_recommendations,
     list_session_recommendations,
@@ -41,6 +42,15 @@ class FeedbackInput(BaseModel):
     feedback_type: str
     feedback_text: Optional[str] = None
     feedback_payload: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ItemStatusUpdate(BaseModel):
+    """Group 3A.3 — update implementation_status on a recommendation_items row."""
+    user_id: str
+    implementation_status: str  # proposed | in_progress | implemented | rejected
+
+    class Config:
+        extra = "ignore"
 
 
 @router.post("/generate")
@@ -82,3 +92,62 @@ def create_recommendation_feedback(session_id: str, recommendation_id: str, payl
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save recommendation feedback: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Group 3A.3 — recommendation_items endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/items")
+def list_recommendation_items(organization_id: str, status: Optional[str] = None):
+    """
+    List recommendation_items for an organization.
+    Optionally filter by implementation_status.
+    """
+    try:
+        q = (
+            supabase.table("recommendation_items")
+            .select("*")
+            .eq("organization_id", organization_id)
+            .order("created_at", desc=True)
+        )
+        if status:
+            q = q.eq("implementation_status", status)
+        res = q.execute()
+        return {"items": res.data or [], "count": len(res.data or [])}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list recommendation items: {e}")
+
+
+@router.patch("/items/{item_id}/status")
+def update_item_status(item_id: str, payload: ItemStatusUpdate):
+    """
+    Group 3A.3 — update implementation_status on a single recommendation_item.
+    Valid transitions: proposed → in_progress → implemented | rejected.
+    """
+    valid_statuses = {"proposed", "in_progress", "implemented", "rejected"}
+    if payload.implementation_status not in valid_statuses:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+        )
+    try:
+        res = (
+            supabase.table("recommendation_items")
+            .update({
+                "implementation_status": payload.implementation_status,
+                "status_updated_at": "now()",
+                "status_updated_by": payload.user_id,
+            })
+            .eq("id", item_id)
+            .execute()
+        )
+        if not res.data:
+            raise HTTPException(status_code=404, detail=f"Item {item_id} not found")
+        return {"item": res.data[0]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update item status: {e}")
+
+

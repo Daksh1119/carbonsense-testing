@@ -865,3 +865,117 @@ This repository is licensed under the **MIT License**.
 **Document Version:** 1.0  
 **Repository Version:** As of commit 19bffc9eb60886e919c79571ed436b9f15f0116a
 
+---
+
+## 🚀 Dynamic Platform Upgrade — August 2026
+
+> **Document Version 2.0** — Updated to reflect the complete Groups 1–6 implementation from `CarbonSense_Dynamic_Platform_Plan (4).md`.
+
+### New Database Tables & Columns
+
+| Table | What Changed | Purpose |
+|-------|-------------|---------|
+| `organizations` | +`sector`, `company_size_category`, `employee_count`, `electricity_usage_kwh_monthly`, `computers_count`, `facility_area_sqft`, `vehicle_fleet_count`, `business_travel_km_annual`, `renewable_energy_pct`, `water_usage_kl_monthly`, `waste_generated_kg_monthly`, `working_days_per_week`, `annual_turnover_range`, `has_sustainability_certification`, `profile_status`, `profile_completed_at`, `state`, `udyam_registration_number`, `udyam_category` | Onboarding profile and baseline estimation |
+| `assessment_cycles` | New table | One row per data event (upload / manual entry / profile completion). Single source of truth for all time-series analysis. |
+| `recommendation_catalog` | New table | Curated intervention library per sector+category. Seeded with ~35 entries across 7 sectors (Manufacturing, IT/ITES, Textiles, Logistics, F&B, Retail, Healthcare). Also: `+is_active` for admin soft-delete. |
+| `organization_policy_adoption` | New table | Tracks per-org, per-policy adoption status (not_started / in_progress / adopted / not_applicable). Feeds Compliance Action Score. |
+| `recommendation_items` | New child table of `recommendation_sessions`. `+assigned_to uuid` (Group 5.2) | Per-recommendation lifecycle tracking. |
+| `recommendation_sessions` | `+implementation_status`, `+status_updated_at`, `+status_updated_by`, `+source_input_type`, `+actual_impact_tco2e` | Session-level metadata |
+| `policies` | `+is_active`, `+applicability text[]`, `+external_url`, `+effective_date`, `+review_date` | Admin-editable portal links and deadlines |
+| `teme_runs`, `recommendation_sessions`, `policy_compliance_results` | `+cycle_id` FK | Ties all analysis runs to a specific assessment cycle |
+
+**Postgres View:** `latest_cycle_per_org` — returns the most recent `status = 'ready'` cycle per organization. All "show latest data" queries should join through this view, not scatter `ORDER BY created_at DESC LIMIT 1` queries across the codebase.
+
+### New API Endpoints
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `POST /api/assessment-cycles/{cycle_id}/analyze` | POST | Runs TEME → recommendations → compliance for a cycle. Called automatically after upload. |
+| `GET /api/assessment-cycles/{orgId}/trend` | GET | Returns time-series of cycle emissions at `weekly\|monthly\|yearly` granularity. |
+| `GET /recommendations/items` | GET | Returns `recommendation_items` for the org's current cycle. |
+| `PATCH /recommendations/items/{item_id}/status` | PATCH | Updates item `implementation_status`. Writes `status_updated_at`, `status_updated_by`. |
+
+### Cycle-Based Data Flow
+
+```
+User uploads CSV / fills manual form / completes company profile
+           │
+           ▼
+  ingestion_routes.py creates assessment_cycles row (source_type)
+           │
+           ▼
+  POST /api/assessment-cycles/{cycle_id}/analyze
+    ├── TEME forecast    → teme_runs (cycle_id)
+    ├── Recommendations  → recommendation_sessions + recommendation_items (cycle_id)
+    └── Compliance       → policy_compliance_results (cycle_id)
+           │
+           ▼
+  latest_cycle_per_org view → all dashboard/analytics queries read from here
+```
+
+**Dashboard and Analytics always agree on the same total** because both read through `latest_cycle_per_org`, not independent queries.
+
+### Role-Based Changes
+
+| Role | New Capabilities |
+|------|----------------|
+| **Admin** | `/admin/recommendation-catalog` — CRUD on catalog entries without deploy. `/admin/policy-library` — edit portal URLs, deadlines, applicability tags per policy without deploy. Both pages are nav-linked in the admin sidebar. |
+| **Manager** | Onboarding form at `/onboarding/company-profile` (required on first login). Partial-profile banner in dashboard layout. Per-recommendation status controls (Start / Implemented / Dismiss). **Assign To** dropdown per recommendation item to delegate to a viewer. Policy adoption status control per policy card (saves to `organization_policy_adoption`). PolicyChat enriched with live org sector/size/emissions context. Analytics granularity selector (Weekly/Monthly/Yearly). |
+| **Viewer** | `/viewer/my-tasks` page — assigned recommendation items with "Start" button. `My Tasks` nav item in viewer sidebar. Email editable from Settings → Profile. |
+
+### Policy Intelligence (3B)
+
+- **Match score** is deterministic (0–100) computed by `_match_score_for_policy` in `packages/ml_services/policy_compliance/service.py`:
+  - Sector/industry exact match: 35 pts
+  - Company size / Udyam category: 25 pts
+  - Emissions volume × category relevance: 20 pts
+  - Mandatory/voluntary layer: 10 pts
+  - Requirement breadth: 10 pts
+  - State-specific bonus: +5 pts
+- **PolicyDrawer** now shows: step-by-step plan (`policy.steps[]`), deadline chip, verified official gov URL (with caution note), and collapsible step list.
+- **PolicyChat** sends `industry`, `organizationSize`, and `totalEmissionsKg` to the backend before every LLM call for org-specific answers.
+
+### Compliance (3C)
+
+- **Action Score** now has real signal: `organization_policy_adoption.status = 'adopted'` count + `recommendation_items.implementation_status = 'implemented'` count both feed it.
+- **RequirementDetailModal** has an expandable AI chat scoped to the specific requirement — every question is prefixed `"Regarding the compliance requirement '...':"` before hitting the backend.
+
+### Task Assignment (5.2)
+
+- `recommendation_items.assigned_to` (nullable uuid FK → `user_profiles.id`).
+- RLS scopes viewer writes to `assigned_to = auth.uid()` only — they cannot write anything else.
+- Manager "Assign To" dropdown appears per recommendation card when the org has viewer members.
+- Viewer `/viewer/my-tasks` page surfaces all items where `assigned_to = current_user_id`, active vs done separated.
+
+### Catalog Seed Content (6.3)
+
+`supabase/migrations/20260809_catalog_seed.sql` seeds ~35 entries covering:
+- Manufacturing (10 entries: LED, VFDs, solar, steam recovery, scrap, coolant recycling)
+- IT/ITES (7 entries: power mgmt, cloud migration, HVAC, carpooling, hybrid-remote, e-waste, EPEAT)
+- Textiles (4 entries: condensate, solar thermal, ZLD, GOTS fibre)
+- Logistics (5 entries: route optimisation, BS VI, TPMS, warehouse solar, packaging)
+- F&B (4 entries: variable-speed refrigeration, food waste composting, biomass, local supply chain)
+- Retail (4 entries: LED track lighting, recycled packaging, consolidated last-mile, EPR take-back)
+- Healthcare (3 entries: presence sensors, BMWM segregation, HVAC recommissioning)
+
+All entries include: typical impact range (tCO₂e/year), typical cost (INR), difficulty (Easy/Medium/Hard), and source note (BEE, CPCB, MoRTH, MNRE, GHG Protocol).
+
+### LLM Scope Boundary (enforced throughout)
+
+The LLM is used **only** for:
+1. Open-ended conversation (PolicyChat, RequirementDetailModal chat)
+2. Optional phrasing of already-selected catalog content (recommendation description rewrite)
+
+The LLM **never**:
+- Determines which policies to show (deterministic weighted score)
+- Selects or ranks recommendations (catalog query + scoring function)
+- Determines compliance status (rule-based matching)
+- Generates government portal URLs (manually verified by admin)
+
+Every LLM call has a non-LLM fallback: if the LLM is unavailable, catalog entries render with their stock description and the chat shows a graceful error — the recommendation set and policy match results are unaffected.
+
+---
+
+**Last Updated:** 2026-08-09  
+**Document Version:** 2.0  
+**Groups Implemented:** 1, 2, 3A, 3B, 3C, 4, 5, 6

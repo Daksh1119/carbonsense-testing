@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ml_services"
+version = "0.1.0"
+description = "CarbonSense ML services — emissions, recommendations, policy compliance, TEME, OCR"
+requires-python = ">=3.9"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ml_services*"]
+
+# ---------------------------------------------------------------------------
+# Pyright / Pylance config — applies to all Python files under packages/
+# Pyright uses packages/pyproject.toml as its root anchor; this ensures it
+# also finds ml_services via extraPaths rather than only via site-packages.
+# ---------------------------------------------------------------------------
+[tool.pyright]
+pythonVersion = "3.12"
+pythonPlatform = "Windows"
+pythonInterpreterPath = "../.venv/Scripts/python.exe"
+extraPaths = ["."]
+reportMissingImports = "warning"
+reportMissingModuleSource = "none"
+typeCheckingMode = "basic"
+useLibraryCodeForTypes = true

@@ -110,6 +110,10 @@ export default function AnalyticsPage() {
   const [csvSummary, setCsvSummary] = useState<CsvSummary | null>(null);
   const [requestedUploadId, setRequestedUploadId] = useState<string | null>(null);
 
+  // Group 4.3b — period granularity selector backed by cycle data
+  type Granularity = 'weekly' | 'monthly' | 'yearly';
+  const [granularity, setGranularity] = useState<Granularity>('monthly');
+
   useEffect(() => {
     try {
       const raw = window.sessionStorage.getItem("latest_csv_emissions_summary");
@@ -248,6 +252,44 @@ export default function AnalyticsPage() {
     return rollingWindow;
   }, [uploads]);
 
+  // Group 4.3b — reshape trend by granularity
+  const granularityTrend = useMemo<TrendPoint[]>(() => {
+    if (granularity === 'monthly') return monthlyTrend;
+
+    if (granularity === 'yearly') {
+      // Aggregate by year
+      const byYear = new Map<string, TrendPoint>();
+      for (const point of monthlyTrend) {
+        const year = point.monthKey.split('-')[0];
+        const existing = byYear.get(year);
+        if (existing) {
+          existing.emissions = Number((existing.emissions + point.emissions).toFixed(3));
+          existing.uploadCount += point.uploadCount;
+          existing.hasData = existing.hasData || point.hasData;
+        } else {
+          byYear.set(year, { ...point, month: year, monthLabel: year, monthKey: year });
+        }
+      }
+      return Array.from(byYear.values());
+    }
+
+    if (granularity === 'weekly') {
+      // Expand monthly data to 4 simulated weekly buckets (approximation until weekly API is wired)
+      return monthlyTrend.flatMap((point) =>
+        Array.from({ length: 4 }, (_, i) => ({
+          ...point,
+          month: `${point.month} W${i + 1}`,
+          monthLabel: `${point.monthLabel} Week ${i + 1}`,
+          monthKey: `${point.monthKey}-W${i + 1}`,
+          emissions: Number((point.emissions / 4).toFixed(3)),
+        }))
+      );
+    }
+
+    return monthlyTrend;
+  }, [monthlyTrend, granularity]);
+
+
   const selectedUploadTotalKg = Math.round(activeSummary?.totals?.total_kg_co2e || 0);
   const selectedUploadTotalTco2e = Number((selectedUploadTotalKg / 1000).toFixed(2));
   const rollingSixMonthTotalTco2e = Number(
@@ -289,6 +331,22 @@ export default function AnalyticsPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {/* Group 4.3b — Granularity selector */}
+          <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1">
+            {(['weekly', 'monthly', 'yearly'] as const).map((g) => (
+              <button
+                key={g}
+                onClick={() => setGranularity(g)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors capitalize ${
+                  granularity === g
+                    ? 'bg-teal-600 text-white shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {g}
+              </button>
+            ))}
+          </div>
           <Button
             variant="outline"
             icon={<ArrowRight className="size-4" />}
@@ -536,12 +594,12 @@ export default function AnalyticsPage() {
 
       {/* Monthly Trend */}
       <DashboardCard
-        title="6-Month Emissions Trend"
-        subtitle="Last 6 months up to the current month. Updated automatically when new uploads are added."
+        title={`Emissions Trend — ${granularity.charAt(0).toUpperCase() + granularity.slice(1)} View`}
+        subtitle="Updated automatically when new uploads are added. Use the selector above to change granularity."
         icon={<Activity className="size-5" />}
       >
         <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={monthlyTrend}>
+          <LineChart data={granularityTrend}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1e3a3a" />
             <XAxis
               dataKey="month"

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { getUserProfile } from '@/lib/authHelpers';
 import { useUserStore } from '@/store';
@@ -19,6 +20,8 @@ import { useUserStore } from '@/store';
  */
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
   const { setSession, login, setLoading } = useUserStore();
+  const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -39,30 +42,67 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       );
     };
 
-    const enrichFromDB = (session: NonNullable<Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']>) => {
-      getUserProfile(session.user.id)
-        .then((profile) => {
-          if (!profile) return;
-          login(
-            {
-              id: profile.id,
-              name: [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.email,
-              email: profile.email,
-              role: profile.role as 'admin' | 'manager' | 'viewer',
-              organization: profile.organization_name ?? undefined,
-              organizationId: profile.organization_id ?? undefined,
-              approved: profile.approved,
-              department: profile.department ?? undefined,
-              employeeId: profile.employee_id ?? undefined,
-              phone: profile.phone ?? undefined,
-              avatar: profile.avatar_url ?? undefined,
-              createdAt: profile.created_at,
-            },
-            session.access_token
-          );
-        })
-        .catch(() => {/* non-critical — JWT data already in store */});
+    const enrichFromDB = async (session: NonNullable<Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']>) => {
+      try {
+        let profile = await getUserProfile(session.user.id);
+        if (!profile) {
+          // Check for pending manager invite
+          try {
+            await fetch('/api/auth/check-invite', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+              },
+            });
+            profile = await getUserProfile(session.user.id);
+          } catch (e) {
+            console.error('[AuthProvider] check-invite error:', e);
+          }
+        }
+
+        if (!profile) return;
+        login(
+          {
+            id: profile.id,
+            name: [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.email,
+            email: profile.email,
+            role: profile.role as 'admin' | 'manager' | 'viewer',
+            organization: profile.organization_name ?? undefined,
+            organizationId: profile.organization_id ?? undefined,
+            approved: profile.approved,
+            department: profile.department ?? undefined,
+            employeeId: profile.employee_id ?? undefined,
+            phone: profile.phone ?? undefined,
+            avatar: profile.avatar_url ?? undefined,
+            createdAt: profile.created_at,
+          },
+          session.access_token
+        );
+
+
+        // Group 2.1 — onboarding redirect for new managers
+        if (
+          profile.role === 'manager' &&
+          profile.organization_id &&
+          !pathname.startsWith('/onboarding')
+        ) {
+          try {
+            const { data: org } = await supabase
+              .from('organizations')
+              .select('profile_status')
+              .eq('id', profile.organization_id)
+              .single();
+            if (org?.profile_status === 'not_started') {
+              router.replace('/onboarding/company-profile');
+            }
+          } catch { /* non-fatal */ }
+        }
+      } catch {
+        /* non-critical — JWT data already in store */
+      }
     };
+
 
     // ─── Bootstrap: resolve existing session on page load ──────────────────────
     const bootstrap = async () => {
@@ -71,8 +111,10 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           setSession(session);
-          loginFromJWT(session);       // fast — unblocks ProtectedRoute immediately
-          enrichFromDB(session);       // slow — runs in background
+          // Set initial JWT state
+          loginFromJWT(session);
+          // Await DB profile enrichment to ensure exact role & approved status
+          await enrichFromDB(session);
         } else {
           setSession(null);
         }
@@ -83,6 +125,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         setLoading(false);
       }
     };
+
 
     bootstrap();
 
