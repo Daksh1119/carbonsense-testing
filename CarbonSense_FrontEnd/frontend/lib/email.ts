@@ -37,7 +37,8 @@ function buildHtml({
   invitedByName: string;
   expiresAt: string;
 }): { subject: string; html: string } {
-  const signupUrl = `${SITE_URL}/signup/employee`;
+  const signupPath = role === 'manager' ? '/signup/manager' : '/signup/employee';
+  const signupUrl = `${SITE_URL}${signupPath}?email=${encodeURIComponent(toEmail)}`;
   const expiryDate = new Date(expiresAt).toLocaleDateString('en-IN', {
     day: 'numeric', month: 'long', year: 'numeric',
   });

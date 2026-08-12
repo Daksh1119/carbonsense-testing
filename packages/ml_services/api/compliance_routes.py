@@ -22,7 +22,6 @@ from ml_services.policy_compliance.service import (
     upcoming_deadlines,
     verify_result,
 )
-from ml_services.ocr.single_processor import process_single_receipt
 
 
 router = APIRouter(prefix="/compliance", tags=["Compliance"])
@@ -268,17 +267,6 @@ async def upload_evidence(
                 tmp_path = tmp.name
 
             extraction = None
-            try:
-                extraction = process_single_receipt(
-                    file_path=tmp_path,
-                    file_name=file.filename or "evidence",
-                    organization_id=organization_id,
-                    uploaded_by_user_id=user_id,
-                    employee_user_id=None,
-                )
-            except Exception as ocr_err:
-                print(f"[Evidence Upload] OCR Warning: {ocr_err}")
-                extraction = {"status": "unprocessed", "warning": str(ocr_err)}
 
             # Automatically mark the compliance result as verified in Supabase
             try:

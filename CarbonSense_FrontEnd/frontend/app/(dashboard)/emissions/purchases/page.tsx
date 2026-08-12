@@ -6,7 +6,7 @@ import DashboardCard from "@/components/DashboardCard";
 import Button from "@/components/Button";
 import { Breadcrumb, BackButton } from "@/components/navigation";
 import { showSuccessToast } from "@/lib/toast";
-import { purchasesFactors, getFactorOption } from "@/lib/emissions-factors";
+import { PURCHASES_CONFIGS } from "@/lib/emissions-factors";
 import { useEmissionsDraftStore } from "@/store";
 import { ShoppingCart, ArrowRight, Leaf, TrendingUp } from "lucide-react";
 
@@ -14,16 +14,32 @@ export default function PurchasesPage() {
   const router = useRouter();
   const { setEntry, entries } = useEmissionsDraftStore();
 
-  const defaultOption = entries.purchases?.activityType || purchasesFactors[0].value;
-  const [purchaseType, setPurchaseType] = useState(defaultOption);
+  const defaultCategory = entries.purchases?.activityType
+    ? PURCHASES_CONFIGS.find((cfg) => cfg.label === entries.purchases?.activityType)?.value || PURCHASES_CONFIGS[0].value
+    : PURCHASES_CONFIGS[0].value;
+
+  const [purchaseCategory, setPurchaseCategory] = useState(defaultCategory);
+
+  const currentConfig = PURCHASES_CONFIGS.find((cfg) => cfg.value === purchaseCategory) || PURCHASES_CONFIGS[0];
+
+  const defaultSubValue = entries.purchases?.meta?.subOptionValue || currentConfig.subOptions[0].value;
+  const initialSubOption = currentConfig.subOptions.find((opt) => opt.value === defaultSubValue || opt.label === defaultSubValue)?.value || currentConfig.subOptions[0].value;
+
+  const [subOptionValue, setSubOptionValue] = useState(initialSubOption);
   const [vendor, setVendor] = useState(entries.purchases?.meta?.vendor || "");
   const [spend, setSpend] = useState(entries.purchases?.amount?.toString() || "");
   const [date, setDate] = useState(entries.purchases?.date || "");
 
-  const option = getFactorOption(purchasesFactors, purchaseType);
+  const handleCategoryChange = (newCategoryValue: string) => {
+    setPurchaseCategory(newCategoryValue);
+    const newConfig = PURCHASES_CONFIGS.find((cfg) => cfg.value === newCategoryValue) || PURCHASES_CONFIGS[0];
+    setSubOptionValue(newConfig.subOptions[0].value);
+  };
+
+  const selectedSubOption = currentConfig.subOptions.find((opt) => opt.value === subOptionValue) || currentConfig.subOptions[0];
   const amountValue = Number(spend || 0);
   const estimatedImpact = amountValue > 0
-    ? (amountValue * option.factorKgPerUnit).toFixed(2)
+    ? (amountValue * selectedSubOption.factorKgPerUnit).toFixed(2)
     : "0.00";
   const trend = "-1.9%";
 
@@ -31,15 +47,17 @@ export default function PurchasesPage() {
     if (spend && date) {
       setEntry("purchases", {
         category: "purchases",
-        activityType: option.label,
-        detail: `${amountValue.toLocaleString()} ${option.unit} • ${vendor || "Vendor"}`,
+        activityType: currentConfig.label,
+        detail: `${amountValue.toLocaleString()} ${currentConfig.unit} • ${selectedSubOption.label} (${vendor || "General Vendor"})`,
         amount: amountValue,
-        unit: option.unit,
+        unit: currentConfig.unit,
         date,
         estimatedCo2Kg: Number(estimatedImpact),
         meta: {
-          vendor: vendor || "Vendor",
-          activity_key: option.value,
+          vendor: vendor || "General Vendor",
+          subCategory: selectedSubOption.label,
+          subOptionValue: selectedSubOption.value,
+          activity_key: currentConfig.value,
         },
       });
 
@@ -90,20 +108,20 @@ export default function PurchasesPage() {
           <p className="text-xs text-slate-500">
             Optional fields — add what you have now, or skip and return later.
           </p>
-          {/* Purchase Type & Vendor */}
+          {/* Category & Dependent Sub-Category */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Purchase Type
+                Purchase Category
               </label>
               <select
-                value={purchaseType}
-                onChange={(e) => setPurchaseType(e.target.value)}
+                value={purchaseCategory}
+                onChange={(e) => handleCategoryChange(e.target.value)}
                 className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                {purchasesFactors.map((factor) => (
-                  <option key={factor.value} value={factor.value}>
-                    {factor.label}
+                {PURCHASES_CONFIGS.map((cfg) => (
+                  <option key={cfg.value} value={cfg.value}>
+                    {cfg.label}
                   </option>
                 ))}
               </select>
@@ -111,15 +129,33 @@ export default function PurchasesPage() {
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Vendor / Supplier
+                {currentConfig.subCategoryLabel}
               </label>
-              <input
-                value={vendor}
-                onChange={(e) => setVendor(e.target.value)}
+              <select
+                value={subOptionValue}
+                onChange={(e) => setSubOptionValue(e.target.value)}
                 className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                placeholder="Supplier name"
-              />
+              >
+                {currentConfig.subOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             </div>
+          </div>
+
+          {/* Vendor Name Field */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Vendor / Supplier (Optional)
+            </label>
+            <input
+              value={vendor}
+              onChange={(e) => setVendor(e.target.value)}
+              className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              placeholder="E.g., Acme Supplies Ltd."
+            />
           </div>
 
           {/* Spend & Date */}
@@ -136,8 +172,8 @@ export default function PurchasesPage() {
                   className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
                   placeholder="0.00"
                 />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">
-                  {option.unit}
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium uppercase">
+                  {currentConfig.unit}
                 </span>
               </div>
             </div>

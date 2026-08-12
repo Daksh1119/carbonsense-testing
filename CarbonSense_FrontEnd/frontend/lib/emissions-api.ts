@@ -28,6 +28,42 @@ export function getUploadDisplayType(upload: Pick<EmissionsUploadRecord, "file_f
   return "DATA";
 }
 
+export function parseDateSafe(value?: string | null): Date | null {
+  if (!value) return null;
+
+  const dateOnlyMatch = String(value).trim().match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (dateOnlyMatch) {
+    const year = Number(dateOnlyMatch[1]);
+    const month = Number(dateOnlyMatch[2]);
+    const day = Number(dateOnlyMatch[3]);
+    return new Date(year, month - 1, day);
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+export function formatUploadDate(value?: string | null): string {
+  const parsed = parseDateSafe(value);
+  if (!parsed) return "";
+  return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+export function getUploadDisplayName(
+  upload: Pick<EmissionsUploadRecord, "source_type" | "original_file_name" | "record_count">
+): string {
+  const name = String(upload.original_file_name || "").trim();
+  const isManual = String(upload.source_type || "").toLowerCase() === "manual" || name.startsWith("manual-entry-");
+
+  if (isManual) {
+    const count = upload.record_count || 1;
+    return `Manual Activity Log (${count} item${count > 1 ? "s" : ""})`;
+  }
+
+  return name;
+}
+
 export interface EmissionEntryRecord {
   id: string;
   upload_id: string;
@@ -182,6 +218,27 @@ export async function fetchEmissionsForUpload(
   const response = await fetch(
     `${apiBaseUrl}/api/emissions/uploads/${uploadId}?${query.toString()}`
   );
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || "Failed to load emission entries.");
+  }
+
+  return response.json();
+}
+
+export async function fetchEmissionsForUploads(
+  organizationId: string,
+  uploadIds?: string[] | null,
+  userId?: string
+): Promise<EmissionEntryRecord[]> {
+  const query = new URLSearchParams();
+  if (organizationId) query.set("organizationId", organizationId);
+  if (userId) query.set("userId", userId);
+  if (uploadIds && uploadIds.length > 0) {
+    query.set("uploadIds", uploadIds.join(","));
+  }
+
+  const response = await fetch(`${apiBaseUrl}/api/emissions/entries?${query.toString()}`);
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.detail || "Failed to load emission entries.");

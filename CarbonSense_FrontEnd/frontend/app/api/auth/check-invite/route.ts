@@ -42,6 +42,22 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date().toISOString();
+    let targetOrgId = invite.organization_id;
+
+    if (!targetOrgId && invite.role === 'manager') {
+      const { data: newOrg } = await supabase
+        .from('organizations')
+        .insert({
+          name: 'New Organization',
+          profile_status: 'not_started',
+        })
+        .select('id')
+        .maybeSingle();
+
+      if (newOrg) {
+        targetOrgId = newOrg.id;
+      }
+    }
 
     // 1. Upsert user_profiles with the invited role + org
     const { error: profileError } = await supabase
@@ -51,7 +67,7 @@ export async function POST(req: NextRequest) {
           id: userId,
           email,
           role: invite.role,
-          organization_id: invite.organization_id,
+          organization_id: targetOrgId,
           approved: true, // invite = pre-approved
           updated_at: now,
         },
@@ -65,7 +81,7 @@ export async function POST(req: NextRequest) {
 
     // 2. Update Supabase Auth user metadata so JWT reflects the new role
     await supabase.auth.admin.updateUserById(userId, {
-      user_metadata: { role: invite.role, organization_id: invite.organization_id, approved: true },
+      user_metadata: { role: invite.role, organization_id: targetOrgId, approved: true },
     });
 
     // 3. Mark invite as accepted

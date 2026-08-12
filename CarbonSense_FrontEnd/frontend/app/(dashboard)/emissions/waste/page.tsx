@@ -7,6 +7,7 @@ import Button from "@/components/Button";
 import { Breadcrumb, BackButton } from "@/components/navigation";
 import { showSuccessToast } from "@/lib/toast";
 import { wasteFactors, getFactorOption } from "@/lib/emissions-factors";
+import { WASTE_CONFIGS } from "@/lib/emissions-factors";
 import { useEmissionsDraftStore } from "@/store";
 import {
   Trash2,
@@ -19,20 +20,32 @@ export default function WastePage() {
   const router = useRouter();
   const { setEntry, entries } = useEmissionsDraftStore();
 
-  const defaultOption = entries.waste?.activityType
-    ? wasteFactors.find((option) => option.label === entries.waste?.activityType)?.value || wasteFactors[0].value
-    : wasteFactors[0].value;
+  const defaultCategory = entries.waste?.activityType
+    ? WASTE_CONFIGS.find((cfg) => cfg.label === entries.waste?.activityType)?.value || WASTE_CONFIGS[0].value
+    : WASTE_CONFIGS[0].value;
 
-  const [wasteType, setWasteType] = useState(defaultOption);
-  const [disposalMethod, setDisposalMethod] = useState(entries.waste?.meta?.disposalMethod || "Landfill");
+  const [wasteCategory, setWasteCategory] = useState(defaultCategory);
+
+  const currentConfig = WASTE_CONFIGS.find((cfg) => cfg.value === wasteCategory) || WASTE_CONFIGS[0];
+
+  const defaultSubValue = entries.waste?.meta?.disposalMethod || currentConfig.subOptions[0].value;
+  const initialSubOption = currentConfig.subOptions.find((opt) => opt.value === defaultSubValue || opt.label === defaultSubValue)?.value || currentConfig.subOptions[0].value;
+
+  const [subOptionValue, setSubOptionValue] = useState(initialSubOption);
   const [weight, setWeight] = useState(entries.waste?.amount?.toString() || "");
   const [date, setDate] = useState(entries.waste?.date || "");
 
-  const option = getFactorOption(wasteFactors, wasteType);
+  const handleCategoryChange = (newCategoryValue: string) => {
+    setWasteCategory(newCategoryValue);
+    const newConfig = WASTE_CONFIGS.find((cfg) => cfg.value === newCategoryValue) || WASTE_CONFIGS[0];
+    setSubOptionValue(newConfig.subOptions[0].value);
+  };
+
+  const selectedSubOption = currentConfig.subOptions.find((opt) => opt.value === subOptionValue) || currentConfig.subOptions[0];
   const weightValue = Number(weight || 0);
 
   const estimatedImpact = weightValue > 0
-    ? (weightValue * option.factorKgPerUnit).toFixed(2)
+    ? (weightValue * selectedSubOption.factorKgPerUnit).toFixed(2)
     : "0.00";
   const trend = "+1.5%";
 
@@ -40,15 +53,16 @@ export default function WastePage() {
     if (weight && date) {
       setEntry("waste", {
         category: "waste",
-        activityType: option.label,
-        detail: `${weightValue.toLocaleString()} ${option.unit} • ${disposalMethod}`,
+        activityType: currentConfig.label,
+        detail: `${weightValue.toLocaleString()} ${currentConfig.unit} • ${selectedSubOption.label}`,
         amount: weightValue,
-        unit: option.unit,
+        unit: currentConfig.unit,
         date,
         estimatedCo2Kg: Number(estimatedImpact),
         meta: {
-          disposalMethod,
-          activity_key: option.value,
+          disposalMethod: selectedSubOption.label,
+          subOptionValue: selectedSubOption.value,
+          activity_key: currentConfig.value,
         },
       });
 
@@ -99,20 +113,20 @@ export default function WastePage() {
           <p className="text-xs text-slate-500">
             Optional fields — add what you have now, or skip and return later.
           </p>
-          {/* Waste Type & Disposal Method */}
+          {/* Waste Type & Dependent Sub-Option */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 Waste Type
               </label>
               <select
-                value={wasteType}
-                onChange={(e) => setWasteType(e.target.value)}
+                value={wasteCategory}
+                onChange={(e) => handleCategoryChange(e.target.value)}
                 className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                {wasteFactors.map((factor) => (
-                  <option key={factor.value} value={factor.value}>
-                    {factor.label}
+                {WASTE_CONFIGS.map((cfg) => (
+                  <option key={cfg.value} value={cfg.value}>
+                    {cfg.label}
                   </option>
                 ))}
               </select>
@@ -120,18 +134,18 @@ export default function WastePage() {
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Disposal Method
+                {currentConfig.subCategoryLabel}
               </label>
               <select
-                value={disposalMethod}
-                onChange={(e) => setDisposalMethod(e.target.value)}
+                value={subOptionValue}
+                onChange={(e) => setSubOptionValue(e.target.value)}
                 className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                <option>Landfill</option>
-                <option>Recycling</option>
-                <option>Composting</option>
-                <option>Incineration</option>
-                <option>Anaerobic Digestion</option>
+                {currentConfig.subOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -150,8 +164,8 @@ export default function WastePage() {
                   className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
                   placeholder="0.00"
                 />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">
-                  {option.unit}
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium uppercase">
+                  {currentConfig.unit}
                 </span>
               </div>
             </div>

@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ColumnDef } from '@tanstack/react-table';
 import { useEmissions, useEmissionsUploads } from '@/hooks';
-import { deleteEmissionsUpload, getUploadDisplayType } from '@/lib/emissions-api';
+import { deleteEmissionsUpload, getUploadDisplayType, getUploadDisplayName, formatUploadDate } from '@/lib/emissions-api';
 import { getCurrentUserContext } from '@/lib/recommendations-api';
 import DataTable from '@/components/ui/DataTable';
 import { CardSkeleton, TableSkeleton, ErrorState, EmptyState } from '@/components/ui';
@@ -356,9 +356,22 @@ function DetailedEmissionsLogContent() {
                 setViewEntryId(row.id);
               }}
               className="p-1 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-400/10 rounded transition-colors"
-              title="View"
+              title="View Details"
             >
               <Eye className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => {
+                if (row.uploadId) {
+                  router.push(`/analytics?uploadId=${row.uploadId}`);
+                } else {
+                  router.push(`/analytics`);
+                }
+              }}
+              className="p-1 text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-400/10 rounded transition-colors"
+              title="View Analytics for Dataset"
+            >
+              <BarChart3 className="w-4 h-4" />
             </button>
             <button
               onClick={async () => {
@@ -651,7 +664,7 @@ function DetailedEmissionsLogContent() {
 
           {uploadsForDisplay.map((upload) => {
             const isActive = upload.id === selectedUploadId;
-            const uploadDate = new Date(upload.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            const uploadDate = formatUploadDate(upload.created_at);
             return (
               <div
                 key={upload.id}
@@ -737,7 +750,7 @@ function DetailedEmissionsLogContent() {
                   onClick={() => setSelectedUploadId(upload.id)}
                   className={clsx('text-xs truncate text-left w-full', isActive ? 'text-white/80' : 'text-slate-500 dark:text-slate-400')}
                 >
-                  {upload.original_file_name}
+                  {getUploadDisplayName(upload)}
                 </button>
               </div>
             );

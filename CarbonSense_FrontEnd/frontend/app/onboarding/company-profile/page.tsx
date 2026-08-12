@@ -326,45 +326,30 @@ export default function CompanyProfileOnboardingPage() {
     setSaving(true);
     try {
       const patch = buildPatch(status);
-      let targetOrgId = user.organizationId;
+      const session = (await supabase.auth.getSession()).data.session;
+      const token = useUserStore.getState().token || session?.access_token;
 
-      if (!targetOrgId) {
-        // Create new organization for the manager
-        const { data: newOrg, error: createOrgErr } = await supabase
-          .from('organizations')
-          .insert(patch)
-          .select('id')
-          .single();
+      const res = await fetch('/api/onboarding/company-profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ patch }),
+      });
 
-        if (createOrgErr || !newOrg) {
-          throw new Error(createOrgErr?.message ?? 'Failed to create organization.');
-        }
-
-        targetOrgId = newOrg.id;
-
-        // Link organization_id to user_profile
-        await supabase
-          .from('user_profiles')
-          .update({
-            organization_id: targetOrgId,
-            organization_name: form.name.trim(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', user.id);
-
-        useUserStore.getState().updateUser({
-          organizationId: targetOrgId,
-          organization: form.name.trim(),
-        });
-      } else {
-        // Update existing organization
-        const { error } = await supabase
-          .from('organizations')
-          .update(patch)
-          .eq('id', targetOrgId);
-
-        if (error) throw error;
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to save company profile.');
       }
+
+      const targetOrgId = data.organizationId;
+      const orgName = data.organizationName || form.name.trim();
+
+      useUserStore.getState().updateUser({
+        organizationId: targetOrgId,
+        organization: orgName,
+      });
 
       // Fire baseline cycle creation on the backend (fire-and-forget)
       const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';

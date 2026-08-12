@@ -54,8 +54,11 @@ export default function PlatformAdminDashboard() {
   const [error, setError] = useState('');
   const [approvingId, setApprovingId] = useState<string | null>(null);
 
-  const fetchDashboard = useCallback(async () => {
-    setLoading(true);
+  const fetchDashboard = useCallback(async (isSilent?: boolean | unknown) => {
+    const isSilentUpdate = typeof isSilent === 'boolean' ? isSilent : false;
+    if (!isSilentUpdate) {
+      setLoading(true);
+    }
     setError('');
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -79,7 +82,26 @@ export default function PlatformAdminDashboard() {
     }
   }, []);
 
-  useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
+  useEffect(() => {
+    fetchDashboard(false);
+
+    const handleSilentRefresh = () => {
+      fetchDashboard(true);
+    };
+
+    // Supabase Realtime channel for live updates on invites, users, and orgs
+    const channel = supabase
+      .channel('admin-dashboard-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'manager_invites' }, handleSilentRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_profiles' }, handleSilentRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'organizations' }, handleSilentRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_signup_requests' }, handleSilentRefresh)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchDashboard]);
 
   const handleApproveViewer = async (requestId: string, action: 'approve' | 'reject') => {
     setApprovingId(requestId);

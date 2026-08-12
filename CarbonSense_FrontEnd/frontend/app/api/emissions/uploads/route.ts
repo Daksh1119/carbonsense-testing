@@ -145,13 +145,21 @@ function getPeriodFromRows(rows: UploadRow[]): { periodStart: string; periodEnd:
   const dates = rows
     .map((row) => parseFlexibleDate(row.date))
     .filter((item): item is Date => item instanceof Date);
-  const latest = dates.length > 0 ? dates.reduce((a, b) => (a > b ? a : b)) : new Date();
-  const periodStart = new Date(latest.getFullYear(), latest.getMonth(), 1);
-  const periodEnd = new Date(latest.getFullYear(), latest.getMonth() + 1, 0);
+
+  if (dates.length === 0) {
+    const today = new Date();
+    return {
+      periodStart: toDateOnlyString(today),
+      periodEnd: toDateOnlyString(today),
+    };
+  }
+
+  const earliest = dates.reduce((a, b) => (a < b ? a : b));
+  const latest = dates.reduce((a, b) => (a > b ? a : b));
 
   return {
-    periodStart: periodStart.toISOString().slice(0, 10),
-    periodEnd: periodEnd.toISOString().slice(0, 10),
+    periodStart: toDateOnlyString(earliest),
+    periodEnd: toDateOnlyString(latest),
   };
 }
 
@@ -447,6 +455,46 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     return NextResponse.json({ detail: error.message || "Failed to load uploads" }, { status: 500 });
+  }
+
+  // Auto-repair missing or unpopulated period bounds from actual underlying emission_entries
+  if (data && data.length > 0) {
+    const unpopulatedIds = data
+      .filter((row) => !row.period_start || !row.period_end)
+      .map((row) => row.id);
+
+    if (unpopulatedIds.length > 0) {
+      const { data: entryDates } = await supabase
+        .from("emission_entries")
+        .select("upload_id, entry_date")
+        .in("upload_id", unpopulatedIds);
+
+      if (entryDates && entryDates.length > 0) {
+        const boundsMap = new Map<string, { min: string; max: string }>();
+        for (const entry of entryDates) {
+          if (!entry.entry_date) continue;
+          const current = boundsMap.get(entry.upload_id) || { min: entry.entry_date, max: entry.entry_date };
+          if (entry.entry_date < current.min) current.min = entry.entry_date;
+          if (entry.entry_date > current.max) current.max = entry.entry_date;
+          boundsMap.set(entry.upload_id, current);
+        }
+
+        for (const row of data) {
+          const bounds = boundsMap.get(row.id);
+          if (bounds) {
+            row.period_start = bounds.min;
+            row.period_end = bounds.max;
+
+            // Persist back to Supabase in background
+            supabase
+              .from("organization_uploads")
+              .update({ period_start: bounds.min, period_end: bounds.max })
+              .eq("id", row.id)
+              .then(() => {});
+          }
+        }
+      }
+    }
   }
 
   const normalized = (data || []).map((row) => ({

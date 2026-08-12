@@ -3,6 +3,9 @@ import {
   generateRecommendations,
   getCurrentUserContext,
 } from '@/lib/recommendations-api';
+import { supabase } from '@/lib/supabaseClient';
+import { getUserProfile } from '@/lib/authHelpers';
+import { useUserStore } from '@/store';
 
 interface Recommendation {
   id: string;
@@ -44,9 +47,28 @@ export const useRecommendations = (): UseRecommendationsReturn => {
       setIsLoading(true);
       setError(null);
 
-      const { userId, organizationId } = getCurrentUserContext();
+      let { userId, organizationId } = getCurrentUserContext();
+
       if (!userId || !organizationId) {
-        throw new Error('Missing user/organization context. Please login again.');
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          userId = userId || session.user.id;
+          organizationId = organizationId || session.user.user_metadata?.organization_id || session.user.user_metadata?.organizationId;
+          if (!organizationId) {
+            const profile = await getUserProfile(userId);
+            if (profile?.organization_id) {
+              organizationId = profile.organization_id;
+              useUserStore.getState().updateUser({
+                organizationId: profile.organization_id,
+                organization: profile.organization_name ?? undefined,
+              });
+            }
+          }
+        }
+      }
+
+      if (!userId || !organizationId) {
+        throw new Error('Missing user/organization context. Please refresh or log in again.');
       }
 
       const csvRaw =

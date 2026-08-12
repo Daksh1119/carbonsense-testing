@@ -65,8 +65,11 @@ export default function AdminAccessPage() {
     return session?.access_token ?? '';
   };
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (isSilent?: boolean | unknown) => {
+    const isSilentUpdate = typeof isSilent === 'boolean' ? isSilent : false;
+    if (!isSilentUpdate) {
+      setLoading(true);
+    }
     try {
       const token = await getToken();
       const headers = { Authorization: `Bearer ${token}` };
@@ -89,7 +92,25 @@ export default function AdminAccessPage() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData(false);
+
+    const handleSilentRefresh = () => {
+      fetchData(true);
+    };
+
+    // Supabase Realtime channel for live updates
+    const channel = supabase
+      .channel('admin-access-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'manager_invites' }, handleSilentRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_signup_requests' }, handleSilentRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_profiles' }, handleSilentRefresh)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchData]);
 
   const handleApprove = async (requestId: string, action: 'approve' | 'reject') => {
     setProcessingId(requestId);

@@ -81,14 +81,19 @@ function getSupabaseClient(): SupabaseClient {
   return supabaseClient;
 }
 
+import { useUserStore } from "@/store";
+
 export function getCurrentUserId(): string {
   if (typeof window === "undefined") return "";
 
   try {
+    const user = useUserStore.getState().user;
+    if (user?.id) return user.id;
+
     const raw = localStorage.getItem("carbonsense-user-storage");
     if (!raw) return "";
     const parsed = JSON.parse(raw) as { state?: { user?: { id?: string } } };
-    return preferValidUuid(parsed.state?.user?.id || "", "");
+    return parsed.state?.user?.id || "";
   } catch {
     return "";
   }
@@ -103,27 +108,49 @@ export function getCurrentUserContext(): CurrentUserContext {
   }
 
   try {
-    const raw = localStorage.getItem("carbonsense-user-storage");
-    if (!raw) {
-      return {
-        userId: "",
-        organizationId: "",
-      };
-    }
+    const userStoreState = useUserStore.getState();
+    const user = userStoreState.user;
+    const session = userStoreState.supabaseSession;
 
-    const parsed = JSON.parse(raw) as {
-      state?: { user?: { id?: string; organizationId?: string } };
-    };
-    return {
-      userId: preferValidUuid(parsed.state?.user?.id || "", ""),
-      organizationId: preferValidUuid(parsed.state?.user?.organizationId || "", ""),
-    };
-  } catch {
-    return {
-      userId: "",
-      organizationId: "",
-    };
-  }
+    const userId = user?.id || session?.user?.id || "";
+    const organizationId =
+      user?.organizationId ||
+      (user as any)?.organization_id ||
+      session?.user?.user_metadata?.organization_id ||
+      session?.user?.user_metadata?.organizationId ||
+      "";
+
+    if (userId && organizationId) {
+      return { userId, organizationId };
+    }
+  } catch {}
+
+  try {
+    const raw = localStorage.getItem("carbonsense-user-storage");
+    if (raw) {
+      const parsed = JSON.parse(raw) as {
+        state?: { user?: { id?: string; organizationId?: string; organization_id?: string } };
+      };
+      const u = parsed.state?.user;
+      if (u?.id) {
+        return {
+          userId: u.id,
+          organizationId: u.organizationId || u.organization_id || "",
+        };
+      }
+    }
+  } catch {}
+
+  const fallbackUser = useUserStore.getState().user;
+  const fallbackSession = useUserStore.getState().supabaseSession;
+  return {
+    userId: fallbackUser?.id || fallbackSession?.user?.id || "",
+    organizationId:
+      fallbackUser?.organizationId ||
+      (fallbackUser as any)?.organization_id ||
+      fallbackSession?.user?.user_metadata?.organization_id ||
+      "",
+  };
 }
 
 export async function getLatestTEMERun(userId: string): Promise<any | null> {

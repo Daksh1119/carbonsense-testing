@@ -117,6 +117,24 @@ export async function GET(req: NextRequest) {
     manager: '/dashboard',
     viewer: '/viewer/dashboard',
   };
-  return NextResponse.redirect(new URL(dashMap[role] || '/login', req.url));
+
+  let targetPath = dashMap[role] || '/login';
+
+  if (role === 'manager') {
+    if (!organizationId) {
+      targetPath = '/onboarding/company-profile';
+    } else {
+      const { data: org } = await adminClient
+        .from('organizations')
+        .select('profile_status, name')
+        .eq('id', organizationId)
+        .maybeSingle();
+      if (!org || org.profile_status === 'not_started' || !org.name || org.name.startsWith('New Organization')) {
+        targetPath = '/onboarding/company-profile';
+      }
+    }
+  }
+
+  return NextResponse.redirect(new URL(targetPath, req.url));
 }
 

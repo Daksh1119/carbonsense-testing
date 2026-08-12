@@ -7,6 +7,7 @@ import Button from "@/components/Button";
 import { Breadcrumb, BackButton } from "@/components/navigation";
 import { showSuccessToast } from "@/lib/toast";
 import { transportFactors, getFactorOption } from "@/lib/emissions-factors";
+import { TRANSPORT_CONFIGS } from "@/lib/emissions-factors";
 import { useEmissionsDraftStore } from "@/store";
 import {
   Truck,
@@ -19,20 +20,32 @@ export default function TransportPage() {
   const router = useRouter();
   const { setEntry, entries } = useEmissionsDraftStore();
 
-  const defaultOption = entries.transport?.activityType
-    ? transportFactors.find((option) => option.label === entries.transport?.activityType)?.value || transportFactors[0].value
-    : transportFactors[0].value;
+  const defaultCategory = entries.transport?.activityType
+    ? TRANSPORT_CONFIGS.find((cfg) => cfg.label === entries.transport?.activityType)?.value || TRANSPORT_CONFIGS[0].value
+    : TRANSPORT_CONFIGS[0].value;
 
-  const [activityType, setActivityType] = useState(defaultOption);
-  const [fuelType, setFuelType] = useState(entries.transport?.meta?.fuelType || "Diesel (Avg Biofuel Blend)");
+  const [activityCategory, setActivityCategory] = useState(defaultCategory);
+  
+  const currentConfig = TRANSPORT_CONFIGS.find((cfg) => cfg.value === activityCategory) || TRANSPORT_CONFIGS[0];
+  
+  const defaultSubValue = entries.transport?.meta?.fuelType || currentConfig.subOptions[0].value;
+  const initialSubOption = currentConfig.subOptions.find((opt) => opt.value === defaultSubValue || opt.label === defaultSubValue)?.value || currentConfig.subOptions[0].value;
+
+  const [subOptionValue, setSubOptionValue] = useState(initialSubOption);
   const [distance, setDistance] = useState(entries.transport?.amount?.toString() || "");
   const [date, setDate] = useState(entries.transport?.date || "");
 
-  const option = getFactorOption(transportFactors, activityType);
+  const handleCategoryChange = (newCategoryValue: string) => {
+    setActivityCategory(newCategoryValue);
+    const newConfig = TRANSPORT_CONFIGS.find((cfg) => cfg.value === newCategoryValue) || TRANSPORT_CONFIGS[0];
+    setSubOptionValue(newConfig.subOptions[0].value);
+  };
+
+  const selectedSubOption = currentConfig.subOptions.find((opt) => opt.value === subOptionValue) || currentConfig.subOptions[0];
   const distanceValue = Number(distance || 0);
 
   const estimatedImpact = distanceValue > 0
-    ? (distanceValue * option.factorKgPerUnit).toFixed(2)
+    ? (distanceValue * selectedSubOption.factorKgPerUnit).toFixed(2)
     : "0.00";
   const trend = "+4.2%";
 
@@ -40,15 +53,16 @@ export default function TransportPage() {
     if (distance && date) {
       setEntry("transport", {
         category: "transport",
-        activityType: option.label,
-        detail: `${distanceValue.toLocaleString()} ${option.unit} • ${fuelType}`,
+        activityType: currentConfig.label,
+        detail: `${distanceValue.toLocaleString()} ${currentConfig.unit} • ${selectedSubOption.label}`,
         amount: distanceValue,
-        unit: option.unit,
+        unit: currentConfig.unit,
         date,
         estimatedCo2Kg: Number(estimatedImpact),
         meta: {
-          fuelType,
-          activity_key: option.value,
+          fuelType: selectedSubOption.label,
+          subOptionValue: selectedSubOption.value,
+          activity_key: currentConfig.value,
         },
       });
 
@@ -95,20 +109,20 @@ export default function TransportPage() {
           <p className="text-xs text-slate-500">
             Optional fields — add what you have now, or skip and return later.
           </p>
-          {/* Activity Type & Fuel Type */}
+          {/* Activity Type & Dependent Sub-Option */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 Activity Type
               </label>
               <select
-                value={activityType}
-                onChange={(e) => setActivityType(e.target.value)}
+                value={activityCategory}
+                onChange={(e) => handleCategoryChange(e.target.value)}
                 className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                {transportFactors.map((factor) => (
-                  <option key={factor.value} value={factor.value}>
-                    {factor.label}
+                {TRANSPORT_CONFIGS.map((cfg) => (
+                  <option key={cfg.value} value={cfg.value}>
+                    {cfg.label}
                   </option>
                 ))}
               </select>
@@ -116,19 +130,18 @@ export default function TransportPage() {
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Fuel Type
+                {currentConfig.subCategoryLabel}
               </label>
               <select
-                value={fuelType}
-                onChange={(e) => setFuelType(e.target.value)}
+                value={subOptionValue}
+                onChange={(e) => setSubOptionValue(e.target.value)}
                 className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                <option>Diesel (Avg Biofuel Blend)</option>
-                <option>Petrol</option>
-                <option>Electric</option>
-                <option>Hybrid</option>
-                <option>CNG</option>
-                <option>LPG</option>
+                {currentConfig.subOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -147,8 +160,8 @@ export default function TransportPage() {
                   className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
                   placeholder="0.00"
                 />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">
-                  {option.unit}
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium uppercase">
+                  {currentConfig.unit}
                 </span>
               </div>
             </div>

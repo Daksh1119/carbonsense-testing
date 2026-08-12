@@ -173,7 +173,7 @@ export default function Sidebar({ navItems, role }: SidebarProps) {
       return { ...item, alertCount: policyCount };
     }
     if (item.href === "/compliance" || item.href.includes("compliance")) {
-      return { ...item, alertCount: complianceCount };
+      return { ...item, alertCount: 0 };
     }
     return item;
   });

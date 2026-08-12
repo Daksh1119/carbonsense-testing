@@ -115,7 +115,8 @@ export async function POST(req: NextRequest) {
       expiresAt: invite.expires_at,
     });
 
-    const signupUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'}/signup/employee`;
+    const signupPath = invite.role === 'manager' ? '/signup/manager' : '/signup/employee';
+    const signupUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'}${signupPath}?email=${encodeURIComponent(email)}`;
 
     return NextResponse.json({
       success: true,
@@ -160,7 +161,36 @@ export async function GET(req: NextRequest) {
     const { data, error } = await query;
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    return NextResponse.json({ success: true, invites: data ?? [] });
+    let resultInvites = data ?? [];
+
+    if (status === 'pending' && resultInvites.length > 0) {
+      const { data: activeProfiles } = await supabase
+        .from('user_profiles')
+        .select('email, role, approved, organization_id');
+
+      const activeEmails = new Set(
+        (activeProfiles ?? [])
+          .filter((p) => p.email && (p.role === 'manager' || p.approved || p.organization_id))
+          .map((p) => p.email.toLowerCase().trim())
+      );
+
+      const now = new Date().toISOString();
+      const filtered = [];
+      for (const inv of resultInvites) {
+        const invEmail = (inv.email || '').toLowerCase().trim();
+        if (invEmail && activeEmails.has(invEmail)) {
+          await supabase
+            .from('manager_invites')
+            .update({ status: 'accepted', accepted_at: now })
+            .eq('id', inv.id);
+        } else {
+          filtered.push(inv);
+        }
+      }
+      resultInvites = filtered;
+    }
+
+    return NextResponse.json({ success: true, invites: resultInvites });
   } catch (err) {
     console.error('[invite-manager GET] Unexpected error:', err);
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });

@@ -3,6 +3,7 @@ import { fetchEmissionsUploadsScoped } from '@/lib/emissions-api';
 import { getCurrentUserContext, getLatestTEMERun } from '@/lib/recommendations-api';
 import { getPolicyAlerts } from '@/services/policyService';
 import { fetchComplianceDeadlines, fetchComplianceScore } from '@/lib/policy-compliance-api';
+import { supabase } from '@/lib/supabaseClient';
 
 interface DashboardComplianceScore {
   total_score: number;
@@ -162,21 +163,21 @@ export const useDashboardData = (): UseDashboardDataReturn => {
   };
 
   const createFallbackDashboardData = (): DashboardData => ({
-    totalEmissions: 1.24,
+    totalEmissions: 0,
     totalEmissionsHasData: false,
     totalEmissionsMonth: new Date().getMonth() + 1,
     totalEmissionsYear: new Date().getFullYear(),
     reductionAchieved: 0,
     reductionFormula: '(Prev - Current) / Prev x 100',
     reductionBaselineLabel: 'Need at least 2 uploads',
-    totalEmissionsMeta: 'No verified period available',
-    timeDebtStatus: '15 Years',
-    timeDebtYears: 15,
+    totalEmissionsMeta: 'No uploads recorded yet',
+    timeDebtStatus: 'N/A',
+    timeDebtYears: null,
     timeDebtConfidence: null,
-    timeDebtMeta: 'Deterministic estimate from latest TEME model',
-    policyAlerts: 2,
-    policyCriticalAlerts: 1,
-    policyMeta: '1 critical, 1 warning',
+    timeDebtMeta: 'No TEME run available for this org context',
+    policyAlerts: 0,
+    policyCriticalAlerts: 0,
+    policyMeta: '0 critical, 0 active',
     complianceScore: {
       total_score: 0,
       data_score: 0,
@@ -187,41 +188,27 @@ export const useDashboardData = (): UseDashboardDataReturn => {
     complianceDeadlineCount: 0,
     complianceDueSoonCount: 0,
     complianceCriticalDeadlineCount: 0,
-    latestPeriodLabel: 'Latest',
+    latestPeriodLabel: 'No Data',
     refreshedAtLabel: 'now',
     carbonPath: {
-      historical: [
-        { date: '2024-01-01', value: 1100 },
-        { date: '2024-02-01', value: 1150 },
-        { date: '2024-03-01', value: 1200 },
-        { date: '2024-04-01', value: 1180 },
-        { date: '2024-05-01', value: 1220 },
-        { date: '2024-06-01', value: 1240 },
-      ],
-      projected: [
-        { date: '2024-07-01', value: 1200 },
-        { date: '2024-08-01', value: 1150 },
-        { date: '2024-09-01', value: 1100 },
-        { date: '2024-10-01', value: 1050 },
-        { date: '2024-11-01', value: 1000 },
-        { date: '2024-12-01', value: 950 },
-      ],
+      historical: [],
+      projected: [],
     },
     forecastQuality: {
       method: 'Ensemble (weighted moving average + trend + seasonal) with rolling backtest',
-      confidenceScore: 45,
-      reliabilityLabel: 'Low confidence',
+      confidenceScore: 0,
+      reliabilityLabel: 'No data uploaded',
       mape: null,
       mae: null,
       rmse: null,
       trainingMonths: 0,
       backtestMonths: 0,
       volatility: 0,
-      caveat: 'Need at least 6 monthly uploads for stable model diagnostics.',
+      caveat: 'No emission uploads recorded yet. Upload emission data to compute real-time carbon path and forecasts.',
     },
     strategies: [
-      { name: 'Immediate Reduction', impact: 95, certainty: 98 },
-      { name: 'Tree Planting (15 years)', impact: 70, certainty: 75 },
+      { name: 'Immediate Reduction', impact: 0, certainty: 0 },
+      { name: 'Tree Planting (15 years)', impact: 0, certainty: 0 },
     ],
   });
 
@@ -290,9 +277,12 @@ export const useDashboardData = (): UseDashboardDataReturn => {
     return output;
   };
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (isSilent?: boolean | unknown) => {
     try {
-      setIsLoading(true);
+      const isSilentUpdate = typeof isSilent === 'boolean' ? isSilent : false;
+      if (!isSilentUpdate) {
+        setIsLoading(true);
+      }
       setError(null);
 
       const { organizationId, userId } = getCurrentUserContext();
@@ -613,22 +603,32 @@ export const useDashboardData = (): UseDashboardDataReturn => {
         latestPeriodLabel,
         refreshedAtLabel,
         carbonPath: {
-          historical: historical.length > 0 ? historical : createFallbackDashboardData().carbonPath.historical,
-          projected: projected.length > 0 ? projected : createFallbackDashboardData().carbonPath.projected,
+          historical: historical,
+          projected: historical.length > 0 ? projected : [],
         },
         forecastQuality: {
           method: 'Ensemble: weighted moving average + weighted trend + seasonal analog, tuned by rolling backtest MAE',
-          confidenceScore,
-          reliabilityLabel,
-          mape,
-          mae,
-          rmse,
+          confidenceScore: historical.length > 0 ? confidenceScore : 0,
+          reliabilityLabel: historical.length > 0 ? reliabilityLabel : 'No data uploaded',
+          mape: historical.length > 0 ? mape : null,
+          mae: historical.length > 0 ? mae : null,
+          rmse: historical.length > 0 ? rmse : null,
           trainingMonths,
           backtestMonths: backtestAbsoluteErrors.length,
-          volatility,
-          caveat: forecastCaveat,
+          volatility: historical.length > 0 ? volatility : 0,
+          caveat: historical.length > 0
+            ? forecastCaveat
+            : 'No emission uploads recorded yet. Upload emission data to compute real-time carbon path and forecasts.',
         },
-        strategies: createFallbackDashboardData().strategies,
+        strategies: historical.length > 0
+          ? [
+              { name: 'Immediate Reduction', impact: 95, certainty: 98 },
+              { name: 'Tree Planting (15 years)', impact: 70, certainty: 75 },
+            ]
+          : [
+              { name: 'Immediate Reduction', impact: 0, certainty: 0 },
+              { name: 'Tree Planting (15 years)', impact: 0, certainty: 0 },
+            ],
       };
 
       setData(dashboardData);
@@ -641,30 +641,25 @@ export const useDashboardData = (): UseDashboardDataReturn => {
   }, []);
 
   useEffect(() => {
-    fetchData();
+    // Initial fetch (displays loading skeleton once)
+    fetchData(false);
 
-    const refreshIntervalMs = 60_000;
-    const intervalId = window.setInterval(() => {
-      fetchData();
-    }, refreshIntervalMs);
-
-    const refreshOnFocus = () => {
-      fetchData();
+    // Silent refresh callback on Realtime database mutations
+    const handleSilentRefresh = () => {
+      fetchData(true);
     };
 
-    const refreshOnVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        fetchData();
-      }
-    };
-
-    window.addEventListener('focus', refreshOnFocus);
-    document.addEventListener('visibilitychange', refreshOnVisibility);
+    // Supabase Realtime channel for live emissions data updates
+    const channel = supabase
+      .channel('manager-dashboard-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'organization_uploads' }, handleSilentRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'assessment_cycles' }, handleSilentRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teme_runs' }, handleSilentRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'policy_alerts' }, handleSilentRefresh)
+      .subscribe();
 
     return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener('focus', refreshOnFocus);
-      document.removeEventListener('visibilitychange', refreshOnVisibility);
+      supabase.removeChannel(channel);
     };
   }, [fetchData]);
 

@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import DashboardCard from "@/components/DashboardCard";
 import StatsCard from "@/components/StatsCard";
 import Badge from "@/components/Badge";
 import Button from "@/components/Button";
 import { Breadcrumb, BackButton } from "@/components/navigation";
 import { useEmissions, useEmissionsUploads } from "@/hooks";
-import { EmissionsUploadRecord, getUploadDisplayType } from "@/lib/emissions-api";
+import { EmissionsUploadRecord, getUploadDisplayType, getUploadDisplayName } from "@/lib/emissions-api";
 import { clsx } from "clsx";
 import {
   BarChart3,
@@ -17,6 +17,8 @@ import {
   Activity,
   Calendar,
   ArrowRight,
+  Search,
+  Filter,
 } from "lucide-react";
 import {
   BarChart,
@@ -35,20 +37,7 @@ import {
   ReferenceLine,
 } from "recharts";
 
-const defaultCategoryData = [
-  { category: "Transport", value: 420, percentage: 34 },
-  { category: "Energy", value: 380, percentage: 31 },
-  { category: "Food & Waste", value: 280, percentage: 22 },
-  { category: "Purchases", value: 160, percentage: 13 },
-];
-
 const COLORS = ["#0bd5b0", "#3b82f6", "#f59e0b", "#ef4444"];
-
-const defaultScopeData = [
-  { name: "Scope 1", value: 450 },
-  { name: "Scope 2", value: 380 },
-  { name: "Scope 3", value: 410 },
-];
 
 const CATEGORY_TO_SCOPE: Record<string, string> = {
   transport: "Scope 3",
@@ -77,9 +66,16 @@ type TrendPoint = {
   monthLabel: string;
   monthKey: string;
   emissions: number;
+  emissionsKg: number;
   hasData: boolean;
   isCurrentMonth: boolean;
   uploadCount: number;
+  byCategory: {
+    transport: number;
+    energy: number;
+    waste: number;
+    purchases: number;
+  };
 };
 
 const getMonthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
@@ -98,19 +94,46 @@ const resolveUploadMonthDate = (upload: Pick<EmissionsUploadRecord, "period_star
   return null;
 };
 
-export default function AnalyticsPage() {
+// Calculate ISO Week Monday Start & Sunday End dates for clear enterprise reporting
+function getIsoWeekDateRange(year: number, weekNo: number): { start: string; end: string } {
+  const simple = new Date(Date.UTC(year, 0, 1 + (weekNo - 1) * 7));
+  const dow = simple.getUTCDay();
+  const isoWeekStart = simple;
+  if (dow <= 4) {
+    isoWeekStart.setUTCDate(simple.getUTCDate() - (simple.getUTCDay() || 7) + 1);
+  } else {
+    isoWeekStart.setUTCDate(simple.getUTCDate() + (8 - (simple.getUTCDay() || 7)));
+  }
+  const isoWeekEnd = new Date(isoWeekStart);
+  isoWeekEnd.setUTCDate(isoWeekStart.getUTCDate() + 6);
+
+  const formatShort = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return {
+    start: formatShort(isoWeekStart),
+    end: formatShort(isoWeekEnd),
+  };
+}
+
+function AnalyticsContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedUploadId = searchParams.get("uploadId");
+
   const { uploads, isLoading: uploadsLoading } = useEmissionsUploads();
   const [selectedUploadId, setSelectedUploadId] = useState<string | null>(null);
+
+  // Upload Search & Filtering state for enterprise scalability (e.g. 50+ uploads)
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedYear, setSelectedYear] = useState<string>("all");
+  const [selectedFormat, setSelectedFormat] = useState<string>("all");
+
   const activeUploadIds = useMemo(
     () => (selectedUploadId ? [selectedUploadId] : uploads.map((upload) => upload.id)),
     [selectedUploadId, uploads]
   );
   const { emissions } = useEmissions({ uploadIds: activeUploadIds });
   const [csvSummary, setCsvSummary] = useState<CsvSummary | null>(null);
-  const [requestedUploadId, setRequestedUploadId] = useState<string | null>(null);
 
-  // Group 4.3b — period granularity selector backed by cycle data
   type Granularity = 'weekly' | 'monthly' | 'yearly';
   const [granularity, setGranularity] = useState<Granularity>('monthly');
 
@@ -123,13 +146,11 @@ export default function AnalyticsPage() {
     } catch {
       setCsvSummary(null);
     }
-
-    const uploadId = new URLSearchParams(window.location.search).get("uploadId");
-    setRequestedUploadId(uploadId);
   }, []);
 
   useEffect(() => {
     if (uploads.length === 0) return;
+
     if (requestedUploadId && uploads.some((upload) => upload.id === requestedUploadId)) {
       setSelectedUploadId(requestedUploadId);
       return;
@@ -141,6 +162,40 @@ export default function AnalyticsPage() {
   }, [uploads, requestedUploadId, selectedUploadId]);
 
   const selectedUpload = uploads.find((upload) => upload.id === selectedUploadId) || null;
+
+  // Extract unique available years from upload records
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    for (const u of uploads) {
+      const d = resolveUploadMonthDate(u) || new Date(u.created_at);
+      years.add(String(d.getFullYear()));
+    }
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [uploads]);
+
+  // Filter uploads based on Search, Year, and Format dropdowns
+  const filteredUploads = useMemo(() => {
+    return uploads.filter((u) => {
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const matchesName = String(u.original_file_name || "").toLowerCase().includes(query);
+        const matchesSource = String(u.source_type || "").toLowerCase().includes(query);
+        if (!matchesName && !matchesSource) return false;
+      }
+
+      if (selectedYear !== "all") {
+        const d = resolveUploadMonthDate(u) || new Date(u.created_at);
+        if (String(d.getFullYear()) !== selectedYear) return false;
+      }
+
+      if (selectedFormat !== "all") {
+        const fmt = getUploadDisplayType(u).toLowerCase();
+        if (fmt !== selectedFormat.toLowerCase()) return false;
+      }
+
+      return true;
+    });
+  }, [uploads, searchQuery, selectedYear, selectedFormat]);
 
   const getSourceBadge = (sourceType?: string) => {
     const type = String(sourceType || "").toLowerCase();
@@ -186,12 +241,17 @@ export default function AnalyticsPage() {
   const categoryData = useMemo(() => {
     const byCategory = activeSummary?.breakdown?.by_category_kg_co2e;
     if (!byCategory || Object.keys(byCategory).length === 0) {
-      return defaultCategoryData;
+      return [
+        { category: "Transport", value: 0, percentage: 0 },
+        { category: "Energy", value: 0, percentage: 0 },
+        { category: "Waste", value: 0, percentage: 0 },
+        { category: "Purchases", value: 0, percentage: 0 },
+      ];
     }
 
     const total = Object.values(byCategory).reduce((sum, val) => sum + Number(val || 0), 0) || 1;
     return Object.entries(byCategory).map(([category, value]) => ({
-      category,
+      category: category.charAt(0).toUpperCase() + category.slice(1),
       value: Math.round(Number(value)),
       percentage: Math.round((Number(value) / total) * 100),
     }));
@@ -200,7 +260,11 @@ export default function AnalyticsPage() {
   const scopeData = useMemo(() => {
     const byScope = activeSummary?.breakdown?.by_scope_kg_co2e;
     if (!byScope || Object.keys(byScope).length === 0) {
-      return defaultScopeData;
+      return [
+        { name: "Scope 1", value: 0 },
+        { name: "Scope 2", value: 0 },
+        { name: "Scope 3", value: 0 },
+      ];
     }
 
     const normalized = {
@@ -216,104 +280,257 @@ export default function AnalyticsPage() {
     }));
   }, [activeSummary]);
 
-  const monthlyTrend = useMemo<TrendPoint[]>(() => {
-    const now = new Date();
-    const rollingWindow = Array.from({ length: 6 }, (_, index) => {
-      const monthDate = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
-      return {
-        month: monthDate.toLocaleDateString("en-US", { month: "short" }),
-        monthLabel: monthDate.toLocaleDateString("en-US", { month: "short", year: "numeric" }),
-        monthKey: getMonthKey(monthDate),
-        emissions: 0,
-        hasData: false,
-        isCurrentMonth: index === 5,
-        uploadCount: 0,
-      };
-    });
-
-    const indexByMonth = new Map<string, number>(
-      rollingWindow.map((point, index) => [point.monthKey, index])
-    );
-
-    for (const upload of uploads) {
-      const monthDate = resolveUploadMonthDate(upload);
-      if (!monthDate) continue;
-
-      const monthKey = getMonthKey(monthDate);
-      const idx = indexByMonth.get(monthKey);
-      if (idx === undefined) continue;
-
-      const totalTco2e = Number(((upload.total_emissions_kg || 0) / 1000).toFixed(3));
-      rollingWindow[idx].emissions = Number((rollingWindow[idx].emissions + totalTco2e).toFixed(3));
-      rollingWindow[idx].hasData = rollingWindow[idx].hasData || totalTco2e > 0;
-      rollingWindow[idx].uploadCount += 1;
-    }
-
-    return rollingWindow;
-  }, [uploads]);
-
-  // Group 4.3b — reshape trend by granularity
+  // Real dynamic grouping by granularity (weekly, monthly, yearly) scoped to active upload filter
   const granularityTrend = useMemo<TrendPoint[]>(() => {
-    if (granularity === 'monthly') return monthlyTrend;
+    const activeUploadsList = selectedUploadId
+      ? uploads.filter((u) => u.id === selectedUploadId)
+      : uploads;
 
-    if (granularity === 'yearly') {
-      // Aggregate by year
-      const byYear = new Map<string, TrendPoint>();
-      for (const point of monthlyTrend) {
-        const year = point.monthKey.split('-')[0];
-        const existing = byYear.get(year);
-        if (existing) {
-          existing.emissions = Number((existing.emissions + point.emissions).toFixed(3));
-          existing.uploadCount += point.uploadCount;
-          existing.hasData = existing.hasData || point.hasData;
-        } else {
-          byYear.set(year, { ...point, month: year, monthLabel: year, monthKey: year });
-        }
-      }
-      return Array.from(byYear.values());
+    if (activeUploadsList.length === 0 && emissions.length === 0) {
+      return [];
     }
+
+    const getWeekKey = (date: Date) => {
+      const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+      const dayNum = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+      return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+    };
+
+    const getWeekShortLabel = (weekKey: string, multiYear: boolean) => {
+      const [year, weekStr] = weekKey.split('-W');
+      return multiYear ? `W${weekStr} ('${year.slice(2)})` : `W${weekStr}`;
+    };
+
+    const getWeekFullLabel = (weekKey: string) => {
+      const [yearStr, weekStr] = weekKey.split('-W');
+      const year = Number(yearStr);
+      const weekNo = Number(weekStr);
+      const range = getIsoWeekDateRange(year, weekNo);
+      return `Week ${weekStr}, ${year} (${range.start} - ${range.end})`;
+    };
 
     if (granularity === 'weekly') {
-      // Expand monthly data to 4 simulated weekly buckets (approximation until weekly API is wired)
-      return monthlyTrend.flatMap((point) =>
-        Array.from({ length: 4 }, (_, i) => ({
-          ...point,
-          month: `${point.month} W${i + 1}`,
-          monthLabel: `${point.monthLabel} Week ${i + 1}`,
-          monthKey: `${point.monthKey}-W${i + 1}`,
-          emissions: Number((point.emissions / 4).toFixed(3)),
-        }))
-      );
+      const weeklyBuckets = new Map<string, {
+        label: string;
+        emissionsKg: number;
+        count: number;
+        byCategory: { transport: number; energy: number; waste: number; purchases: number };
+      }>();
+
+      if (emissions.length > 0) {
+        for (const entry of emissions) {
+          const entryDate = entry.date ? new Date(entry.date) : new Date();
+          if (Number.isNaN(entryDate.getTime())) continue;
+
+          const key = getWeekKey(entryDate);
+          const cat = String(entry.category || "purchases").toLowerCase();
+          const existing = weeklyBuckets.get(key) || {
+            label: getWeekFullLabel(key),
+            emissionsKg: 0,
+            count: 0,
+            byCategory: { transport: 0, energy: 0, waste: 0, purchases: 0 },
+          };
+          existing.emissionsKg += entry.co2Amount;
+          existing.count += 1;
+          if (cat in existing.byCategory) {
+            existing.byCategory[cat as keyof typeof existing.byCategory] += entry.co2Amount;
+          }
+          weeklyBuckets.set(key, existing);
+        }
+      } else {
+        for (const upload of activeUploadsList) {
+          const date = resolveUploadMonthDate(upload) || new Date(upload.created_at);
+          const key = getWeekKey(date);
+          const existing = weeklyBuckets.get(key) || {
+            label: getWeekFullLabel(key),
+            emissionsKg: 0,
+            count: 0,
+            byCategory: { transport: 0, energy: 0, waste: 0, purchases: 0 },
+          };
+          existing.emissionsKg += upload.total_emissions_kg || 0;
+          existing.count += 1;
+          weeklyBuckets.set(key, existing);
+        }
+      }
+
+      const sortedEntries = Array.from(weeklyBuckets.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+      const yearsPresent = new Set(sortedEntries.map(([k]) => k.split('-W')[0]));
+      const multiYear = yearsPresent.size > 1;
+
+      return sortedEntries.map(([key, bucket]) => ({
+        month: getWeekShortLabel(key, multiYear),
+        monthLabel: bucket.label,
+        monthKey: key,
+        emissions: Number((bucket.emissionsKg / 1000).toFixed(3)),
+        emissionsKg: Math.round(bucket.emissionsKg),
+        hasData: bucket.emissionsKg > 0,
+        isCurrentMonth: false,
+        uploadCount: bucket.count,
+        byCategory: bucket.byCategory,
+      }));
     }
 
-    return monthlyTrend;
-  }, [monthlyTrend, granularity]);
+    if (granularity === 'yearly') {
+      const yearlyBuckets = new Map<string, {
+        emissionsKg: number;
+        count: number;
+        byCategory: { transport: number; energy: number; waste: number; purchases: number };
+      }>();
 
+      if (emissions.length > 0) {
+        for (const entry of emissions) {
+          const entryDate = entry.date ? new Date(entry.date) : new Date();
+          if (Number.isNaN(entryDate.getTime())) continue;
+          const yearKey = String(entryDate.getFullYear());
+          const cat = String(entry.category || "purchases").toLowerCase();
+
+          const existing = yearlyBuckets.get(yearKey) || {
+            emissionsKg: 0,
+            count: 0,
+            byCategory: { transport: 0, energy: 0, waste: 0, purchases: 0 },
+          };
+          existing.emissionsKg += entry.co2Amount;
+          existing.count += 1;
+          if (cat in existing.byCategory) {
+            existing.byCategory[cat as keyof typeof existing.byCategory] += entry.co2Amount;
+          }
+          yearlyBuckets.set(yearKey, existing);
+        }
+      } else {
+        for (const upload of activeUploadsList) {
+          const date = resolveUploadMonthDate(upload) || new Date(upload.created_at);
+          const yearKey = String(date.getFullYear());
+          const existing = yearlyBuckets.get(yearKey) || {
+            emissionsKg: 0,
+            count: 0,
+            byCategory: { transport: 0, energy: 0, waste: 0, purchases: 0 },
+          };
+          existing.emissionsKg += upload.total_emissions_kg || 0;
+          existing.count += 1;
+          yearlyBuckets.set(yearKey, existing);
+        }
+      }
+
+      return Array.from(yearlyBuckets.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([yearKey, bucket]) => ({
+          month: yearKey,
+          monthLabel: `Year ${yearKey}`,
+          monthKey: yearKey,
+          emissions: Number((bucket.emissionsKg / 1000).toFixed(3)),
+          emissionsKg: Math.round(bucket.emissionsKg),
+          hasData: bucket.emissionsKg > 0,
+          isCurrentMonth: yearKey === String(new Date().getFullYear()),
+          uploadCount: bucket.count,
+          byCategory: bucket.byCategory,
+        }));
+    }
+
+    // Monthly View
+    const monthlyBuckets = new Map<string, {
+      label: string;
+      emissionsKg: number;
+      count: number;
+      byCategory: { transport: number; energy: number; waste: number; purchases: number };
+    }>();
+
+    if (emissions.length > 0) {
+      for (const entry of emissions) {
+        const entryDate = entry.date ? new Date(entry.date) : new Date();
+        if (Number.isNaN(entryDate.getTime())) continue;
+        const monthKey = getMonthKey(entryDate);
+        const monthLabel = entryDate.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+        const cat = String(entry.category || "purchases").toLowerCase();
+
+        const existing = monthlyBuckets.get(monthKey) || {
+          label: monthLabel,
+          emissionsKg: 0,
+          count: 0,
+          byCategory: { transport: 0, energy: 0, waste: 0, purchases: 0 },
+        };
+        existing.emissionsKg += entry.co2Amount;
+        existing.count += 1;
+        if (cat in existing.byCategory) {
+          existing.byCategory[cat as keyof typeof existing.byCategory] += entry.co2Amount;
+        }
+        monthlyBuckets.set(monthKey, existing);
+      }
+    } else {
+      for (const upload of activeUploadsList) {
+        const date = resolveUploadMonthDate(upload) || new Date(upload.created_at);
+        const monthKey = getMonthKey(date);
+        const monthLabel = date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+
+        const existing = monthlyBuckets.get(monthKey) || {
+          label: monthLabel,
+          emissionsKg: 0,
+          count: 0,
+          byCategory: { transport: 0, energy: 0, waste: 0, purchases: 0 },
+        };
+        existing.emissionsKg += upload.total_emissions_kg || 0;
+        existing.count += 1;
+        monthlyBuckets.set(monthKey, existing);
+      }
+    }
+
+    return Array.from(monthlyBuckets.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([key, bucket]) => {
+        const [year, monthNum] = key.split('-');
+        const dateObj = new Date(Number(year), Number(monthNum) - 1, 1);
+        const shortName = dateObj.toLocaleDateString("en-US", { month: "short" });
+        return {
+          month: shortName,
+          monthLabel: bucket.label,
+          monthKey: key,
+          emissions: Number((bucket.emissionsKg / 1000).toFixed(3)),
+          emissionsKg: Math.round(bucket.emissionsKg),
+          hasData: bucket.emissionsKg > 0,
+          isCurrentMonth: key === getMonthKey(new Date()),
+          uploadCount: bucket.count,
+          byCategory: bucket.byCategory,
+        };
+      });
+  }, [granularity, emissions, uploads, selectedUploadId]);
 
   const selectedUploadTotalKg = Math.round(activeSummary?.totals?.total_kg_co2e || 0);
   const selectedUploadTotalTco2e = Number((selectedUploadTotalKg / 1000).toFixed(2));
-  const rollingSixMonthTotalTco2e = Number(
-    monthlyTrend.reduce((sum, item) => sum + item.emissions, 0).toFixed(2)
-  );
-  const monthlyAvgTco2e = Number((rollingSixMonthTotalTco2e / Math.max(monthlyTrend.length, 1)).toFixed(2));
-  const topCategory = categoryData.reduce((prev, curr) => (curr.value > prev.value ? curr : prev), categoryData[0]);
-  const highestMonth = monthlyTrend.reduce((prev, curr) => (curr.emissions > prev.emissions ? curr : prev), monthlyTrend[0]);
-  const lowestMonth = monthlyTrend.reduce((prev, curr) => (curr.emissions < prev.emissions ? curr : prev), monthlyTrend[0]);
-  const averageTrend = Number(
-    (monthlyTrend.reduce((sum, item) => sum + item.emissions, 0) / Math.max(monthlyTrend.length, 1)).toFixed(2)
-  );
-  const currentMonthPoint = monthlyTrend[monthlyTrend.length - 1];
-  const previousMonthPoint = monthlyTrend.length > 1 ? monthlyTrend[monthlyTrend.length - 2] : null;
-  const currentMonthDeltaPct = previousMonthPoint && previousMonthPoint.emissions > 0
-    ? Number((((currentMonthPoint.emissions - previousMonthPoint.emissions) / previousMonthPoint.emissions) * 100).toFixed(1))
+  
+  const trendPoints = granularityTrend;
+  const periodLabelSingular = granularity === 'weekly' ? 'Week' : granularity === 'yearly' ? 'Year' : 'Month';
+  const periodLabelPlural = granularity === 'weekly' ? 'Weeks' : granularity === 'yearly' ? 'Years' : 'Months';
+
+  const highestPeriod = trendPoints.length > 0
+    ? trendPoints.reduce((prev, curr) => (curr.emissions > prev.emissions ? curr : prev), trendPoints[0])
     : null;
-  const currentMonthTag = currentMonthDeltaPct === null
-    ? "Not enough data yet"
-    : currentMonthDeltaPct < 0
-      ? "Getting better"
-      : currentMonthDeltaPct > 0
-        ? "Increasing"
-        : "Stable";
+  const lowestPeriod = trendPoints.length > 0
+    ? trendPoints.reduce((prev, curr) => (curr.emissions < prev.emissions ? curr : prev), trendPoints[0])
+    : null;
+  
+  const totalTrendEmissions = trendPoints.reduce((sum, item) => sum + item.emissions, 0);
+  const averageTrend = trendPoints.length > 0
+    ? Number((totalTrendEmissions / trendPoints.length).toFixed(2))
+    : 0;
+
+  const currentPeriodPoint = trendPoints.length > 0 ? trendPoints[trendPoints.length - 1] : null;
+  const previousPeriodPoint = trendPoints.length > 1 ? trendPoints[trendPoints.length - 2] : null;
+  
+  const currentPeriodDeltaPct = previousPeriodPoint && previousPeriodPoint.emissions > 0
+    ? Number((((currentPeriodPoint!.emissions - previousPeriodPoint.emissions) / previousPeriodPoint.emissions) * 100).toFixed(1))
+    : null;
+
+  const topCategory = categoryData.reduce((prev, curr) => (curr.value > prev.value ? curr : prev), categoryData[0]);
+
+  const currentPeriodTag = currentPeriodDeltaPct === null
+    ? "Not enough prior period data"
+    : currentPeriodDeltaPct < 0
+      ? "Decreasing trend"
+      : currentPeriodDeltaPct > 0
+        ? "Increasing trend"
+        : "Stable trend";
 
   return (
     <div className="space-y-6">
@@ -331,7 +548,7 @@ export default function AnalyticsPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {/* Group 4.3b — Granularity selector */}
+          {/* Granularity selector */}
           <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1">
             {(['weekly', 'monthly', 'yearly'] as const).map((g) => (
               <button
@@ -358,93 +575,130 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Uploads List */}
+      {/* Uploads Filter & Management Section (Enterprise Scalability) */}
       <div className="glass-card rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
           <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Uploads</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">By default, all uploads are included. Select one upload only if you want a narrower view.</p>
-          </div>
-          {selectedUpload && (
             <div className="flex items-center gap-2">
-              <span
-                className={clsx(
-                  "px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border",
-                  getSourceBadge(selectedUpload.source_type)
-                )}
-              >
-                {getUploadDisplayType(selectedUpload)}
-              </span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                {new Date(selectedUpload.created_at).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">Upload Datasets</h2>
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-teal-500/20 text-teal-400 border border-teal-500/30">
+                Showing {filteredUploads.length} of {uploads.length} upload(s)
               </span>
             </div>
-          )}
+            <p className="text-xs text-slate-500 dark:text-slate-400">Select an upload file to isolate its dataset or choose 'All Uploads' for cumulative enterprise analytics.</p>
+          </div>
+
+          {/* Upload Search & Filter Controls */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[180px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search file name..."
+                className="w-full pl-9 pr-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500"
+              />
+            </div>
+
+            {availableYears.length > 0 && (
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                className="px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-teal-500"
+              >
+                <option value="all">All Years</option>
+                {availableYears.map((yr) => (
+                  <option key={yr} value={yr}>Year {yr}</option>
+                ))}
+              </select>
+            )}
+
+            <select
+              value={selectedFormat}
+              onChange={(e) => setSelectedFormat(e.target.value)}
+              className="px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-teal-500 uppercase"
+            >
+              <option value="all">All Formats</option>
+              <option value="csv">CSV</option>
+              <option value="tsv">TSV</option>
+              <option value="json">JSON</option>
+              <option value="manual">Manual</option>
+            </select>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-3">
+
+        {/* Scrollable Upload Pill List */}
+        <div className="flex flex-wrap gap-2.5 max-h-56 overflow-y-auto pr-1">
           {uploads.length === 0 && !uploadsLoading ? (
-            <div className="text-sm text-slate-500 dark:text-slate-400">
-              No uploads yet. Analytics will appear after the first upload.
+            <div className="text-sm text-slate-500 dark:text-slate-400 py-2">
+              No uploads recorded yet. Upload emissions data to enable analytics.
+            </div>
+          ) : filteredUploads.length === 0 ? (
+            <div className="text-sm text-slate-400 py-2">
+              No dataset matching "{searchQuery}".
             </div>
           ) : (
             <>
-            <button
-              type="button"
-              onClick={() => setSelectedUploadId(null)}
-              className={clsx(
-                "px-3 py-2 rounded-lg text-left border transition-all min-w-[180px]",
-                selectedUploadId === null
-                  ? "bg-emerald-600 text-white border-emerald-600 shadow-md"
-                  : "bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500"
-              )}
-            >
-              <span className="text-sm font-semibold block">All Uploads</span>
-              <span className={clsx("text-xs block", selectedUploadId === null ? "text-white/80" : "text-slate-500 dark:text-slate-400")}> 
-                {uploads.length} upload(s)
-              </span>
-            </button>
+              <button
+                type="button"
+                onClick={() => setSelectedUploadId(null)}
+                className={clsx(
+                  "px-3 py-2 rounded-lg text-left border transition-all min-w-[170px]",
+                  selectedUploadId === null
+                    ? "bg-teal-600 text-white border-teal-600 shadow-md"
+                    : "bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-teal-500 dark:hover:border-teal-500"
+                )}
+              >
+                <span className="text-xs font-semibold block">All Uploads</span>
+                <span className={clsx("text-[11px] block mt-0.5", selectedUploadId === null ? "text-white/80" : "text-slate-500 dark:text-slate-400")}> 
+                  {uploads.length} total file(s)
+                </span>
+              </button>
 
-            {uploads.map((upload) => {
-              const isActive = upload.id === selectedUploadId;
-              const uploadDate = new Date(upload.created_at).toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              });
-              return (
-                <button
-                  type="button"
-                  key={upload.id}
-                  onClick={() => setSelectedUploadId(upload.id)}
-                  className={clsx(
-                    "px-3 py-2 rounded-lg text-left border transition-all min-w-[180px]",
-                    isActive
-                      ? "bg-emerald-600 text-white border-emerald-600 shadow-md"
-                      : "bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500"
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold">{uploadDate}</span>
-                    <span
-                      className={clsx(
-                        "px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border",
-                        getSourceBadge(upload.source_type),
-                        isActive ? "border-transparent" : ""
-                      )}
-                    >
-                      {getUploadDisplayType(upload)}
+              {filteredUploads.map((upload) => {
+                const isActive = upload.id === selectedUploadId;
+                const resolvedDate = resolveUploadMonthDate(upload) || new Date(upload.created_at);
+                const uploadDate = resolvedDate.toLocaleDateString("en-US", {
+                  month: "short",
+                  year: "numeric",
+                });
+                const totalTco2e = Number(((upload.total_emissions_kg || 0) / 1000).toFixed(2));
+
+                return (
+                  <button
+                    type="button"
+                    key={upload.id}
+                    onClick={() => setSelectedUploadId(upload.id)}
+                    className={clsx(
+                      "px-3 py-2 rounded-lg text-left border transition-all min-w-[180px] flex-1 max-w-[240px]",
+                      isActive
+                        ? "bg-teal-600 text-white border-teal-600 shadow-md"
+                        : "bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-teal-500 dark:hover:border-teal-500"
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-1 mb-1">
+                      <span className="text-xs font-semibold">{uploadDate}</span>
+                      <span
+                        className={clsx(
+                          "px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wide border",
+                          getSourceBadge(upload.source_type),
+                          isActive ? "border-transparent text-white bg-white/20" : ""
+                        )}
+                      >
+                        {getUploadDisplayType(upload)}
+                      </span>
+                    </div>
+                    <span className={clsx("text-[11px] truncate text-left block font-mono", isActive ? "text-white/90" : "text-slate-400")}>
+                      {getUploadDisplayName(upload)}
                     </span>
-                  </div>
-                  <span className={clsx("text-xs truncate text-left block", isActive ? "text-white/80" : "text-slate-500 dark:text-slate-400")}>
-                    {upload.original_file_name}
-                  </span>
-                </button>
-              );
-            })}
+                    <div className="flex items-center justify-between mt-1 text-[10px]">
+                      <span className={isActive ? "text-white/80" : "text-slate-500"}>{upload.record_count || 0} entries</span>
+                      <span className={clsx("font-semibold", isActive ? "text-white" : "text-teal-400")}>{totalTco2e} tCO₂e</span>
+                    </div>
+                  </button>
+                );
+              })}
             </>
           )}
         </div>
@@ -456,35 +710,35 @@ export default function AnalyticsPage() {
           title="Total for Selected View"
           value={selectedUploadTotalTco2e.toLocaleString("en-US", { maximumFractionDigits: 2 })}
           unit="tCO₂e"
-          change={selectedUpload ? selectedUpload.original_file_name : "All uploads included"}
+          change={selectedUpload ? getUploadDisplayName(selectedUpload) : "All uploads included"}
           changeType="neutral"
           icon={<Activity className="size-6" />}
         />
         <StatsCard
-          title="Average for Last 6 Months"
-          value={monthlyAvgTco2e.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+          title={`Average Per ${periodLabelSingular}`}
+          value={averageTrend.toLocaleString("en-US", { maximumFractionDigits: 2 })}
           unit="tCO₂e"
-          change={currentMonthDeltaPct === null ? "Comparison available after next month upload" : `${currentMonthDeltaPct > 0 ? "+" : ""}${currentMonthDeltaPct}% compared with last month`}
-          changeType={currentMonthDeltaPct !== null && currentMonthDeltaPct <= 0 ? "positive" : "negative"}
+          change={currentPeriodDeltaPct === null ? "Comparison available after next period data" : `${currentPeriodDeltaPct > 0 ? "+" : ""}${currentPeriodDeltaPct}% compared with prior ${periodLabelSingular.toLowerCase()}`}
+          changeType={currentPeriodDeltaPct !== null && currentPeriodDeltaPct <= 0 ? "positive" : "negative"}
           icon={<Calendar className="size-6" />}
         />
         <StatsCard
           title="Highest Category"
           value={topCategory?.category || "Transport"}
-          unit={`${topCategory?.percentage || 34}% of total`}
+          unit={`${topCategory?.percentage || 0}% of total`}
           icon={<PieChart className="size-6" />}
         />
         <StatsCard
-          title="Current Month Status"
-          value={currentMonthTag}
-          unit={currentMonthPoint?.monthLabel || "Current month"}
-          change={currentMonthPoint?.hasData ? `${currentMonthPoint.uploadCount} upload(s) mapped` : "No uploaded data in current month"}
-          changeType={currentMonthDeltaPct !== null && currentMonthDeltaPct <= 0 ? "positive" : "neutral"}
+          title={`Current ${periodLabelSingular} Status`}
+          value={currentPeriodTag}
+          unit={currentPeriodPoint?.monthLabel || `Current ${periodLabelSingular.toLowerCase()}`}
+          change={currentPeriodPoint?.hasData ? `${currentPeriodPoint.uploadCount} transaction(s) mapped` : "No uploaded data in current period"}
+          changeType={currentPeriodDeltaPct !== null && currentPeriodDeltaPct <= 0 ? "positive" : "neutral"}
           icon={<TrendingDown className="size-6" />}
         />
       </div>
 
-      {/* Category Breakdown */}
+      {/* Category & Scope Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <DashboardCard
           title="Emissions by Category"
@@ -538,7 +792,7 @@ export default function AnalyticsPage() {
                   </span>
                 </div>
                 <span className="text-sm font-bold text-white">
-                  {cat.value} kg
+                  {cat.value.toLocaleString()} kg
                 </span>
               </div>
             ))}
@@ -592,13 +846,13 @@ export default function AnalyticsPage() {
         </DashboardCard>
       </div>
 
-      {/* Monthly Trend */}
+      {/* Granularity Trend Chart */}
       <DashboardCard
         title={`Emissions Trend — ${granularity.charAt(0).toUpperCase() + granularity.slice(1)} View`}
-        subtitle="Updated automatically when new uploads are added. Use the selector above to change granularity."
+        subtitle="Chronological carbon trajectory based on recorded transaction dates."
         icon={<Activity className="size-5" />}
       >
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={320}>
           <LineChart data={granularityTrend}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1e3a3a" />
             <XAxis
@@ -614,20 +868,51 @@ export default function AnalyticsPage() {
               tickFormatter={(value) => Number(value).toFixed(1)}
             />
             <Tooltip
-              formatter={(value: number | string) => [
-                `${Number(value).toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e`,
-                "Emissions",
-              ]}
-              labelFormatter={(_label: string, payload) => {
-                const point = payload?.[0]?.payload as TrendPoint | undefined;
-                const uploadTag = point?.hasData ? `${point.uploadCount} upload(s)` : "No upload data";
-                return `${point?.monthLabel || _label} • ${uploadTag}`;
-              }}
-              contentStyle={{
-                backgroundColor: "#16252d",
-                border: "1px solid #1e3a3a",
-                borderRadius: "0.5rem",
-                color: "#fff",
+              content={({ active, payload }) => {
+                if (!active || !payload || payload.length === 0) return null;
+                const point = payload[0].payload as TrendPoint;
+                return (
+                  <div className="bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs text-white shadow-xl min-w-[200px]">
+                    <div className="font-semibold text-teal-400 border-b border-slate-800 pb-1.5 mb-2">
+                      {point.monthLabel}
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Total Emissions:</span>
+                        <span className="font-bold text-white">{point.emissions} tCO₂e</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Emissions in KG:</span>
+                        <span className="font-mono text-slate-300">{point.emissionsKg.toLocaleString()} kg</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Transactions:</span>
+                        <span className="text-slate-300">{point.uploadCount} record(s)</span>
+                      </div>
+                    </div>
+                    {point.byCategory && (
+                      <div className="mt-2.5 pt-2 border-t border-slate-800 space-y-1 text-[11px]">
+                        <div className="text-slate-400 font-medium mb-1">Category Breakdown:</div>
+                        <div className="flex justify-between">
+                          <span className="text-teal-400">Transport:</span>
+                          <span>{Math.round(point.byCategory.transport)} kg</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-blue-400">Energy:</span>
+                          <span>{Math.round(point.byCategory.energy)} kg</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-amber-400">Waste:</span>
+                          <span>{Math.round(point.byCategory.waste)} kg</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-rose-400">Purchases:</span>
+                          <span>{Math.round(point.byCategory.purchases)} kg</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
               }}
             />
 
@@ -635,7 +920,7 @@ export default function AnalyticsPage() {
               y={averageTrend}
               stroke="#64748b"
               strokeDasharray="4 4"
-              label={{ value: `Average ${averageTrend.toFixed(2)}`, fill: "#94a3b8", fontSize: 11, position: "insideTopRight" }}
+              label={{ value: `Avg ${averageTrend.toFixed(2)} tCO₂e`, fill: "#94a3b8", fontSize: 11, position: "insideTopRight" }}
             />
 
             <Line
@@ -668,36 +953,46 @@ export default function AnalyticsPage() {
             </Line>
           </LineChart>
         </ResponsiveContainer>
+
+        {/* Dynamic Summary Cards Below Chart */}
         <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="p-4 bg-navy-muted/50 rounded-lg text-center">
-            <p className="text-xs text-slate-400 mb-1">Highest Month</p>
+            <p className="text-xs text-slate-400 mb-1">Highest {periodLabelSingular}</p>
             <p className="text-lg font-bold text-rose-400">
-              {highestMonth?.monthLabel} - {highestMonth?.emissions.toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e
+              {highestPeriod?.monthLabel || "-"} - {(highestPeriod?.emissions || 0).toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e
             </p>
           </div>
           <div className="p-4 bg-navy-muted/50 rounded-lg text-center">
-            <p className="text-xs text-slate-400 mb-1">Lowest Month</p>
+            <p className="text-xs text-slate-400 mb-1">Lowest {periodLabelSingular}</p>
             <p className="text-lg font-bold text-emerald-400">
-              {lowestMonth?.monthLabel} - {lowestMonth?.emissions.toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e
+              {lowestPeriod?.monthLabel || "-"} - {(lowestPeriod?.emissions || 0).toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e
             </p>
           </div>
           <div className="p-4 bg-navy-muted/50 rounded-lg text-center">
-            <p className="text-xs text-slate-400 mb-1">Average</p>
+            <p className="text-xs text-slate-400 mb-1">Period Average</p>
             <p className="text-lg font-bold text-white">{averageTrend.toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e</p>
           </div>
           <div className="p-4 bg-navy-muted/50 rounded-lg text-center">
-            <p className="text-xs text-slate-400 mb-1">Current Month</p>
-            <p className={`text-lg font-bold ${currentMonthDeltaPct !== null && currentMonthDeltaPct <= 0 ? "text-emerald-400" : "text-white"}`}>
-              {currentMonthPoint.monthLabel} - {currentMonthPoint.emissions.toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e
+            <p className="text-xs text-slate-400 mb-1">Latest {periodLabelSingular}</p>
+            <p className={`text-lg font-bold ${currentPeriodDeltaPct !== null && currentPeriodDeltaPct <= 0 ? "text-emerald-400" : "text-white"}`}>
+              {currentPeriodPoint?.monthLabel || "-"} - {(currentPeriodPoint?.emissions || 0).toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e
             </p>
             <p className="text-xs text-slate-400 mt-1">
-              {currentMonthDeltaPct === null
-                ? "Comparison available after next month upload"
-                : `${currentMonthDeltaPct > 0 ? "+" : ""}${currentMonthDeltaPct}% compared with last month (${currentMonthTag})`}
+              {currentPeriodDeltaPct === null
+                ? "Comparison available after next period data"
+                : `${currentPeriodDeltaPct > 0 ? "+" : ""}${currentPeriodDeltaPct}% compared with prior ${periodLabelSingular.toLowerCase()} (${currentPeriodTag})`}
             </p>
           </div>
         </div>
       </DashboardCard>
     </div>
+  );
+}
+
+export default function AnalyticsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-slate-400">Loading analytics...</div>}>
+      <AnalyticsContent />
+    </Suspense>
   );
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchEmissionsUploadsScoped, EmissionsUploadRecord } from "@/lib/emissions-api";
 import { getCurrentUserContext } from "@/lib/recommendations-api";
+import { supabase } from "@/lib/supabaseClient";
 
 interface UseEmissionsUploadsReturn {
   uploads: EmissionsUploadRecord[];
@@ -14,9 +15,12 @@ export const useEmissionsUploads = (): UseEmissionsUploadsReturn => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchUploads = useCallback(async () => {
+  const fetchUploads = useCallback(async (isSilent?: boolean | unknown) => {
     try {
-      setIsLoading(true);
+      const isSilentUpdate = typeof isSilent === 'boolean' ? isSilent : false;
+      if (!isSilentUpdate) {
+        setIsLoading(true);
+      }
       setError(null);
 
       const { organizationId, userId } = getCurrentUserContext();
@@ -36,30 +40,19 @@ export const useEmissionsUploads = (): UseEmissionsUploadsReturn => {
   }, []);
 
   useEffect(() => {
-    fetchUploads();
+    fetchUploads(false);
 
-    const refreshIntervalMs = 60_000;
-    const intervalId = window.setInterval(() => {
-      fetchUploads();
-    }, refreshIntervalMs);
-
-    const refreshOnFocus = () => {
-      fetchUploads();
+    const handleSilentRefresh = () => {
+      fetchUploads(true);
     };
 
-    const refreshOnVisibility = () => {
-      if (document.visibilityState === "visible") {
-        fetchUploads();
-      }
-    };
-
-    window.addEventListener("focus", refreshOnFocus);
-    document.addEventListener("visibilitychange", refreshOnVisibility);
+    const channel = supabase
+      .channel("analytics-uploads-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "organization_uploads" }, handleSilentRefresh)
+      .subscribe();
 
     return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener("focus", refreshOnFocus);
-      document.removeEventListener("visibilitychange", refreshOnVisibility);
+      supabase.removeChannel(channel);
     };
   }, [fetchUploads]);
 

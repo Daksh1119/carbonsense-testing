@@ -95,17 +95,39 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    // Auto-heal manager_invites: if user_profile exists and is an active manager/user, mark invite as accepted
+    const activeEmails = new Set(
+      profiles
+        .filter((p) => p.email && (p.role === 'manager' || p.approved || p.organization_id))
+        .map((p) => p.email.toLowerCase().trim())
+    );
+
+    const pendingInvitesFiltered = [];
+    const now = new Date().toISOString();
+
+    for (const inv of (invitesRes.data ?? [])) {
+      const invEmail = (inv.email || '').toLowerCase().trim();
+      if (invEmail && activeEmails.has(invEmail)) {
+        await supabase
+          .from('manager_invites')
+          .update({ status: 'accepted', accepted_at: now })
+          .eq('id', inv.id);
+      } else {
+        pendingInvitesFiltered.push(inv);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       stats: {
         totalOrgs: orgs.length,
         totalManagers: managers.length,
         totalViewers: viewers.length,
-        pendingInvites: (invitesRes.data ?? []).length,
+        pendingInvites: pendingInvitesFiltered.length,
         pendingViewerRequests: pendingViewerRequests.length,
       },
       companiesList,
-      pendingInvites: invitesRes.data ?? [],
+      pendingInvites: pendingInvitesFiltered,
       pendingViewerRequests,
     });
   } catch (err) {

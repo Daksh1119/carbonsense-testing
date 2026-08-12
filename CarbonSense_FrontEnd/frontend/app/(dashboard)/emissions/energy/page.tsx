@@ -7,6 +7,7 @@ import Button from "@/components/Button";
 import { Breadcrumb, BackButton } from "@/components/navigation";
 import { showSuccessToast } from "@/lib/toast";
 import { energyFactors, getFactorOption } from "@/lib/emissions-factors";
+import { ENERGY_CONFIGS } from "@/lib/emissions-factors";
 import { useEmissionsDraftStore } from "@/store";
 import {
   Zap,
@@ -19,20 +20,32 @@ export default function EnergyPage() {
   const router = useRouter();
   const { setEntry, entries } = useEmissionsDraftStore();
 
-  const defaultOption = entries.energy?.activityType
-    ? energyFactors.find((option) => option.label === entries.energy?.activityType)?.value || energyFactors[0].value
-    : energyFactors[0].value;
+  const defaultCategory = entries.energy?.activityType
+    ? ENERGY_CONFIGS.find((cfg) => cfg.label === entries.energy?.activityType)?.value || ENERGY_CONFIGS[0].value
+    : ENERGY_CONFIGS[0].value;
 
-  const [energyType, setEnergyType] = useState(defaultOption);
-  const [source, setSource] = useState(entries.energy?.meta?.source || "Mixed Grid Supply");
+  const [energyCategory, setEnergyCategory] = useState(defaultCategory);
+
+  const currentConfig = ENERGY_CONFIGS.find((cfg) => cfg.value === energyCategory) || ENERGY_CONFIGS[0];
+
+  const defaultSubValue = entries.energy?.meta?.source || currentConfig.subOptions[0].value;
+  const initialSubOption = currentConfig.subOptions.find((opt) => opt.value === defaultSubValue || opt.label === defaultSubValue)?.value || currentConfig.subOptions[0].value;
+
+  const [subOptionValue, setSubOptionValue] = useState(initialSubOption);
   const [consumption, setConsumption] = useState(entries.energy?.amount?.toString() || "");
   const [date, setDate] = useState(entries.energy?.date || "");
 
-  const option = getFactorOption(energyFactors, energyType);
+  const handleCategoryChange = (newCategoryValue: string) => {
+    setEnergyCategory(newCategoryValue);
+    const newConfig = ENERGY_CONFIGS.find((cfg) => cfg.value === newCategoryValue) || ENERGY_CONFIGS[0];
+    setSubOptionValue(newConfig.subOptions[0].value);
+  };
+
+  const selectedSubOption = currentConfig.subOptions.find((opt) => opt.value === subOptionValue) || currentConfig.subOptions[0];
   const consumptionValue = Number(consumption || 0);
 
   const estimatedImpact = consumptionValue > 0
-    ? (consumptionValue * option.factorKgPerUnit).toFixed(2)
+    ? (consumptionValue * selectedSubOption.factorKgPerUnit).toFixed(2)
     : "0.00";
   const trend = "-2.8%";
 
@@ -40,15 +53,16 @@ export default function EnergyPage() {
     if (consumption && date) {
       setEntry("energy", {
         category: "energy",
-        activityType: option.label,
-        detail: `${consumptionValue.toLocaleString()} ${option.unit} • ${source}`,
+        activityType: currentConfig.label,
+        detail: `${consumptionValue.toLocaleString()} ${currentConfig.unit} • ${selectedSubOption.label}`,
         amount: consumptionValue,
-        unit: option.unit,
+        unit: currentConfig.unit,
         date,
         estimatedCo2Kg: Number(estimatedImpact),
         meta: {
-          source,
-          activity_key: option.value,
+          source: selectedSubOption.label,
+          subOptionValue: selectedSubOption.value,
+          activity_key: currentConfig.value,
         },
       });
 
@@ -99,20 +113,20 @@ export default function EnergyPage() {
           <p className="text-xs text-slate-500">
             Optional fields — add what you have now, or skip and return later.
           </p>
-          {/* Energy Type & Source */}
+          {/* Energy Type & Dependent Sub-Option */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 Energy Type
               </label>
               <select
-                value={energyType}
-                onChange={(e) => setEnergyType(e.target.value)}
+                value={energyCategory}
+                onChange={(e) => handleCategoryChange(e.target.value)}
                 className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                {energyFactors.map((factor) => (
-                  <option key={factor.value} value={factor.value}>
-                    {factor.label}
+                {ENERGY_CONFIGS.map((cfg) => (
+                  <option key={cfg.value} value={cfg.value}>
+                    {cfg.label}
                   </option>
                 ))}
               </select>
@@ -120,18 +134,18 @@ export default function EnergyPage() {
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Source
+                {currentConfig.subCategoryLabel}
               </label>
               <select
-                value={source}
-                onChange={(e) => setSource(e.target.value)}
+                value={subOptionValue}
+                onChange={(e) => setSubOptionValue(e.target.value)}
                 className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                <option>Mixed Grid Supply</option>
-                <option>Solar Power</option>
-                <option>Wind Power</option>
-                <option>Hydro Power</option>
-                <option>Green Energy Contract</option>
+                {currentConfig.subOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -150,8 +164,8 @@ export default function EnergyPage() {
                   className="w-full px-4 py-3 bg-navy-muted border border-navy-border rounded-lg text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
                   placeholder="0.00"
                 />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">
-                  {option.unit}
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium uppercase">
+                  {currentConfig.unit}
                 </span>
               </div>
             </div>

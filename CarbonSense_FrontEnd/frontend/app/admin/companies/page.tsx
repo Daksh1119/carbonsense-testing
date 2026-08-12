@@ -78,9 +78,12 @@ export default function AdminCompaniesPage() {
   const [deleteTarget, setDeleteTarget] = useState<OrgDisplay | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (isSilent?: boolean | unknown) => {
     try {
-      setIsLoading(true);
+      const isSilentUpdate = typeof isSilent === 'boolean' ? isSilent : false;
+      if (!isSilentUpdate) {
+        setIsLoading(true);
+      }
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
@@ -90,8 +93,9 @@ export default function AdminCompaniesPage() {
       });
 
       if (res.ok) {
-        const data = await res.json();
-        const display: OrgDisplay[] = (data.companies ?? []).map((org: any) => ({
+        const body = await res.json();
+        const rawOrgs = body.companies ?? [];
+        const display: OrgDisplay[] = rawOrgs.map((org: any) => ({
           id: org.id,
           name: org.name,
           sector: org.sector ?? '—',
@@ -157,21 +161,21 @@ export default function AdminCompaniesPage() {
   }, []);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    loadData(false);
 
-  // Supabase Realtime subscription
-  useEffect(() => {
+    const handleSilentRefresh = () => {
+      loadData(true);
+    };
+
     const channel = supabase
       .channel('admin-companies-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'organizations' },
-        () => { loadData(); }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'organizations' }, handleSilentRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_profiles' }, handleSilentRefresh)
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [loadData]);
 
   const handleDeleteCompany = async () => {

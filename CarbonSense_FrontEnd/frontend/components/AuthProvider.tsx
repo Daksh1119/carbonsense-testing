@@ -35,6 +35,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
           name: meta.full_name || meta.name || session.user.email || '',
           email: session.user.email ?? '',
           role,
+          organizationId: meta.organization_id || meta.organizationId || undefined,
           approved: meta.approved ?? true,
           createdAt: session.user.created_at,
         },
@@ -82,21 +83,21 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
 
         // Group 2.1 — onboarding redirect for new managers
-        if (
-          profile.role === 'manager' &&
-          profile.organization_id &&
-          !pathname.startsWith('/onboarding')
-        ) {
-          try {
-            const { data: org } = await supabase
-              .from('organizations')
-              .select('profile_status')
-              .eq('id', profile.organization_id)
-              .single();
-            if (org?.profile_status === 'not_started') {
-              router.replace('/onboarding/company-profile');
-            }
-          } catch { /* non-fatal */ }
+        if (profile.role === 'manager' && !pathname.startsWith('/onboarding')) {
+          if (!profile.organization_id) {
+            router.replace('/onboarding/company-profile');
+          } else {
+            try {
+              const { data: org } = await supabase
+                .from('organizations')
+                .select('profile_status, name')
+                .eq('id', profile.organization_id)
+                .maybeSingle();
+              if (!org || org.profile_status === 'not_started' || !org.name || org.name.startsWith('New Organization')) {
+                router.replace('/onboarding/company-profile');
+              }
+            } catch { /* non-fatal */ }
+          }
         }
       } catch {
         /* non-critical — JWT data already in store */

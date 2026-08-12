@@ -61,8 +61,11 @@ export default function AdminManagersPage() {
     return session?.access_token ?? '';
   };
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (isSilent?: boolean | unknown) => {
+    const isSilentUpdate = typeof isSilent === 'boolean' ? isSilent : false;
+    if (!isSilentUpdate) {
+      setLoading(true);
+    }
     try {
       const token = await getToken();
       const headers = { Authorization: `Bearer ${token}` };
@@ -103,7 +106,25 @@ export default function AdminManagersPage() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData(false);
+
+    const handleSilentRefresh = () => {
+      fetchData(true);
+    };
+
+    // Supabase Realtime channel for live updates
+    const channel = supabase
+      .channel('admin-managers-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'manager_invites' }, handleSilentRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_profiles' }, handleSilentRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'organizations' }, handleSilentRefresh)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchData]);
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -414,154 +414,169 @@ export default function DashboardPage() {
           </Button>
         }
       >
-        <div className="h-[320px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={carbonPathData} margin={{ top: 16, right: 18, left: -4, bottom: 0 }}>
-              <defs>
-                <linearGradient id="historicalFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#64748b" stopOpacity={0.28} />
-                  <stop offset="95%" stopColor="#64748b" stopOpacity={0.04} />
-                </linearGradient>
-                <linearGradient id="projectionFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#0bd5b0" stopOpacity={0.24} />
-                  <stop offset="95%" stopColor="#0bd5b0" stopOpacity={0.03} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e3a3a" />
-              <XAxis
-                dataKey="month"
-                stroke="#64748b"
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                stroke="#64748b"
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-                domain={[0, carbonPathYAxisMax]}
-                tickFormatter={(value) => `${Number(value).toFixed(1)}`}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "#16252d",
-                  border: "1px solid #1e3a3a",
-                  borderRadius: "0.5rem",
-                  color: "#fff",
-                }}
-                formatter={(value: number | string, name: string, item: { payload?: { phaseTag?: string } }) => {
-                  const numeric = Number(value);
-                  if (!Number.isFinite(numeric)) return ["N/A", name];
-                  const label = name === "historical" ? "Recorded" : "Expected";
-                  const suffix = item?.payload?.phaseTag ? ` (${item.payload.phaseTag})` : "";
-                  return [`${numeric.toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e`, `${label}${suffix}`];
-                }}
-                labelFormatter={(_label: string, payload) => {
-                  const point = payload?.[0]?.payload as { monthLong?: string } | undefined;
-                  return point?.monthLong || _label;
-                }}
-              />
-              <Legend
-                wrapperStyle={{ fontSize: "12px", color: "#94a3b8" }}
-                formatter={(value) => (value === "historical" ? "Recorded Months" : "Expected Months")}
-              />
-
-              {latestHistoricalPoint && (
-                <ReferenceLine
-                  x={formatMonthLabel(latestHistoricalPoint.date)}
-                  stroke="#94a3b8"
-                  strokeDasharray="4 4"
-                  label={{ value: "Current", fill: "#94a3b8", fontSize: 11, position: "insideTopRight" }}
+        {data.carbonPath.historical.length === 0 ? (
+          <div className="h-[320px] w-full flex flex-col items-center justify-center border border-dashed border-navy-border/60 rounded-xl bg-navy-muted/20 p-6 text-center">
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl mb-3">
+              <Wind className="w-8 h-8 text-emerald-400" />
+            </div>
+            <h3 className="text-base font-bold text-white mb-1">No Emission Data Recorded Yet</h3>
+            <p className="text-xs text-slate-400 max-w-md mb-4 leading-relaxed">
+              Upload your first CSV, TSV, JSON file or log a manual entry to generate real-time carbon trend paths, reduction insights, and AI forecasts.
+            </p>
+            <Button onClick={() => router.push('/emissions')} icon={<Plus className="h-4 w-4" />}>
+              Add First Emission
+            </Button>
+          </div>
+        ) : (
+          <div className="h-[320px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={carbonPathData} margin={{ top: 16, right: 18, left: -4, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="historicalFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#64748b" stopOpacity={0.28} />
+                    <stop offset="95%" stopColor="#64748b" stopOpacity={0.04} />
+                  </linearGradient>
+                  <linearGradient id="projectionFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#0bd5b0" stopOpacity={0.24} />
+                    <stop offset="95%" stopColor="#0bd5b0" stopOpacity={0.03} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e3a3a" />
+                <XAxis
+                  dataKey="month"
+                  stroke="#64748b"
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={false}
                 />
-              )}
-
-              {/* Group 4.3 — cycle boundary markers */}
-              {cycleMarkers.map((marker, idx) => (
-                <ReferenceLine
-                  key={`cycle-${idx}`}
-                  x={marker.monthLabel}
-                  stroke="#0bd5b0"
-                  strokeOpacity={0.35}
-                  strokeWidth={1.5}
-                  strokeDasharray="2 4"
-                  label={{
-                    value: marker.label,
-                    fill: "#0bd5b0",
-                    fontSize: 9,
-                    position: "insideTopLeft",
-                    opacity: 0.7,
+                <YAxis
+                  stroke="#64748b"
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={false}
+                  domain={[0, carbonPathYAxisMax]}
+                  tickFormatter={(value) => `${Number(value).toFixed(1)}`}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#16252d",
+                    border: "1px solid #1e3a3a",
+                    borderRadius: "0.5rem",
+                    color: "#fff",
+                  }}
+                  formatter={(value: number | string, name: string, item: { payload?: { phaseTag?: string } }) => {
+                    const numeric = Number(value);
+                    if (!Number.isFinite(numeric)) return ["N/A", name];
+                    const label = name === "historical" ? "Recorded" : "Expected";
+                    const suffix = item?.payload?.phaseTag ? ` (${item.payload.phaseTag})` : "";
+                    return [`${numeric.toLocaleString("en-US", { maximumFractionDigits: 2 })} tCO₂e`, `${label}${suffix}`];
+                  }}
+                  labelFormatter={(_label: string, payload) => {
+                    const point = payload?.[0]?.payload as { monthLong?: string } | undefined;
+                    return point?.monthLong || _label;
                   }}
                 />
-              ))}
+                <Legend
+                  wrapperStyle={{ fontSize: "12px", color: "#94a3b8" }}
+                  formatter={(value) => (value === "historical" ? "Recorded Months" : "Expected Months")}
+                />
 
-              <Area
-                type="monotone"
-                dataKey="historical"
-                name="historical"
-                stroke="#64748b"
-                fill="url(#historicalFill)"
-                strokeWidth={2}
-                connectNulls={false}
-                dot={(props) => {
-                  const point = props.payload as { isCurrentMonth?: boolean };
-                  return (
-                    <circle
-                      cx={props.cx}
-                      cy={props.cy}
-                      r={point?.isCurrentMonth ? 5 : 3}
-                      fill={point?.isCurrentMonth ? "#f8fafc" : "#64748b"}
-                      stroke="#0f172a"
-                      strokeWidth={1}
-                    />
-                  );
-                }}
-                activeDot={{ r: 6, fill: "#f8fafc", stroke: "#64748b", strokeWidth: 2 }}
-              />
+                {latestHistoricalPoint && (
+                  <ReferenceLine
+                    x={formatMonthLabel(latestHistoricalPoint.date)}
+                    stroke="#94a3b8"
+                    strokeDasharray="4 4"
+                    label={{ value: "Current", fill: "#94a3b8", fontSize: 11, position: "insideTopRight" }}
+                  />
+                )}
 
-              <Area
-                type="linear"
-                dataKey="projection"
-                name="projection-area"
-                stroke="none"
-                fill="url(#projectionFill)"
-                fillOpacity={1}
-                isAnimationActive={false}
-                connectNulls={false}
-                legendType="none"
-              />
+                {/* Group 4.3 — cycle boundary markers */}
+                {cycleMarkers.map((marker, idx) => (
+                  <ReferenceLine
+                    key={`cycle-${idx}`}
+                    x={marker.monthLabel}
+                    stroke="#0bd5b0"
+                    strokeOpacity={0.35}
+                    strokeWidth={1.5}
+                    strokeDasharray="2 4"
+                    label={{
+                      value: marker.label,
+                      fill: "#0bd5b0",
+                      fontSize: 9,
+                      position: "insideTopLeft",
+                      opacity: 0.7,
+                    }}
+                  />
+                ))}
 
-              <Line
-                type="linear"
-                dataKey="projection"
-                name="projection"
-                stroke="#0bd5b0"
-                strokeWidth={4}
-                strokeDasharray="6 4"
-                connectNulls={false}
-                isAnimationActive={false}
-                dot={false}
-                activeDot={{ r: 6, fill: "#0bd5b0", stroke: "#0f172a", strokeWidth: 2 }}
-              >
-                <LabelList
+                <Area
+                  type="monotone"
+                  dataKey="historical"
+                  name="historical"
+                  stroke="#64748b"
+                  fill="url(#historicalFill)"
+                  strokeWidth={2}
+                  connectNulls={false}
+                  dot={(props) => {
+                    const point = props.payload as { isCurrentMonth?: boolean };
+                    return (
+                      <circle
+                        cx={props.cx}
+                        cy={props.cy}
+                        r={point?.isCurrentMonth ? 5 : 3}
+                        fill={point?.isCurrentMonth ? "#f8fafc" : "#64748b"}
+                        stroke="#0f172a"
+                        strokeWidth={1}
+                      />
+                    );
+                  }}
+                  activeDot={{ r: 6, fill: "#f8fafc", stroke: "#64748b", strokeWidth: 2 }}
+                />
+
+                <Area
+                  type="linear"
                   dataKey="projection"
-                  position="top"
-                  fill="#0bd5b0"
-                  fontSize={11}
-                  formatter={(value: number | string, entry: { payload?: { showProjectionLabel?: boolean } }) => {
-                    if (!entry?.payload?.showProjectionLabel) return "";
-                    return Number(value).toLocaleString("en-US", { maximumFractionDigits: 1 });
-                  }}
+                  name="projection-area"
+                  stroke="none"
+                  fill="url(#projectionFill)"
+                  fillOpacity={1}
+                  isAnimationActive={false}
+                  connectNulls={false}
+                  legendType="none"
                 />
-              </Line>
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+
+                <Line
+                  type="linear"
+                  dataKey="projection"
+                  name="projection"
+                  stroke="#0bd5b0"
+                  strokeWidth={4}
+                  strokeDasharray="6 4"
+                  connectNulls={false}
+                  isAnimationActive={false}
+                  dot={false}
+                  activeDot={{ r: 6, fill: "#0bd5b0", stroke: "#0f172a", strokeWidth: 2 }}
+                >
+                  <LabelList
+                    dataKey="projection"
+                    position="top"
+                    fill="#0bd5b0"
+                    fontSize={11}
+                    formatter={(value: number | string, entry: { payload?: { showProjectionLabel?: boolean } }) => {
+                      if (!entry?.payload?.showProjectionLabel) return "";
+                      return Number(value).toLocaleString("en-US", { maximumFractionDigits: 1 });
+                    }}
+                  />
+                </Line>
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">
           <div className="p-3 bg-navy-muted/40 rounded-lg border border-navy-border/50">
             <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-1">Latest Actual</p>
-            <p className="text-sm font-semibold text-white">{latestHistoricalPoint ? formatTco2e(latestHistoricalPoint.value) : "N/A"}</p>
+            <p className="text-sm font-semibold text-white">{latestHistoricalPoint ? formatTco2e(latestHistoricalPoint.value) : "0 tCO₂e"}</p>
             <p className="text-xs text-slate-400 mt-1">{latestHistoricalPoint ? formatFullMonthLabel(latestHistoricalPoint.date) : "No uploaded month"}</p>
           </div>
           <div className="p-3 bg-navy-muted/40 rounded-lg border border-navy-border/50">
@@ -575,7 +590,7 @@ export default function DashboardPage() {
           </div>
           <div className="p-3 bg-navy-muted/40 rounded-lg border border-navy-border/50">
             <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-1">Expected Level (End Month)</p>
-            <p className="text-sm font-semibold text-primary">{finalProjectionPoint ? formatTco2e(finalProjectionPoint.value) : "N/A"}</p>
+            <p className="text-sm font-semibold text-primary">{finalProjectionPoint ? formatTco2e(finalProjectionPoint.value) : "0 tCO₂e"}</p>
             <p className="text-xs text-slate-400 mt-1">{finalProjectionPoint ? formatFullMonthLabel(finalProjectionPoint.date) : "No estimate yet"}</p>
           </div>
           <div className="p-3 bg-navy-muted/40 rounded-lg border border-navy-border/50">

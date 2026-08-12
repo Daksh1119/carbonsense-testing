@@ -103,9 +103,9 @@ export default function EmployeeSignupPage() {
                 <span className="text-[11px] uppercase tracking-wider text-slate-500">or use email</span>
                 <div className="flex-1 h-px bg-slate-700/50" />
               </div>
-              <div><label className={labelCls}>Work Email</label><input type="email" value={form.email} onChange={e=>set('email',e.target.value)} placeholder="you@company.com" className={inputCls}/></div>
-              <div><label className={labelCls}>Password (min 8 characters)</label><input type="password" value={form.password} onChange={e=>set('password',e.target.value)} placeholder="••••••••" className={inputCls}/></div>
-              <div><label className={labelCls}>Confirm Password</label><input type="password" value={form.confirmPassword} onChange={e=>set('confirmPassword',e.target.value)} placeholder="••••••••" className={inputCls}/>
+              <div><label className={labelCls}>Work Email</label><input type="email" value={form.email} onChange={e=>set('email',e.target.value)} placeholder="Enter your work email address" autoComplete="username" className={inputCls}/></div>
+              <div><label className={labelCls}>Password (min 8 characters)</label><input type="password" value={form.password} onChange={e=>set('password',e.target.value)} placeholder="Enter password (min 8 characters)" autoComplete="new-password" className={inputCls}/></div>
+              <div><label className={labelCls}>Confirm Password</label><input type="password" value={form.confirmPassword} onChange={e=>set('confirmPassword',e.target.value)} placeholder="Re-enter password to confirm" autoComplete="new-password" className={inputCls}/>
                 {form.confirmPassword && form.password!==form.confirmPassword && <p className="text-xs text-red-400 mt-1">Passwords do not match.</p>}
               </div>
             </div>

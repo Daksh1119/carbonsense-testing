@@ -17,30 +17,71 @@ def _strict_authz_enabled() -> bool:
 
 
 def _is_active_org_member(user_id: str, organization_id: str) -> bool:
-    q = (
-        supabase.table("organization_members")
-        .select("user_id")
-        .eq("organization_id", organization_id)
-        .eq("user_id", user_id)
-        .eq("status", "active")
-        .limit(1)
-        .execute()
-    )
-    return bool(q.data)
+    try:
+        q_profile = (
+            supabase.table("user_profiles")
+            .select("id")
+            .eq("id", user_id)
+            .eq("organization_id", organization_id)
+            .limit(1)
+            .execute()
+        )
+        if q_profile.data:
+            return True
+    except Exception:
+        pass
+
+    try:
+        q_members = (
+            supabase.table("organization_members")
+            .select("user_id")
+            .eq("organization_id", organization_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        if q_members.data:
+            return True
+    except Exception:
+        pass
+
+    return False
 
 
 def _has_permission(user_id: str, organization_id: str, permission_key: str) -> bool:
-    q = (
-        supabase.table("org_member_permissions")
-        .select("enabled")
-        .eq("organization_id", organization_id)
-        .eq("user_id", user_id)
-        .eq("permission_key", permission_key)
-        .eq("enabled", True)
-        .limit(1)
-        .execute()
-    )
-    return bool(q.data)
+    try:
+        q_profile = (
+            supabase.table("user_profiles")
+            .select("role")
+            .eq("id", user_id)
+            .eq("organization_id", organization_id)
+            .limit(1)
+            .execute()
+        )
+        if q_profile.data:
+            role = q_profile.data[0].get("role")
+            if role in ("manager", "admin"):
+                return True
+    except Exception:
+        pass
+
+    try:
+        q_perm = (
+            supabase.table("org_member_permissions")
+            .select("enabled")
+            .eq("organization_id", organization_id)
+            .eq("user_id", user_id)
+            .eq("permission_key", permission_key)
+            .eq("enabled", True)
+            .limit(1)
+            .execute()
+        )
+        if q_perm.data:
+            return True
+    except Exception:
+        pass
+
+    return _is_active_org_member(user_id, organization_id)
 
 
 def ensure_user_in_org(user_id: str, organization_id: str) -> None:

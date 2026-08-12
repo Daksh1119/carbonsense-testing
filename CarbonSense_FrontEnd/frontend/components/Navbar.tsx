@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Bell, FileDown, LogOut, User, ChevronDown, CheckCircle2, AlertTriangle, Clock, Upload, TreePine, ShieldAlert } from "lucide-react";
 import { useUserStore } from "@/store";
 import type { Role } from "@/lib/authHelpers";
@@ -57,13 +58,28 @@ function dotColor(s: NotifSeverity) {
   return { critical: "bg-rose-500", warning: "bg-amber-500", info: "bg-sky-500", success: "bg-emerald-500" }[s];
 }
 
-function useNotifications(userId?: string) {
-  const [notifs, setNotifs] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
+let cachedNotifs: Notification[] = [];
+let lastNotifFetchTime = 0;
+const NOTIF_CACHE_TTL_MS = 60_000;
 
-  const refresh = async () => {
+function useNotifications(userId?: string) {
+  const [notifs, setNotifs] = useState<Notification[]>(cachedNotifs);
+  const [loading, setLoading] = useState(cachedNotifs.length === 0);
+
+  const refresh = async (force = false) => {
+    const now = Date.now();
+    if (!force && cachedNotifs.length > 0 && now - lastNotifFetchTime < NOTIF_CACHE_TTL_MS) {
+      setNotifs(cachedNotifs);
+      setLoading(false);
+      return;
+    }
+
     try {
       const ctx = getCurrentUserContext();
+      if (!ctx.organizationId && !ctx.userId) {
+        setLoading(false);
+        return;
+      }
       const results: Notification[] = [];
 
       // Compliance deadlines
@@ -106,6 +122,8 @@ function useNotifications(userId?: string) {
         if (order[a.severity] !== order[b.severity]) return order[a.severity] - order[b.severity];
         return new Date(b.ts ?? 0).getTime() - new Date(a.ts ?? 0).getTime();
       });
+      cachedNotifs = results;
+      lastNotifFetchTime = Date.now();
       setNotifs(results);
     } catch { /* keep previous */ } finally {
       setLoading(false);
@@ -114,7 +132,7 @@ function useNotifications(userId?: string) {
 
   useEffect(() => {
     refresh();
-    const id = setInterval(refresh, 60_000);
+    const id = setInterval(() => refresh(true), 120_000);
     return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
@@ -199,6 +217,7 @@ function NotificationBell({ userId }: { userId?: string }) {
 // ─── Main Navbar ──────────────────────────────────────────────────────────────
 
 export default function Navbar({ title = "Executive Dashboard", subtitle, showExportButton = false }: NavbarProps) {
+  const router = useRouter();
   const { user, logout } = useUserStore();
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -266,7 +285,14 @@ export default function Navbar({ title = "Executive Dashboard", subtitle, showEx
                 </div>
                 <div className="py-1">
                   <button
-                    onClick={() => setShowDropdown(false)}
+                    onClick={() => {
+                      setShowDropdown(false);
+                      if (userRole === "viewer") {
+                        router.push("/viewer/profile");
+                      } else {
+                        router.push("/settings");
+                      }
+                    }}
                     className="w-full flex items-center gap-3 px-4 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
                   >
                     <User className="size-4" />

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { EmissionEntry } from '@/lib/types';
 import {
   fetchEmissionsForUpload,
+  fetchEmissionsForUploads,
   updateEmissionEntry,
   deleteEmissionEntry,
   EmissionEntryRecord,
@@ -70,10 +71,8 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
       }
 
       if (organizationId && uploadIds && uploadIds.length > 0) {
-        const entryGroups = await Promise.all(
-          uploadIds.map((id) => fetchEmissionsForUpload(organizationId, id, userId || undefined))
-        );
-        const mapped: EmissionEntry[] = entryGroups.flat().map(mapEntryRecord);
+        const entries = await fetchEmissionsForUploads(organizationId, uploadIds, userId || undefined);
+        const mapped: EmissionEntry[] = entries.map(mapEntryRecord);
 
         mapped.sort((left, right) => {
           const l = new Date(left.date).getTime();
