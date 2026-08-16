@@ -37,6 +37,10 @@ export interface GenerateRecommendationsPayload {
     period_end?: string;
     meta?: Record<string, unknown>;
   }>;
+  /** When true, bypasses the 7-day cache and forces a fresh LLM generation */
+  force_refresh?: boolean;
+  /** When set, scopes recommendations to this specific upload (per-file isolation) */
+  emissions_upload_id?: string;
 }
 
 export interface GenerateRecommendationsResponse {

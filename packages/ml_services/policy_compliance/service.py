@@ -711,26 +711,27 @@ def ask_policy(
         [str(r.get("name") or "") for r in policy_context.get("requirements_rows", [])[:6]])
 
     system_prompt = (
-        "You are a carbon compliance advisor for Indian SMEs. "
-        "Be practical, concise, and action-first. "
-        "Do not provide legal certification. "
-        "If unsure, explicitly say so and suggest consulting a qualified advisor."
+        "You are an expert environmental policy & compliance AI co-pilot for enterprise decarbonization in India. "
+        "Provide direct, highly customized, and accurate answers to the user's specific question. "
+        "Do NOT force rigid generic template sections. Address the user's inquiry directly first. "
+        "Structure your response logically using relevant markdown headings (## Heading) that directly fit the question asked "
+        "(e.g. ## Statutory Fines & Penalties, ## Required Evidence & Filings, ## Compliance Deadlines, ## Strategic Implications). "
+        "Keep bullet points concise, high-value, and tailored to the organization's specific industry and context."
     )
 
     user_prompt = (
-        f"Organisation industry: {industry or 'unknown'}\n"
-        f"Organisation size: {size or 'unknown'}\n"
-        f"Current emissions: {total_emissions_kg if total_emissions_kg is not None else 'unknown'} kgCO2e\n"
-        f"Policy context: {policy_name} — {policy_desc}\n"
-        f"Policy requirements: {requirements_summary or 'No requirements loaded'}\n"
-        f"Retrieved context:\n{context_block or 'No additional context found.'}\n\n"
-        f"User question: {user_question}\n\n"
-        "Respond in markdown with exactly these section headings and bullet points (max 4 bullets per section):\n"
-        "## Applicability\n"
-        "## What to do this week\n"
-        "## What evidence to keep\n"
-        "## Risks if ignored\n"
-        "Use short bullets only. No long paragraphs."
+        f"Organisation Industry: {industry or 'IT/ITES / Enterprise'}\n"
+        f"Organisation Size: {size or 'Large/SME'}\n"
+        f"Current Emissions: {total_emissions_kg if total_emissions_kg is not None else 'N/A'} kgCO2e\n"
+        f"Target Policy: {policy_name} — {policy_desc}\n"
+        f"Key Policy Requirements: {requirements_summary or 'Standard compliance requirements'}\n"
+        f"Retrieved Regulatory Context:\n{context_block or 'No additional context found.'}\n\n"
+        f"USER QUESTION: {user_question}\n\n"
+        "Instructions:\n"
+        "1. Directly and precisely answer the user's specific question first.\n"
+        "2. Organize your response using 2-4 dynamic, relevant markdown headings (## Heading Name) specific to the question asked.\n"
+        "3. Use concise, high-value bullet points tailored to the user's company context.\n"
+        "4. Do not output repetitive generic template sections if they do not answer the user's question."
     )
 
     llm_response, model_used = _chat_completion(system_prompt, user_prompt)

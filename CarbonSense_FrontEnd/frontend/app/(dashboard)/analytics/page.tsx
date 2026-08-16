@@ -566,7 +566,12 @@ function AnalyticsContent() {
           <Button
             variant="outline"
             icon={<ArrowRight className="size-4" />}
-            onClick={() => router.push("/recommendations")}
+            onClick={() => {
+              const url = selectedUploadId
+                ? `/recommendations?upload_id=${selectedUploadId}`
+                : "/recommendations";
+              router.push(url);
+            }}
           >
             View Recommendations
           </Button>

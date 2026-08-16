@@ -133,13 +133,19 @@ export async function runTEME(payload: TEMERequest): Promise<TEMEResult> {
 
 	let response: Response;
 
+	const enrichedPayload = {
+		...payload,
+		user_id: getCurrentUserId(),
+		organization_id: getCurrentOrgId() || "anonymous",
+	};
+
 	try {
 		response = await fetch(primaryEndpoint, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
 			},
-			body: JSON.stringify(payload),
+			body: JSON.stringify(enrichedPayload),
 		});
 	} catch (error) {
 		if (primaryEndpoint !== "/api/teme/run") {
@@ -148,7 +154,7 @@ export async function runTEME(payload: TEMERequest): Promise<TEMEResult> {
 				headers: {
 					"Content-Type": "application/json",
 				},
-				body: JSON.stringify(payload),
+				body: JSON.stringify(enrichedPayload),
 			});
 		} else {
 			throw error;

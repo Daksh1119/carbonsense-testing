@@ -13,8 +13,8 @@
  * - Action Score tooltip explains connection to compliance
  */
 
-import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import DashboardCard from "@/components/DashboardCard";
 import Badge from "@/components/Badge";
 import Button from "@/components/Button";
@@ -193,14 +193,38 @@ function InfoTooltip({ text }: { text: string }) {
 // Main page
 // ---------------------------------------------------------------------------
 
-export default function RecommendationsPage() {
+function RecommendationsContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const uploadId = searchParams.get("upload_id") || undefined;
+
   const { user } = useUserStore();
   const orgId = user?.organizationId ?? "";
   const userId = user?.id ?? "";
 
-  // Legacy hook for fallback / summary stats
-  const { recommendations: liveRecommendations, isLoading: legacyLoading, error: legacyError, llmUsed, llmWarning, refetch } = useRecommendations();
+  // Hook: scoped per-upload (backend caches session per upload_id)
+  const { recommendations: liveRecommendations, isLoading: legacyLoading, error: legacyError, llmUsed, llmWarning, refetch, generateFresh } = useRecommendations(uploadId);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
+  const handleRegenerate = useCallback(async () => {
+    setIsRegenerating(true);
+    try {
+      await generateFresh();
+      // Reload catalog items after fresh generation
+      // fetchItems is a useCallback and is stable — safe to call here
+      if (orgId) {
+        setItemsLoading(true);
+        const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+        const res = await fetch(`${apiBase}/recommendations/items?organization_id=${orgId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setItems(data.items ?? []);
+        }
+        setItemsLoading(false);
+      }
+    } catch { /* handled inside hook */ }
+    finally { setIsRegenerating(false); }
+  }, [generateFresh, orgId]);
 
   // Catalog-based items from the new endpoint
   const [items, setItems] = useState<RecommendationItem[]>([]);
@@ -255,11 +279,17 @@ export default function RecommendationsPage() {
     steps: rec.steps,
   }));
 
-  // Summary stats
-  const totalPotential = legacyRecs.map((r) => r.savings).map((s) => Number((String(s).match(/[\d.]+/) || ["0"])[0])).reduce((a, b) => a + b, 0);
-  const highImpactCount = legacyRecs.filter((r) => r.impact === "High").length;
+  // Summary stats — use liveRecommendations from the cache-first hook.
+  // Because the hook now loads stored items and only generates once, these
+  // values are stable across page visits (no more random LLM regeneration).
+  const totalPotential = liveRecommendations.reduce((sum, rec) => sum + Number(rec.impact || 0), 0);
+  const highImpactCount = items.length > 0
+    ? items.filter((i) => i.rank <= 2).length   // top-ranked stored items = high impact
+    : liveRecommendations.filter((r) => r.impact >= 150).length;
   const implementedCount = items.filter((i) => i.implementation_status === "implemented").length;
-  const avgCertainty = legacyRecs.length > 0 ? legacyRecs.reduce((sum, r) => sum + Number(r.certainty || 0), 0) / legacyRecs.length : 0;
+  const avgCertainty = liveRecommendations.length > 0
+    ? liveRecommendations.reduce((sum, r) => sum + Number(r.certainty || 0), 0) / liveRecommendations.length
+    : 0;
 
   // Status update handler
   async function handleStatusUpdate(itemId: string, newStatus: ItemStatus) {
@@ -418,7 +448,7 @@ export default function RecommendationsPage() {
   // Filtered items
   const filteredItems = activeFilter === "all" ? items : items.filter((i) => i.implementation_status === activeFilter);
 
-  const isLoading = itemsLoading || legacyLoading;
+  const isLoading = itemsLoading || (legacyLoading && items.length === 0);
 
   return (
     <div className="space-y-6">
@@ -433,6 +463,16 @@ export default function RecommendationsPage() {
           </p>
         </div>
         <BackButton href="/dashboard" label="Back to Dashboard" variant="outline" />
+        <button
+          type="button"
+          disabled={isRegenerating}
+          onClick={handleRegenerate}
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border border-slate-600 text-slate-300 hover:border-primary hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Force-generate a fresh set of recommendations using latest data"
+        >
+          <Sparkles className="size-3.5" />
+          {isRegenerating ? "Regenerating…" : "Regenerate"}
+        </button>
       </div>
 
       {/* Summary Banner */}
@@ -825,5 +865,13 @@ export default function RecommendationsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function RecommendationsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-slate-400">Loading recommendations…</div>}>
+      <RecommendationsContent />
+    </Suspense>
   );
 }

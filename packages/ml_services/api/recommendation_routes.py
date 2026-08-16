@@ -35,6 +35,8 @@ class GenerateRecommendationsInput(BaseModel):
     teme_run_id: Optional[str] = None
     teme_result: Dict[str, Any] = Field(default_factory=dict)
     kpi_snapshots: List[KPISnapshotInput] = Field(default_factory=list)
+    force_refresh: bool = False  # When True, bypasses the 7-day cache and forces a new LLM call
+    emissions_upload_id: Optional[str] = None  # When set, scopes recommendations to this specific upload
 
 
 class FeedbackInput(BaseModel):
@@ -59,7 +61,10 @@ def generate_recommendations(payload: GenerateRecommendationsInput):
         ensure_user_in_org(payload.user_id, payload.organization_id)
         ensure_permission(payload.user_id, payload.organization_id, "recommendations.generate")
 
-        result = generate_and_store_recommendations(payload.model_dump())
+        result = generate_and_store_recommendations(
+            payload.model_dump(),
+            force_refresh=payload.force_refresh,
+        )
         return result
     except HTTPException:
         raise

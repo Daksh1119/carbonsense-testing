@@ -436,35 +436,67 @@ def _heuristic_fallback(
 
 
 def _build_prompt(payload: Dict[str, Any], target_count: int) -> List[Dict[str, str]]:
+    """
+    Compact prompt builder — keeps the context under ~1,200 tokens to stay
+    within free-tier rate limits on Groq / OpenRouter while still giving the
+    LLM all the information it needs to produce grounded recommendations.
+    """
+    # ── Compact context summary (replaces the full JSON dump) ──────────────
+    emission_kg = float(payload.get("emission_kg") or 0)
+    org_name = (payload.get("organization_profile") or {}).get("organization_name") or "Unknown"
+    industry = (payload.get("organization_profile") or {}).get("industry") or "Unknown"
+    location = payload.get("location") or "India"
+    focus_areas = payload.get("focus_areas") or []
+
+    # Top-5 KPIs by value
+    kpis = sorted(
+        payload.get("kpi_snapshots") or [],
+        key=lambda k: float(k.get("kpi_value") or 0),
+        reverse=True
+    )[:5]
+    kpi_lines = "; ".join(
+        f"{k.get('kpi_name')}={round(float(k.get('kpi_value') or 0), 1)}{k.get('kpi_unit', '')}"
+        for k in kpis
+    )
+
+    # Up to 4 evidence items — just evidence_id + citation
+    evidence_catalog = payload.get("evidence_catalog") or []
+    evidence_ids = [str(e.get("evidence_id") or "") for e in evidence_catalog[:4] if e.get("evidence_id")]
+    evidence_lines = "; ".join(
+        f"{e.get('evidence_id')}: {str(e.get('citation') or '')[:80]}"
+        for e in evidence_catalog[:4]
+        if e.get("evidence_id")
+    )
+
+    compact_context = (
+        f"Org: {org_name} | Industry: {industry} | Location: {location}\n"
+        f"Total emissions: {round(emission_kg, 1)} kgCO2e\n"
+        f"Focus areas: {', '.join(focus_areas)}\n"
+        f"Top KPIs: {kpi_lines}\n"
+        f"Evidence catalog IDs available: {', '.join(evidence_ids)}\n"
+        f"Evidence: {evidence_lines}"
+    )
+
+    # ── Compact output schema ───────────────────────────────────────────────
     schema_hint = {
         "recommendations": [
             {
-                "title": "string",
-                "summary": "string",
-                "action_type": "reduction | offset | policy | compliance",
-                "priority": "low | medium | high | critical",
-                "confidence_score": "number between 0 and 1",
+                "title": "str",
+                "summary": "str (1-2 sentences)",
+                "action_type": "reduction|offset|policy|compliance",
+                "priority": "low|medium|high|critical",
+                "confidence_score": "0.0-1.0",
                 "estimated_impact_kg_co2e": "number",
                 "estimated_impact_kg_co2e_low": "number",
                 "estimated_impact_kg_co2e_high": "number",
-                "implementation_cost_usd": "number or null",
-                "time_to_impact_months": "integer or null",
-                "rationale": "string",
-                "impact_model": {
-                    "kpi_refs": ["string"],
-                    "formula": "string"
-                },
-                "implementation_steps": ["string", "string"],
+                "implementation_cost_usd": "number|null",
+                "time_to_impact_months": "int|null",
+                "rationale": "str (1 sentence)",
+                "impact_model": {"kpi_refs": ["str"], "formula": "str"},
+                "implementation_steps": ["str x3-5"],
                 "evidence": [
-                    {
-                        "evidence_id": "string - must match one of evidence_catalog.evidence_id",
-                        "source_type": "teme_run | kpi_snapshot | external | manual",
-                        "source_table": "string or null",
-                        "source_record_id": "string or null",
-                        "uri": "string or null",
-                        "citation": "string",
-                        "excerpt": "string"
-                    }
+                    {"evidence_id": "must match catalog ID above", "source_type": "str",
+                     "citation": "str", "excerpt": "str"}
                 ]
             }
         ]
@@ -475,22 +507,20 @@ def _build_prompt(payload: Dict[str, Any], target_count: int) -> List[Dict[str, 
             "role": "system",
             "content": (
                 "You are a climate strategy co-pilot for enterprise decarbonization. "
-                "Return only strict JSON, no markdown, no prose outside JSON. "
-                "Prioritize practical, measurable recommendations grounded in organization-specific context. "
-                "Every recommendation must be implementable and cite at least 2 evidence items from evidence_catalog by evidence_id. "
-                "Do not invent data sources or claims not present in context. "
-                "If evidence is weak for an action, do not include that action."
+                "Return ONLY strict JSON — no markdown fences, no prose outside JSON. "
+                "Every recommendation MUST cite ≥2 evidence_ids from the catalog. "
+                "Do not invent data. Keep summaries and rationale concise (1-2 sentences max)."
             ),
         },
         {
             "role": "user",
             "content": (
-                f"Generate up to {target_count} recommendations from this context, only where evidence is strong. "
-                "At least 60% must be direct reduction actions and at most 1 pure offset action. "
-                "Use realistic costs, realistic timelines, and impact ranges. "
-                "Provide impact bounds (low/high), implementation_steps (3-6), and an impact_model that references KPI names from context.\n\n"
-                f"Context JSON:\n{json.dumps(payload, ensure_ascii=True)}\n\n"
-                f"Output JSON schema:\n{json.dumps(schema_hint, ensure_ascii=True)}"
+                f"Generate {target_count} carbon reduction recommendations. "
+                "Rules: ≥60% must be 'reduction' action_type; max 1 'offset'; "
+                "impact bounds (low=80%, high=120% of central estimate); "
+                f"3-5 implementation_steps per recommendation.\n\n"
+                f"Context:\n{compact_context}\n\n"
+                f"Output schema:\n{json.dumps(schema_hint, ensure_ascii=True)}"
             ),
         },
     ]
@@ -506,6 +536,7 @@ def _call_openai_compatible(messages: List[Dict[str, str]]) -> Dict[str, Any]:
             "model": model_name,
             "messages": messages,
             "temperature": 0.1,
+            "max_tokens": 1500,
             "response_format": {"type": "json_object"},
         }
 
@@ -899,9 +930,192 @@ def _get_teme_run(teme_run_id: Optional[str], user_id: str) -> Dict[str, Any]:
     return q.data[0]
 
 
-def generate_and_store_recommendations(payload: Dict[str, Any]) -> Dict[str, Any]:
+
+def _fetch_upload_context(upload_id: str) -> Dict[str, Any]:
+    """
+    Fetch emission data for a specific upload from Supabase.
+    Returns a dict with emission_kg, kpi_snapshots and breakdown,
+    or an empty dict if the upload is not found.
+    """
+    try:
+        # Get the upload header row (total_emissions_kg, period, file name)
+        upload_res = (
+            supabase.table("emissions_uploads")
+            .select("id,original_file_name,period_start,period_end,total_emissions_kg,organization_id")
+            .eq("id", upload_id)
+            .limit(1)
+            .execute()
+        )
+        if not upload_res.data:
+            return {}
+        upload = upload_res.data[0]
+
+        emission_kg = float(upload.get("total_emissions_kg") or 0)
+        project_name = str(upload.get("original_file_name") or "Emissions Upload").strip()
+        period_start = upload.get("period_start")
+        period_end = upload.get("period_end")
+
+        # Get emission entries for this upload to build KPI snapshots + breakdown
+        entries_res = (
+            supabase.table("emission_entries")
+            .select("category,co2_kg,entry_date")
+            .eq("upload_id", upload_id)
+            .execute()
+        )
+        entries = entries_res.data or []
+
+        # Build category breakdown
+        by_category: Dict[str, float] = {}
+        for e in entries:
+            cat = str(e.get("category") or "other").lower()
+            by_category[cat] = round(by_category.get(cat, 0.0) + float(e.get("co2_kg") or 0), 4)
+
+        # If no entries but we have total_emissions_kg, still produce minimal KPIs
+        if not by_category and emission_kg > 0:
+            by_category["total"] = round(emission_kg, 4)
+
+        # Build KPI snapshots from category totals
+        kpi_snapshots = [
+            {
+                "kpi_name": f"{cat}_kg",
+                "kpi_value": round(val, 2),
+                "kpi_unit": "kgCO2e",
+                "period_start": period_start,
+                "period_end": period_end,
+                "meta": {"source": "emissions_upload", "upload_id": upload_id},
+            }
+            for cat, val in by_category.items()
+            if val > 0
+        ]
+
+        return {
+            "emission_kg": emission_kg,
+            "project_name": project_name,
+            "kpi_snapshots": kpi_snapshots,
+            "period_start": period_start,
+            "period_end": period_end,
+            "by_category_kg_co2e": by_category,
+        }
+    except Exception as exc:
+        print(f"[recommendations] Could not fetch upload context for {upload_id}: {exc}")
+        return {}
+
+
+def _build_cache_key(payload: Dict[str, Any]) -> str:
+    """
+    Build a stable, lightweight cache key.
+
+    - When `emissions_upload_id` is present we use it directly — this guarantees
+      exactly one recommendation session per uploaded file, regardless of whether
+      emission_kg changed due to rounding.
+    - Otherwise we fall back to the quantised emission + KPI hash (org-level cache).
+    """
+    # Per-upload key: one session per file, guaranteed unique.
+    upload_id = str(payload.get("emissions_upload_id") or "").strip()
+    if upload_id:
+        org_id = str(payload.get("organization_id") or "")
+        raw = f"upload::{org_id}::{upload_id}"
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    # Org-level fallback (when navigating to /recommendations without a specific upload)
+    emission_kg = round(float(payload.get("emission_kg") or 0) / 500) * 500
+    org_id = str(payload.get("organization_id") or "")
+    location = str(payload.get("location") or "India").strip().lower()
+
+    # Hash of top-5 KPI names+values (rounded) so different data produces a new key
+    kpis = sorted(
+        payload.get("kpi_snapshots") or [],
+        key=lambda k: float(k.get("kpi_value") or 0),
+        reverse=True,
+    )[:5]
+    kpi_sig = "|".join(
+        f"{k.get('kpi_name')}:{round(float(k.get('kpi_value') or 0) / 100) * 100}"
+        for k in kpis
+    )
+
+    raw = f"{org_id}::{emission_kg}::{location}::{kpi_sig}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _lookup_cached_session(org_id: str, cache_key: str) -> Optional[Dict[str, Any]]:
+    """
+    Return an existing recommendation session if one was generated in the last
+    7 days for this org with the same cache key. Returns None on any failure.
+    """
+    try:
+        from datetime import datetime, timezone, timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        res = (
+            supabase.table("recommendation_sessions")
+            .select("id, organization_id, project_name, emission_kg, error_message, llm_model, llm_provider, status, created_at")
+            .eq("organization_id", org_id)
+            .eq("input_hash", cache_key)
+            .eq("status", "generated")
+            .gte("created_at", cutoff)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not res.data:
+            return None
+        session = res.data[0]
+        # Fetch the recommendations for this session
+        rec_res = (
+            supabase.table("recommendations")
+            .select("*")
+            .eq("session_id", session["id"])
+            .order("rank", desc=False)
+            .execute()
+        )
+        recs = rec_res.data or []
+        if not recs:
+            return None  # Session exists but has no recs — re-generate
+        return {
+            "session_id": session["id"],
+            "llm_used": True,
+            "llm_warning": session.get("error_message"),
+            "recommendations": recs,
+            "_cache_hit": True,
+        }
+    except Exception:
+        return None  # Cache lookup failure is non-fatal — just re-generate
+
+
+def generate_and_store_recommendations(payload: Dict[str, Any], force_refresh: bool = False) -> Dict[str, Any]:
     user_id = payload["user_id"]
     org_id = payload["organization_id"]
+    emissions_upload_id = str(payload.get("emissions_upload_id") or "").strip() or None
+
+    # ── If an upload_id is given, enrich payload with that upload's actual data ─
+    # This ensures each upload gets its own tailored context rather than relying
+    # on whatever was cached in sessionStorage at the frontend.
+    if emissions_upload_id:
+        upload_ctx = _fetch_upload_context(emissions_upload_id)
+        if upload_ctx:
+            # Merge: upload data takes precedence over anything passed from frontend
+            payload = {
+                **payload,
+                "emission_kg": upload_ctx["emission_kg"],
+                "project_name": upload_ctx.get("project_name") or payload.get("project_name"),
+                "kpi_snapshots": upload_ctx["kpi_snapshots"],
+                "emissions_upload_id": emissions_upload_id,
+            }
+            print(f"[recommendations] Enriched payload from upload {emissions_upload_id}: "
+                  f"{upload_ctx['emission_kg']:.1f} kgCO2e, {len(upload_ctx['kpi_snapshots'])} KPIs")
+
+    # ── Idempotency: return cached session if one exists within 7 days ─────
+    # Skip cache when force_refresh=True (explicit user action) or when
+    # the caller is a background ingestion pipeline (no user-visible context).
+    if not force_refresh:
+        cache_key = _build_cache_key(payload)
+        cached = _lookup_cached_session(org_id, cache_key)
+        if cached:
+            print(f"[recommendations] Cache hit for org={org_id}, upload={emissions_upload_id}, "
+                  f"session={cached['session_id']} — skipping LLM call")
+            return cached
+    else:
+        cache_key = _build_cache_key(payload)
+
     teme_run = _get_teme_run(payload.get("teme_run_id"), user_id)
 
     org_profile = _get_org_profile(org_id)
@@ -1026,7 +1240,7 @@ def generate_and_store_recommendations(payload: Dict[str, Any]) -> Dict[str, Any
         "prompt_version": "v3_evidence_grounded",
         "status": "generated",
         "error_message": llm_warning,
-        "input_hash": _hash_payload(payload),
+        "input_hash": cache_key if not force_refresh else _build_cache_key(payload),
         "factor_set_version": llm_payload.get("factor_set_version"),
         "methodology_refs": llm_payload.get("methodology_refs", []),
         "assumptions": llm_payload.get("assumptions", []),

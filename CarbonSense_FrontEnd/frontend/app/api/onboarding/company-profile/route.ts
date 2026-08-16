@@ -28,15 +28,18 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseAdmin();
     const userId = auth.context.userId;
 
-    // Fetch caller's user profile
+    // Fetch caller's user profile including current approval_status and reviewer_notes
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('organization_id, role, email')
+      .select('organization_id, role, email, approval_status, reviewer_notes')
       .eq('id', userId)
       .maybeSingle();
 
     let orgId = profile?.organization_id ?? null;
     const now = new Date().toISOString();
+
+    // Preserve 'approved' status if already approved; only default to 'pending' for fresh signups
+    const approvalStatusToSet = profile?.approval_status === 'approved' ? 'approved' : 'pending';
 
     // Extract phone from patch if present so we don't save user phone to organizations table
     const phone = patch.phone;
@@ -59,15 +62,15 @@ export async function POST(req: NextRequest) {
 
       orgId = newOrg.id;
 
-      // 2. Link user_profile to new org, set phone and reset approval_status
+      // 2. Link user_profile to new org, set phone and keep existing/pending approval_status
       await supabase
         .from('user_profiles')
         .update({
           organization_id: orgId,
           organization_name: patch.name || newOrg.name,
           phone: phone ?? null,
-          approval_status: 'pending',
-          reviewer_notes: null,
+          approval_status: approvalStatusToSet,
+          reviewer_notes: approvalStatusToSet === 'approved' ? profile?.reviewer_notes : null,
           updated_at: now,
         })
         .eq('id', userId);
@@ -77,7 +80,7 @@ export async function POST(req: NextRequest) {
         user_metadata: {
           organization_id: orgId,
           role: profile?.role ?? 'manager',
-          approval_status: 'pending',
+          approval_status: approvalStatusToSet,
         },
       });
     } else {
@@ -94,14 +97,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: updateErr.message }, { status: 500 });
       }
 
-      // Sync name to user_profile, set phone and reset approval_status to pending
+      // Sync name to user_profile, set phone and preserve existing/pending approval_status
       await supabase
         .from('user_profiles')
         .update({
           organization_name: patch.name || undefined,
           phone: phone ?? null,
-          approval_status: 'pending',
-          reviewer_notes: null,
+          approval_status: approvalStatusToSet,
           updated_at: now,
         })
         .eq('id', userId);
@@ -111,7 +113,7 @@ export async function POST(req: NextRequest) {
         user_metadata: {
           organization_id: orgId,
           role: profile?.role ?? 'manager',
-          approval_status: 'pending',
+          approval_status: approvalStatusToSet,
         },
       });
     }

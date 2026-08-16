@@ -37,28 +37,37 @@ function parseStructuredAssistantMessage(content: string): Array<{ title: string
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
 
-  const sections = SECTION_HEADERS.map((title) => ({ title, bullets: [] as string[] }));
-  let activeIndex = -1;
+  const sections: Array<{ title: string; bullets: string[] }> = [];
+  let currentSection: { title: string; bullets: string[] } | null = null;
 
   for (const rawLine of lines) {
-    const line = rawLine.replace(/^##\s+/, "").replace(/\*\*/g, "").replace(/:$/, "").trim();
-    const matchedIndex = SECTION_HEADERS.findIndex((header) => line.toLowerCase() === header.toLowerCase());
+    const isHeader =
+      /^#{1,3}\s+/.test(rawLine) ||
+      (/^\*\*(.*?)\*\*:?$/.test(rawLine) && !rawLine.includes(" - ") && rawLine.length < 60);
 
-    if (matchedIndex >= 0) {
-      activeIndex = matchedIndex;
+    if (isHeader) {
+      const title = rawLine
+        .replace(/^#{1,3}\s+/, "")
+        .replace(/\*\*/g, "")
+        .replace(/:$/, "")
+        .trim();
+      currentSection = { title, bullets: [] };
+      sections.push(currentSection);
       continue;
     }
 
     const cleaned = cleanLine(rawLine);
     if (!cleaned) continue;
 
-    if (activeIndex >= 0) {
-      sections[activeIndex].bullets.push(cleaned);
+    if (!currentSection) {
+      currentSection = { title: "Overview", bullets: [] };
+      sections.push(currentSection);
     }
+    currentSection.bullets.push(cleaned);
   }
 
-  const withContent = sections.filter((section) => section.bullets.length > 0);
-  if (withContent.length > 0) return withContent;
+  const validSections = sections.filter((s) => s.bullets.length > 0);
+  if (validSections.length > 0) return validSections;
 
   return [{ title: "Response", bullets: lines.map(cleanLine).filter(Boolean) }];
 }

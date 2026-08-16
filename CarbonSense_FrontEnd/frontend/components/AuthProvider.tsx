@@ -29,6 +29,11 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     const loginFromJWT = (session: NonNullable<Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']>) => {
       const meta = session.user.user_metadata ?? {};
       const role = (meta.role ?? 'viewer') as 'admin' | 'manager' | 'viewer';
+      const currentUser = useUserStore.getState().user;
+      const currentApproval = currentUser?.id === session.user.id ? currentUser.approvalStatus : undefined;
+      const jwtApproval = meta.approval_status || (meta.approved === false ? 'pending' : 'approved');
+      const approvalStatus = currentApproval === 'approved' ? 'approved' : jwtApproval;
+
       login(
         {
           id: session.user.id,
@@ -36,7 +41,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
           email: session.user.email ?? '',
           role,
           organizationId: meta.organization_id || meta.organizationId || undefined,
-          approvalStatus: meta.approval_status || (meta.approved === false ? 'pending' : 'approved'),
+          approvalStatus,
           createdAt: session.user.created_at,
         },
         session.access_token

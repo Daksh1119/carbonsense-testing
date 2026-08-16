@@ -243,7 +243,9 @@ export async function POST(req: NextRequest) {
   const factorMap = getFactorMap();
   const computedRows = rows.map((row) => ({
     ...row,
-    emissions_kg_co2e: computeCo2Kg(row, factorMap),
+    emissions_kg_co2e: typeof row.emissions_kg_co2e === "number" 
+      ? row.emissions_kg_co2e 
+      : computeCo2Kg(row, factorMap),
   }));
   const computedTotalKg = computedRows.reduce(
     (sum, row) => sum + Number(row.emissions_kg_co2e || 0),
