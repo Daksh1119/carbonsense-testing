@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
       supabase.from('organizations').select('id, name, profile_status, created_at', { count: 'exact' }),
 
       // User profiles grouped by role
-      supabase.from('user_profiles').select('id, role, email, organization_id, created_at, approved'),
+      supabase.from('user_profiles').select('id, role, email, organization_id, created_at, approval_status, first_name, last_name, phone'),
 
       // Pending invites
       supabase
@@ -62,9 +62,15 @@ export async function GET(req: NextRequest) {
     for (const p of viewers) {
       if (p.organization_id) orgViewerCount[p.organization_id] = (orgViewerCount[p.organization_id] ?? 0) + 1;
     }
+    const orgManagerApproved: Record<string, boolean> = {};
     for (const m of managers) {
-      if (m.organization_id && !orgManagerEmail[m.organization_id]) {
-        orgManagerEmail[m.organization_id] = m.email;
+      if (m.organization_id) {
+        if (m.approval_status === 'approved') {
+          orgManagerApproved[m.organization_id] = true;
+        }
+        if (!orgManagerEmail[m.organization_id]) {
+          orgManagerEmail[m.organization_id] = m.email;
+        }
       }
     }
 
@@ -72,7 +78,7 @@ export async function GET(req: NextRequest) {
       id: org.id,
       name: org.name,
       sector: org.sector ?? 'Unknown',
-      profileStatus: org.profile_status ?? 'not_started',
+      profileStatus: (org.profile_status === 'complete' || orgManagerApproved[org.id]) ? 'complete' : (org.profile_status ?? 'not_started'),
       managerEmail: orgManagerEmail[org.id] ?? null,
       viewerCount: orgViewerCount[org.id] ?? 0,
       createdAt: org.created_at,
@@ -98,7 +104,7 @@ export async function GET(req: NextRequest) {
     // Auto-heal manager_invites: if user_profile exists and is an active manager/user, mark invite as accepted
     const activeEmails = new Set(
       profiles
-        .filter((p) => p.email && (p.role === 'manager' || p.approved || p.organization_id))
+        .filter((p) => p.email && (p.role === 'manager' || p.approval_status === 'approved' || p.organization_id))
         .map((p) => p.email.toLowerCase().trim())
     );
 
@@ -117,16 +123,40 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Pending manager requests
+    const pendingManagerProfiles = profiles.filter((p) => p.role === 'manager' && p.approval_status === 'pending');
+    const pendingManagerOrgs: Record<string, any> = {};
+    const pendingOrgIds = pendingManagerProfiles.map((p) => p.organization_id).filter(Boolean);
+    if (pendingOrgIds.length > 0) {
+      const { data: orgsData } = await supabase
+        .from('organizations')
+        .select('id, name, sector, company_size_category, state, business_description')
+        .in('id', pendingOrgIds);
+      (orgsData || []).forEach((o) => { pendingManagerOrgs[o.id] = o; });
+    }
+
+    const pendingManagerRequests = pendingManagerProfiles.map((p) => ({
+      id: p.id,
+      email: p.email,
+      firstName: p.first_name,
+      lastName: p.last_name,
+      phone: p.phone,
+      createdAt: p.created_at,
+      organization: p.organization_id ? pendingManagerOrgs[p.organization_id] : null,
+    }));
+
     return NextResponse.json({
       success: true,
       stats: {
         totalOrgs: orgs.length,
         totalManagers: managers.length,
         totalViewers: viewers.length,
+        pendingManagerRequests: pendingManagerRequests.length,
         pendingInvites: pendingInvitesFiltered.length,
         pendingViewerRequests: pendingViewerRequests.length,
       },
       companiesList,
+      pendingManagerRequests,
       pendingInvites: pendingInvitesFiltered,
       pendingViewerRequests,
     });

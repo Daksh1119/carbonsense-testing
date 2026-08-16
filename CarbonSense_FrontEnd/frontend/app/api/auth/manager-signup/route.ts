@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 1. Create Supabase Auth User as an approved Manager
+    // 1. Create Supabase Auth User as a Manager (pending approval)
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: normalizedEmail,
       password,
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
         last_name: lastName,
         role: 'manager',
         organization_id: targetOrgId,
-        approved: true,
+        approval_status: 'pending',
       },
     });
 
@@ -96,12 +96,12 @@ export async function POST(req: NextRequest) {
     const userId = authData.user.id;
     const now = new Date().toISOString();
 
-    // 2. Insert into user_profiles
+    // 2. Insert into user_profiles with pending approval_status
     await supabaseAdmin.from('user_profiles').insert({
       id: userId,
       email: normalizedEmail,
       role: 'manager',
-      approved: true,
+      approval_status: 'pending',
       first_name: firstName,
       last_name: lastName,
       job_title: jobTitle ?? null,

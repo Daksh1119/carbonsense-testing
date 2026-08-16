@@ -117,7 +117,7 @@ function ManagerSignupContent() {
     setGoogleLoading(true);
     setError('');
     try {
-      await signInWithGoogle();
+      await signInWithGoogle('manager');
     } catch {
       setError('Google sign-up failed. Please try again.');
       setGoogleLoading(false);

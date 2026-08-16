@@ -37,9 +37,11 @@ interface UserProfileForm {
 interface OrgForm {
   name: string;
   domain: string;
-  industry: string;
-  size: string;
-  country: string;
+  sector: string;
+  company_size_category: string;
+  state: string;
+  business_description: string;
+  target_reduction_pct: string;
 }
 
 // ─── Tab config ───────────────────────────────────────────────────
@@ -377,14 +379,15 @@ function OrganizationTab() {
   const [form, setForm] = useState<OrgForm>({
     name: "",
     domain: "",
-    industry: "",
-    size: "",
-    country: "",
+    sector: "",
+    company_size_category: "",
+    state: "",
+    business_description: "",
+    target_reduction_pct: "",
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [hasExtendedFields, setHasExtendedFields] = useState(false);
 
   const fetchOrg = useCallback(async () => {
     if (!orgId) {
@@ -394,35 +397,26 @@ function OrganizationTab() {
     setIsLoading(true);
     setLoadError(null);
 
-    // First fetch base columns — these always exist
-    const { data: baseData, error: baseError } = await supabase
+    const { data: orgData, error: orgError } = await supabase
       .from("organizations")
-      .select("name, domain")
+      .select("name, domain, sector, company_size_category, state, business_description, target_reduction_pct")
       .eq("id", orgId)
       .single();
 
-    if (baseError) {
-      setLoadError(baseError.message);
+    if (orgError) {
+      setLoadError(orgError.message);
       setIsLoading(false);
       return;
     }
 
-    // Then attempt extended columns added by migration 20260728_organizations_settings_fields.sql
-    const { data: extData } = await supabase
-      .from("organizations")
-      .select("industry, size, country")
-      .eq("id", orgId)
-      .single();
-
-    const extended = extData as { industry?: string; size?: string; country?: string } | null;
-    setHasExtendedFields(extData !== null);
-
     setForm({
-      name: baseData?.name ?? "",
-      domain: baseData?.domain ?? "",
-      industry: extended?.industry ?? "",
-      size: extended?.size ?? "",
-      country: extended?.country ?? "",
+      name: orgData?.name ?? "",
+      domain: orgData?.domain ?? "",
+      sector: orgData?.sector ?? "",
+      company_size_category: orgData?.company_size_category ?? "",
+      state: orgData?.state ?? "",
+      business_description: orgData?.business_description ?? "",
+      target_reduction_pct: orgData?.target_reduction_pct ? String(orgData.target_reduction_pct) : "",
     });
     setIsLoading(false);
   }, [orgId]);
@@ -435,20 +429,17 @@ function OrganizationTab() {
     if (!orgId) return;
     setIsSaving(true);
 
-    // Always update base columns
-    const baseUpdate: Record<string, string | null> = {
-      name: form.name || null,
-      domain: form.domain || null,
-    };
-
-    // Only include extended columns if the migration has been applied
-    const updatePayload = hasExtendedFields
-      ? { ...baseUpdate, industry: form.industry || null, size: form.size || null, country: form.country || null }
-      : baseUpdate;
-
     const { error } = await supabase
       .from("organizations")
-      .update(updatePayload)
+      .update({
+        name: form.name || null,
+        domain: form.domain || null,
+        sector: form.sector || null,
+        company_size_category: form.company_size_category || null,
+        state: form.state || null,
+        business_description: form.business_description || null,
+        target_reduction_pct: form.target_reduction_pct ? parseFloat(form.target_reduction_pct) : null,
+      })
       .eq("id", orgId);
 
     setIsSaving(false);
@@ -520,8 +511,70 @@ function OrganizationTab() {
           />
         </div>
 
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Industry / Sector</label>
+            <input
+              type="text"
+              value={form.sector}
+              onChange={(e) => setForm({ ...form, sector: e.target.value })}
+              className={inputClass}
+              placeholder="Manufacturing, Textiles, IT, etc."
+              disabled={isSaving}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Company Size Category</label>
+            <input
+              type="text"
+              value={form.company_size_category}
+              onChange={(e) => setForm({ ...form, company_size_category: e.target.value })}
+              className={inputClass}
+              placeholder="e.g. Small (10-50), Medium (50-250)"
+              disabled={isSaving}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">State / Region</label>
+            <input
+              type="text"
+              value={form.state}
+              onChange={(e) => setForm({ ...form, state: e.target.value })}
+              className={inputClass}
+              placeholder="e.g. Maharashtra, Gujarat"
+              disabled={isSaving}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Target Reduction (%)</label>
+            <input
+              type="number"
+              value={form.target_reduction_pct}
+              onChange={(e) => setForm({ ...form, target_reduction_pct: e.target.value })}
+              className={inputClass}
+              placeholder="e.g. 15"
+              disabled={isSaving}
+            />
+          </div>
+        </div>
+
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">Domain</label>
+          <label className="block text-sm font-medium text-slate-300 mb-2">What Does Your Organization Do?</label>
+          <textarea
+            rows={3}
+            value={form.business_description}
+            onChange={(e) => setForm({ ...form, business_description: e.target.value })}
+            className={inputClass}
+            placeholder="Briefly describe core operations, production lines, facilities..."
+            disabled={isSaving}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Domain (Optional)</label>
           <input
             type="text"
             value={form.domain}
@@ -532,58 +585,6 @@ function OrganizationTab() {
           />
           <p className="text-xs text-slate-500 mt-1">Used for auto-associating users from this domain.</p>
         </div>
-
-        {hasExtendedFields ? (
-          <>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Industry Sector</label>
-                <select value={form.industry} onChange={(e) => setForm({ ...form, industry: e.target.value })} className={selectClass} disabled={isSaving}>
-                  <option value="">Select industry…</option>
-                  <option value="manufacturing">Manufacturing</option>
-                  <option value="technology">Technology</option>
-                  <option value="retail">Retail</option>
-                  <option value="healthcare">Healthcare</option>
-                  <option value="agriculture">Agriculture</option>
-                  <option value="logistics">Logistics &amp; Transport</option>
-                  <option value="construction">Construction</option>
-                  <option value="energy">Energy &amp; Utilities</option>
-                  <option value="finance">Finance &amp; Banking</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Company Size</label>
-                <select value={form.size} onChange={(e) => setForm({ ...form, size: e.target.value })} className={selectClass} disabled={isSaving}>
-                  <option value="">Select size…</option>
-                  <option value="1-50">1–50 employees</option>
-                  <option value="51-200">51–200 employees</option>
-                  <option value="201-500">201–500 employees</option>
-                  <option value="501-1000">501–1,000 employees</option>
-                  <option value="1000+">1,000+ employees</option>
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Country</label>
-              <select value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} className={selectClass} disabled={isSaving}>
-                <option value="">Select country…</option>
-                <option value="IN">India</option>
-                <option value="US">United States</option>
-                <option value="GB">United Kingdom</option>
-                <option value="DE">Germany</option>
-                <option value="AU">Australia</option>
-                <option value="SG">Singapore</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-          </>
-        ) : (
-          <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-300">
-            ⚠️ Extended fields (Industry, Size, Country) require running migration{" "}
-            <code className="font-mono">20260728_organizations_settings_fields.sql</code> in Supabase SQL editor.
-          </div>
-        )}
 
         <div className="flex gap-3 pt-2">
           <Button

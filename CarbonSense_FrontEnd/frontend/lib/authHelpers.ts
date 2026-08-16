@@ -17,7 +17,8 @@ export interface AuthResult {
   user?: SupabaseUser;
   session?: Session;
   role?: Role;
-  approved?: boolean;
+  approvalStatus?: 'pending' | 'approved' | 'rejected';
+  reviewerNotes?: string;
   error?: string;
 }
 
@@ -34,7 +35,8 @@ export interface UserProfile {
   employee_id?: string;
   phone?: string;
   avatar_url?: string;
-  approved: boolean;
+  approval_status: 'pending' | 'approved' | 'rejected';
+  reviewer_notes?: string;
   created_at: string;
   updated_at: string;
 }
@@ -89,14 +91,16 @@ export async function signInWithEmail(
     return { success: false, error: error?.message ?? 'Sign-in failed.' };
   }
 
-  // Fast-path role from JWT metadata. Fallback to profile lookup for legacy users.
+  // Fast-path role and approvalStatus from JWT metadata. Fallback to profile lookup for legacy users.
   let role = data.user.user_metadata?.role as Role | undefined;
-  let approved = data.user.user_metadata?.approved ?? true;
+  let approvalStatus = data.user.user_metadata?.approval_status as 'pending' | 'approved' | 'rejected' | undefined;
+  let reviewerNotes = data.user.user_metadata?.reviewer_notes as string | undefined;
 
-  if (!role) {
+  if (!role || !approvalStatus) {
     const profile = await getUserProfile(data.user.id);
     role = profile?.role;
-    approved = profile?.approved ?? approved;
+    approvalStatus = profile?.approval_status;
+    reviewerNotes = profile?.reviewer_notes;
   }
 
   return {
@@ -104,15 +108,19 @@ export async function signInWithEmail(
     user: data.user,
     session: data.session ?? undefined,
     role,
-    approved,
+    approvalStatus,
+    reviewerNotes,
   };
 }
 
-export async function signInWithGoogle(): Promise<void> {
+export async function signInWithGoogle(role: Role = 'manager'): Promise<void> {
+  const redirectUrl = new URL(`${window.location.origin}/auth/callback`);
+  redirectUrl.searchParams.set('intent_role', role);
+
   await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: `${window.location.origin}/auth/callback`,
+      redirectTo: redirectUrl.toString(),
     },
   });
 }
@@ -147,7 +155,8 @@ export async function verifyOTP(email: string, token: string): Promise<AuthResul
     user: data.user,
     session: data.session ?? undefined,
     role: profile?.role,
-    approved: profile?.approved,
+    approvalStatus: profile?.approval_status,
+    reviewerNotes: profile?.reviewer_notes,
   };
 }
 

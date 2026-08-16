@@ -21,7 +21,7 @@ interface MemberProfile {
   last_name: string | null;
   job_title: string | null;
   department: string | null;
-  approved: boolean;
+  approval_status: 'pending' | 'approved' | 'rejected';
 }
 
 const ROLE_PERMISSIONS: Record<RbacRole, { group: string; items: string[] }[]> = {
@@ -45,8 +45,8 @@ const ROLE_PERMISSIONS: Record<RbacRole, { group: string; items: string[] }[]> =
   ],
   viewer: [
     {
-      group: "Dashboard",
-      items: ["View Org-Wide Carbon Summary", "View Compliance Score"],
+      group: "Dashboard & Reports",
+      items: ["View Viewer Dashboard", "View Personal Carbon Footprint", "Download Carbon Reports"],
     },
     {
       group: "Data",
@@ -86,7 +86,7 @@ function EditPermissionsContent() {
 
       const { data, error } = await supabase
         .from("user_profiles")
-        .select("id, email, role, first_name, last_name, job_title, department, approved")
+        .select("id, email, role, first_name, last_name, job_title, department, approval_status")
         .eq("id", memberId)
         .eq("organization_id", orgId)
         .single();
@@ -201,8 +201,8 @@ function EditPermissionsContent() {
           )}
           <div>
             <p className="text-slate-400 mb-1">Status</p>
-            <p className={member.approved ? "text-emerald-400 font-medium" : "text-amber-400 font-medium"}>
-              {member.approved ? "Active" : "Pending Approval"}
+            <p className={member.approval_status === 'approved' ? "text-emerald-400 font-medium" : "text-amber-400 font-medium"}>
+              {member.approval_status === 'approved' ? "Active" : "Pending Approval"}
             </p>
           </div>
         </div>

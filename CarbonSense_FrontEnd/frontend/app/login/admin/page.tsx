@@ -56,7 +56,7 @@ export default function AdminLoginPage() {
 
   const handleGoogleSignIn = async () => {
     try {
-      await signInWithGoogle();
+      await signInWithGoogle('admin');
     } catch {
       setError('Google sign-in failed.');
     }

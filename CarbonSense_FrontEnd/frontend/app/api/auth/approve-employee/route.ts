@@ -1,7 +1,7 @@
 /**
  * PATCH /api/auth/approve-employee
  * Manager/admin endpoint to approve or reject a pending employee.
- * Updates employee_signup_requests.status and user_profiles.approved.
+ * Updates employee_signup_requests.status and user_profiles.approval_status.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -76,10 +76,16 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: reqError.message }, { status: 500 });
     }
 
-    // 2. Update user_profiles.approved
+    // 2. Update user_profiles.approval_status
     const { error: profileError } = await supabaseAdmin
       .from('user_profiles')
-      .update({ approved, updated_at: now })
+      .update({
+        approval_status: approved ? 'approved' : 'rejected',
+        approval_reviewed_at: now,
+        approval_reviewed_by: auth.context.userId,
+        reviewer_notes: reviewerNotes ?? null,
+        updated_at: now,
+      })
       .eq('id', signupRequest.user_id);
 
     if (profileError) {
@@ -97,7 +103,7 @@ export async function PATCH(req: NextRequest) {
     await supabaseAdmin.auth.admin.updateUserById(signupRequest.user_id, {
       user_metadata: {
         role: (profileAfter?.role as string | undefined) ?? 'viewer',
-        approved,
+        approval_status: approved ? 'approved' : 'rejected',
       },
     });
 

@@ -44,7 +44,7 @@ export default function ManagerLoginPage() {
   };
 
   const handleGoogleSignIn = async () => {
-    try { await signInWithGoogle(); } catch { setError('Google sign-in failed.'); }
+    try { await signInWithGoogle('manager'); } catch { setError('Google sign-in failed.'); }
   };
 
   const handleConsent = async (digitalSignature: string) => {

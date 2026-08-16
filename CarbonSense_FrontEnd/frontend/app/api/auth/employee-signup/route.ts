@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
         last_name: lastName,
         role: invitedRole ?? 'viewer',
         organization_id: invitedOrgId,
-        approved: invitedRole !== null,
+        approval_status: invitedRole !== null ? 'approved' : 'pending',
       },
     });
 
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
       id: userId,
       email: normalizedEmail,
       role: invitedRole ?? 'viewer',
-      approved: invitedRole !== null,
+      approval_status: invitedRole !== null ? 'approved' : 'pending',
       first_name: firstName,
       last_name: lastName,
       job_title: jobTitle ?? null,

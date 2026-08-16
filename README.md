@@ -51,14 +51,22 @@ The platform uses a strict RBAC model with three roles:
 
 | Role | Who | Dashboard Route | Access |
 |------|-----|----------------|--------|
-| **Platform Admin** | CarbonSense internal team | `/admin/dashboard` | Cross-company oversight, company lifecycle management, manager invitations, platform health |
+| **Platform Admin** | CarbonSense internal team | `/admin/dashboard` | Cross-company oversight, company lifecycle management, manager approval/rejection, platform health |
 | **Manager** | Client company carbon lead | `/dashboard` | Full CRUD on own organization's data: emissions, ingestion, analytics, compliance, policy, TEME, team, settings |
 | **Viewer** | Client company employee | `/viewer/dashboard` | Read-only access to own organization's dashboards and insights |
 
 > **Important:** Admin is *not* a company role. A client company only needs a Manager (and optionally Viewers).
 
+**Manager Signup & Approval Flow:**
+- Managers self-register at `/signup/manager` (email/password or Google OAuth) — no invitation required.
+- After signup, they complete a company profile at `/onboarding/company-profile` (multi-section form: Company Basics, Energy, Transport, Operations, Context).
+- All required fields are pre-populated on re-visit so data is never lost.
+- The submitted profile is placed in a **pending approval** state at `/onboarding/pending-approval` (auto-polling every 10s).
+- **Platform Admins** review, approve, or reject requests directly from `/admin/dashboard` cards or `/admin/access`.
+- On approval, the manager is routed to `/dashboard` and the organization status changes to **Active**.
+
 **Manager-scoped modules (under `/(dashboard)` route group):**
-- Executive Dashboard
+- Executive Dashboard with **Organization Profile Overview Card** (displays submitted onboarding details: sector, state, size, target reduction, description)
 - Emissions workflows & review
 - Data Ingestion & CSV parsing
 - Detailed Emissions Log with upload-wise drilldown
@@ -69,13 +77,13 @@ The platform uses a strict RBAC model with three roles:
 - Compliance Command Center (score ring, trend graph, deadlines, task verification, OCR evidence upload)
 - Full-Width Interactive Glossary & Methodology (search, category filters, click-to-expand focus view modals)
 - Team and Team Management
-- Settings & Company Profile Onboarding (`/onboarding/company-profile`)
+- Settings & Company Profile Editor (editable: sector, size, state, business description, target reduction %)
 
 **Platform Admin modules (under `/admin` route group):**
-- Platform Overview (company list, usage metrics)
-- Company Management (`/admin/companies`) — with cascade delete functionality (`delete_organization_cascade`)
-- Manager Oversight (`/admin/managers`) — with removal/demote actions and "+ Invite for New Company" modal
-- Pending Approvals (manager signups, company registrations)
+- Platform Overview — pending manager requests shown as 1-click approve/reject cards on the dashboard
+- Company Management (`/admin/companies`) — organization cards show `active` / `setup` status badges; cascade delete
+- Manager Oversight (`/admin/managers`) — managers show `active` / `pending` / `rejected` status badges; inline quick-approve
+- Access Control (`/admin/access`) — full pending approval review queue with organization details
 - Platform Health (API latency, DB load, service status)
 
 ---
@@ -217,6 +225,7 @@ carbonsense/
 - `20260809_manager_invites.sql` — Manager invites schema with optional company linking
 - `20260809_delete_organization_cascade.sql` — `delete_organization_cascade` PL/pgSQL function
 - `20260809_create_receipts_ocr_results.sql` — `receipts_ocr_results` table definition
+- `20260816_manager_approval_flow.sql` — Manager self-signup approval fields: `approval_status`, `reviewer_notes`, `approval_reviewed_at`, `approval_reviewed_by` on `user_profiles`; organization profile fields: `sector`, `company_size_category`, `state`, `business_description`, `phone`, `target_reduction_pct`, `profile_status`
 
 ---
 

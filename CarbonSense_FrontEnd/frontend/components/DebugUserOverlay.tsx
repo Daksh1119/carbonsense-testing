@@ -23,7 +23,7 @@ export default function DebugUserOverlay() {
     }}>
       <div><b>Role:</b> {user.role}</div>
       <div><b>Email:</b> {user.email}</div>
-      <div><b>Approved:</b> {String(user.approved)}</div>
+      <div><b>Approval:</b> {String(user.approvalStatus)}</div>
     </div>
   );
 }

@@ -15,8 +15,8 @@ export interface User {
   organization?: string;
   organizationId?: string;
   createdAt: string;
-  // Extended RBAC fields
-  approved?: boolean;
+  approvalStatus?: 'pending' | 'approved' | 'rejected';
+  reviewerNotes?: string;
   department?: string;
   employeeId?: string;
   phone?: string;

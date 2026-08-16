@@ -12,7 +12,7 @@ export interface TeamMemberRecord {
   department: string | null;
   employee_id: string | null;
   phone: string | null;
-  approved: boolean;
+  approval_status: 'pending' | 'approved' | 'rejected';
   created_at: string;
   organization_id: string | null;
 }
@@ -52,7 +52,7 @@ export function useTeamMembers(): UseTeamMembersReturn {
     const { data, error: supabaseError } = await supabase
       .from('user_profiles')
       .select(
-        'id, email, role, first_name, last_name, job_title, department, employee_id, phone, approved, created_at, organization_id'
+        'id, email, role, first_name, last_name, job_title, department, employee_id, phone, approval_status, created_at, organization_id'
       )
       .eq('organization_id', orgId)
       .order('created_at', { ascending: true });

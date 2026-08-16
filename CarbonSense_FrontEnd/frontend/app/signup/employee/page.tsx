@@ -47,7 +47,7 @@ export default function EmployeeSignupPage() {
     setGoogleLoading(true);
     setError('');
     try {
-      await signInWithGoogle();
+      await signInWithGoogle('viewer');
     } catch {
       setError('Google sign-up failed. Please try again.');
       setGoogleLoading(false);

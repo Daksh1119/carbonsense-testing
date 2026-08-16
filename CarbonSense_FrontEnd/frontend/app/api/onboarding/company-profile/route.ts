@@ -38,6 +38,10 @@ export async function POST(req: NextRequest) {
     let orgId = profile?.organization_id ?? null;
     const now = new Date().toISOString();
 
+    // Extract phone from patch if present so we don't save user phone to organizations table
+    const phone = patch.phone;
+    delete patch.phone;
+
     if (!orgId) {
       // 1. Create new organization
       const { data: newOrg, error: createErr } = await supabase
@@ -55,12 +59,15 @@ export async function POST(req: NextRequest) {
 
       orgId = newOrg.id;
 
-      // 2. Link user_profile to new org
+      // 2. Link user_profile to new org, set phone and reset approval_status
       await supabase
         .from('user_profiles')
         .update({
           organization_id: orgId,
           organization_name: patch.name || newOrg.name,
+          phone: phone ?? null,
+          approval_status: 'pending',
+          reviewer_notes: null,
           updated_at: now,
         })
         .eq('id', userId);
@@ -70,6 +77,7 @@ export async function POST(req: NextRequest) {
         user_metadata: {
           organization_id: orgId,
           role: profile?.role ?? 'manager',
+          approval_status: 'pending',
         },
       });
     } else {
@@ -86,16 +94,26 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: updateErr.message }, { status: 500 });
       }
 
-      // Sync name to user_profile if provided
-      if (patch.name) {
-        await supabase
-          .from('user_profiles')
-          .update({
-            organization_name: patch.name,
-            updated_at: now,
-          })
-          .eq('id', userId);
-      }
+      // Sync name to user_profile, set phone and reset approval_status to pending
+      await supabase
+        .from('user_profiles')
+        .update({
+          organization_name: patch.name || undefined,
+          phone: phone ?? null,
+          approval_status: 'pending',
+          reviewer_notes: null,
+          updated_at: now,
+        })
+        .eq('id', userId);
+
+      // Update Supabase Auth user metadata
+      await supabase.auth.admin.updateUserById(userId, {
+        user_metadata: {
+          organization_id: orgId,
+          role: profile?.role ?? 'manager',
+          approval_status: 'pending',
+        },
+      });
     }
 
     return NextResponse.json({

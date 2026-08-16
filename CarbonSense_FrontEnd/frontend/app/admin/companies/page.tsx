@@ -60,15 +60,14 @@ interface OrgDisplay {
 }
 
 function profileStatusVariant(s: string): 'success' | 'warning' | 'info' | 'default' {
-  if (s === 'complete') return 'success';
+  if (s === 'complete' || s === 'active') return 'success';
   if (s === 'partial') return 'warning';
-  return 'info';
+  return 'warning';
 }
 
 function profileStatusLabel(s: string) {
-  if (s === 'complete') return 'Profile Complete';
-  if (s === 'partial') return 'Profile Partial';
-  return 'No Profile';
+  if (s === 'complete' || s === 'active') return 'active';
+  return 'setup';
 }
 
 export default function AdminCompaniesPage() {

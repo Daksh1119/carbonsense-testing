@@ -9,7 +9,7 @@ export interface RequestAuthContext {
   email: string;
   role: AppRole;
   organizationId?: string | null;
-  approved?: boolean;
+  approvalStatus?: 'pending' | 'approved' | 'rejected';
 }
 
 export interface AuthResolution {
@@ -72,7 +72,7 @@ export async function requireAuthContext(
   const supabaseAdmin = getSupabaseAdmin();
   const { data: profile, error: profileError } = await supabaseAdmin
     .from('user_profiles')
-    .select('role, organization_id, approved')
+    .select('role, organization_id, approval_status')
     .eq('id', authData.user.id)
     .maybeSingle();
 
@@ -92,7 +92,7 @@ export async function requireAuthContext(
       email: authData.user.email ?? '',
       role,
       organizationId: profile.organization_id,
-      approved: profile.approved,
+      approvalStatus: profile.approval_status,
     },
   };
 }

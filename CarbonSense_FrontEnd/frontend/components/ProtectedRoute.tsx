@@ -72,7 +72,7 @@ export default function ProtectedRoute({
   }
 
   // Approval gate for viewers
-  if (approvalRequired && user.role === 'viewer' && !user.approved) {
+  if (approvalRequired && user.role === 'viewer' && user.approvalStatus !== 'approved') {
     return <ApprovalPendingScreen />;
   }
 

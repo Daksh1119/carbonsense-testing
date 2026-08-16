@@ -43,7 +43,7 @@ export default function withAuth<P extends object>(
       }
 
       // Approval gate for viewers
-      if (approvalRequired && user.role === 'viewer' && !user.approved) {
+      if (approvalRequired && user.role === 'viewer' && user.approvalStatus !== 'approved') {
         // Stay on page — the component itself should show the pending screen
         return;
       }

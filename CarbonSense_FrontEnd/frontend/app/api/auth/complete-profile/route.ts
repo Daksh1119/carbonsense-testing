@@ -53,8 +53,8 @@ export async function POST(req: NextRequest) {
           first_name: firstName ?? null,
           last_name: lastName ?? null,
           organization_name: organizationName ?? null,
-          // Admins and managers are auto-approved; viewers require explicit approval
-          approved: role !== 'viewer',
+          // Admins are auto-approved; managers and viewers start as pending approval
+          approval_status: role === 'admin' ? 'approved' : 'pending',
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'id' }
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, role: data.role, approved: data.approved });
+    return NextResponse.json({ success: true, role: data.role, approvalStatus: data.approval_status });
   } catch (err) {
     console.error('[complete-profile] Unexpected error:', err);
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });

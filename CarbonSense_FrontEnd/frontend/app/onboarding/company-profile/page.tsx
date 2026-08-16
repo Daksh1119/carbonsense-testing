@@ -14,7 +14,7 @@
  *  - All labels use plain language; technical terms get info tooltips.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUserStore } from '@/store';
 import { supabase } from '@/lib/supabaseClient';
@@ -42,9 +42,11 @@ interface OrgProfileForm {
   name: string;
   sector: string;
   company_size_category: string;
+  state: string;
+  phone: string;
+  business_description: string;
   // Section 1 optional
   employee_count: string;
-  state: string;
   // Section 2 optional
   electricity_usage_kwh_monthly: string;
   renewable_energy_pct: string;
@@ -68,8 +70,10 @@ const EMPTY_FORM: OrgProfileForm = {
   name: '',
   sector: '',
   company_size_category: '',
-  employee_count: '',
   state: '',
+  phone: '',
+  business_description: '',
+  employee_count: '',
   electricity_usage_kwh_monthly: '',
   renewable_energy_pct: '',
   computers_count: '',
@@ -196,6 +200,31 @@ function FormInput({
   );
 }
 
+function FormTextarea({
+  id,
+  value,
+  onChange,
+  placeholder,
+  rows = 3,
+}: {
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
+}) {
+  return (
+    <textarea
+      id={id}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      rows={rows}
+      className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700 rounded-lg text-white placeholder:text-slate-500 text-sm focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500/30 transition-colors resize-none"
+    />
+  );
+}
+
 function FormSelect({
   id,
   value,
@@ -278,17 +307,96 @@ export default function CompanyProfileOnboardingPage() {
   const [step, setStep] = useState(0);   // 0–4 → 5 sections
   const [saving, setSaving] = useState(false);
 
+  // Load existing profile & organization details on mount / when user is available
+  useEffect(() => {
+    let active = true;
+
+    async function loadExistingData() {
+      try {
+        const orgId = user?.organizationId;
+        const userId = user?.id;
+
+        let orgData: any = null;
+        let profileData: any = null;
+
+        if (orgId) {
+          const { data } = await supabase
+            .from('organizations')
+            .select('*')
+            .eq('id', orgId)
+            .maybeSingle();
+          orgData = data;
+        }
+
+        if (userId) {
+          const { data } = await supabase
+            .from('user_profiles')
+            .select('phone, organization_id')
+            .eq('id', userId)
+            .maybeSingle();
+          profileData = data;
+
+          if (!orgData && data?.organization_id) {
+            const { data: fetchedOrg } = await supabase
+              .from('organizations')
+              .select('*')
+              .eq('id', data.organization_id)
+              .maybeSingle();
+            orgData = fetchedOrg;
+          }
+        }
+
+        if (active && (orgData || profileData)) {
+          setForm((prev) => ({
+            ...prev,
+            name: orgData?.name && !orgData.name.startsWith('New Organization') ? orgData.name : (user?.organization && !user.organization.startsWith('New Organization') ? user.organization : prev.name),
+            sector: orgData?.sector ?? prev.sector,
+            company_size_category: orgData?.company_size_category ?? prev.company_size_category,
+            state: orgData?.state ?? prev.state,
+            phone: profileData?.phone ?? prev.phone,
+            business_description: orgData?.business_description ?? prev.business_description,
+            employee_count: orgData?.employee_count ? String(orgData.employee_count) : prev.employee_count,
+            electricity_usage_kwh_monthly: orgData?.electricity_usage_kwh_monthly ? String(orgData.electricity_usage_kwh_monthly) : prev.electricity_usage_kwh_monthly,
+            renewable_energy_pct: orgData?.renewable_energy_pct ? String(orgData.renewable_energy_pct) : prev.renewable_energy_pct,
+            computers_count: orgData?.computers_count ? String(orgData.computers_count) : prev.computers_count,
+            facility_area_sqft: orgData?.facility_area_sqft ? String(orgData.facility_area_sqft) : prev.facility_area_sqft,
+            vehicle_fleet_count: orgData?.vehicle_fleet_count ? String(orgData.vehicle_fleet_count) : prev.vehicle_fleet_count,
+            business_travel_km_annual: orgData?.business_travel_km_annual ? String(orgData.business_travel_km_annual) : prev.business_travel_km_annual,
+            water_usage_kl_monthly: orgData?.water_usage_kl_monthly ? String(orgData.water_usage_kl_monthly) : prev.water_usage_kl_monthly,
+            waste_generated_kg_monthly: orgData?.waste_generated_kg_monthly ? String(orgData.waste_generated_kg_monthly) : prev.waste_generated_kg_monthly,
+            working_days_per_week: orgData?.working_days_per_week ? String(orgData.working_days_per_week) : prev.working_days_per_week,
+            annual_turnover_range: orgData?.annual_turnover_range ?? prev.annual_turnover_range,
+            has_sustainability_certification: Boolean(orgData?.has_sustainability_certification ?? prev.has_sustainability_certification),
+            udyam_registration_number: orgData?.udyam_registration_number ?? prev.udyam_registration_number,
+            udyam_category: orgData?.udyam_category ?? prev.udyam_category,
+          }));
+        }
+      } catch (err) {
+        console.error('[CompanyProfile] Error loading existing organization data:', err);
+      }
+    }
+
+    loadExistingData();
+
+    return () => {
+      active = false;
+    };
+  }, [user?.id, user?.organizationId, user?.organization]);
+
   const set = useCallback(
     (field: keyof OrgProfileForm, value: string | boolean) =>
       setForm((f) => ({ ...f, [field]: value })),
     []
   );
 
-  // Required field check
+  // Required field check (Basics must have Name, Sector, Size, State, Phone, and Description)
   const coreValid =
     form.name.trim().length > 0 &&
     form.sector.length > 0 &&
-    form.company_size_category.length > 0;
+    form.company_size_category.length > 0 &&
+    form.state.length > 0 &&
+    form.phone.trim().length > 0 &&
+    form.business_description.trim().length > 0;
 
   // Build patch payload (only non-empty fields)
   function buildPatch(status: 'partial' | 'complete') {
@@ -298,8 +406,10 @@ export default function CompanyProfileOnboardingPage() {
       name: form.name.trim() || undefined,
       sector: form.sector || undefined,
       company_size_category: form.company_size_category || undefined,
-      employee_count: int(form.employee_count),
       state: form.state || undefined,
+      phone: form.phone.trim() || undefined,
+      business_description: form.business_description.trim() || undefined,
+      employee_count: int(form.employee_count),
       electricity_usage_kwh_monthly: num(form.electricity_usage_kwh_monthly),
       renewable_energy_pct: num(form.renewable_energy_pct),
       computers_count: int(form.computers_count),
@@ -349,6 +459,7 @@ export default function CompanyProfileOnboardingPage() {
       useUserStore.getState().updateUser({
         organizationId: targetOrgId,
         organization: orgName,
+        approvalStatus: 'pending',
       });
 
       // Fire baseline cycle creation on the backend (fire-and-forget)
@@ -359,10 +470,15 @@ export default function CompanyProfileOnboardingPage() {
 
       showSuccessToast(
         status === 'complete'
-          ? 'Company profile saved! Calculating your baseline footprint…'
+          ? 'Company profile submitted for admin review!'
           : 'Progress saved. You can finish this later from Settings.'
       );
-      router.push('/dashboard');
+      
+      if (status === 'complete') {
+        router.push('/onboarding/pending-approval');
+      } else {
+        router.push('/dashboard');
+      }
     } catch (err: unknown) {
       showErrorToast((err as Error)?.message ?? 'Failed to save profile.');
     } finally {
@@ -436,7 +552,8 @@ export default function CompanyProfileOnboardingPage() {
           <div>
             <FieldLabel
               htmlFor="state"
-              label="State (strongly recommended)"
+              label="State"
+              required
               tooltip="Indian state your main facility is in. State Pollution Control Board rules vary significantly — we use this to show you the right compliance requirements."
             />
             <FormSelect
@@ -445,6 +562,38 @@ export default function CompanyProfileOnboardingPage() {
               onChange={(v) => set('state', v)}
               options={INDIAN_STATES}
               placeholder="Select state"
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-4">
+          <div>
+            <FieldLabel
+              htmlFor="phone"
+              label="Contact phone number"
+              required
+              tooltip="Direct contact number for the manager of this account."
+            />
+            <FormInput
+              id="phone"
+              type="tel"
+              value={form.phone}
+              onChange={(v) => set('phone', v)}
+              placeholder="e.g. +91 98765 43210"
+            />
+          </div>
+          <div>
+            <FieldLabel
+              htmlFor="business-description"
+              label="What does your organisation do?"
+              required
+              tooltip="A brief description of your primary business activities. This helps admins review and approve your account faster."
+            />
+            <FormTextarea
+              id="business-description"
+              value={form.business_description}
+              onChange={(v) => set('business_description', v)}
+              placeholder="e.g. We manufacture textile components and raw garments for domestic and export clients..."
+              rows={3}
             />
           </div>
         </div>

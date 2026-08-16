@@ -29,8 +29,8 @@ function displayName(m: { first_name: string | null; last_name: string | null; e
   return full || m.email;
 }
 
-function statusFromMember(m: { approved: boolean }): "active" | "pending" {
-  return m.approved ? "active" : "pending";
+function statusFromMember(m: { approval_status: string }): "active" | "pending" {
+  return m.approval_status === 'approved' ? "active" : "pending";
 }
 
 function TeamManagementContent() {
@@ -49,8 +49,8 @@ function TeamManagementContent() {
           return false; // no "inactive" concept yet
         });
 
-  const activeCount = members.filter((m) => m.approved).length;
-  const pendingCount = members.filter((m) => !m.approved).length;
+  const activeCount = members.filter((m) => m.approval_status === 'approved').length;
+  const pendingCount = members.filter((m) => m.approval_status !== 'approved').length;
   const deptCount = new Set(members.map((m) => m.department).filter(Boolean)).size;
 
   const getRoleBadgeVariant = (role: string) => {

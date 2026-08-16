@@ -14,6 +14,9 @@ import { useRouter } from "next/navigation";
 import { useUserStore } from "@/store";
 
 
+import Link from "next/link";
+import { supabase } from "@/lib/supabaseClient";
+
 import {
   Area,
   AreaChart,
@@ -42,6 +45,7 @@ import {
   Eye,
   ExternalLink,
   Upload,
+  Building2,
 } from "lucide-react";
 
 const fundingOpportunities = [
@@ -105,10 +109,31 @@ export default function DashboardPage() {
 
   // Group 4.3 — fetch cycle boundary data for ReferenceLine markers
   const [cycleMarkers, setCycleMarkers] = useState<Array<{ monthLabel: string; label: string }>>([]);
+  const [orgProfile, setOrgProfile] = useState<{
+    name: string;
+    sector: string | null;
+    company_size_category: string | null;
+    state: string | null;
+    business_description: string | null;
+    target_reduction_pct: number | null;
+  } | null>(null);
 
   useEffect(() => {
     const orgId = user?.organizationId;
     if (!orgId) return;
+
+    // Fetch org profile details submitted during onboarding
+    (async () => {
+      try {
+        const { data: org } = await supabase
+          .from('organizations')
+          .select('name, sector, company_size_category, state, business_description, target_reduction_pct')
+          .eq('id', orgId)
+          .maybeSingle();
+        if (org) setOrgProfile(org);
+      } catch { /* non-fatal */ }
+    })();
+
     const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
     fetch(`${apiUrl}/assessment-cycles/${orgId}/trend`)
       .then((r) => r.ok ? r.json() : null)
@@ -241,6 +266,64 @@ export default function DashboardPage() {
           Add Emission
         </Button>
       </div>
+
+      {/* Organization Profile Overview Card */}
+      {orgProfile && (
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 backdrop-blur-xl">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-teal-500/10 border border-teal-500/20 rounded-xl">
+                  <Building2 className="w-5 h-5 text-teal-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-white tracking-tight">{orgProfile.name}</h2>
+                    <Badge variant="success">Approved & Active</Badge>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-0.5">
+                    {orgProfile.sector && <span>{orgProfile.sector}</span>}
+                    {orgProfile.company_size_category && (
+                      <>
+                        <span>•</span>
+                        <span>{orgProfile.company_size_category}</span>
+                      </>
+                    )}
+                    {orgProfile.state && (
+                      <>
+                        <span>•</span>
+                        <span className="text-slate-300">{orgProfile.state}</span>
+                      </>
+                    )}
+                    {orgProfile.target_reduction_pct && (
+                      <>
+                        <span>•</span>
+                        <span className="text-emerald-400 font-medium">
+                          Target: {orgProfile.target_reduction_pct}% reduction
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {orgProfile.business_description && (
+                <p className="text-xs text-slate-400 max-w-3xl pl-11 line-clamp-2 italic">
+                  "{orgProfile.business_description}"
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 self-end lg:self-center">
+              <Link
+                href="/onboarding/company-profile?edit=true"
+                className="px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors"
+              >
+                Edit Company Profile
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

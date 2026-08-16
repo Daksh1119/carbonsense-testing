@@ -36,7 +36,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
           email: session.user.email ?? '',
           role,
           organizationId: meta.organization_id || meta.organizationId || undefined,
-          approved: meta.approved ?? true,
+          approvalStatus: meta.approval_status || (meta.approved === false ? 'pending' : 'approved'),
           createdAt: session.user.created_at,
         },
         session.access_token
@@ -63,6 +63,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         }
 
         if (!profile) return;
+        const approvalStatus = profile.approval_status;
         login(
           {
             id: profile.id,
@@ -71,7 +72,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
             role: profile.role as 'admin' | 'manager' | 'viewer',
             organization: profile.organization_name ?? undefined,
             organizationId: profile.organization_id ?? undefined,
-            approved: profile.approved,
+            approvalStatus,
+            reviewerNotes: profile.reviewer_notes ?? undefined,
             department: profile.department ?? undefined,
             employeeId: profile.employee_id ?? undefined,
             phone: profile.phone ?? undefined,
@@ -83,20 +85,36 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
 
         // Group 2.1 — onboarding redirect for new managers
-        if (profile.role === 'manager' && !pathname.startsWith('/onboarding')) {
-          if (!profile.organization_id) {
-            router.replace('/onboarding/company-profile');
-          } else {
+        if (profile.role === 'manager') {
+          let hasOrgProfile = false;
+          if (profile.organization_id) {
             try {
               const { data: org } = await supabase
                 .from('organizations')
                 .select('profile_status, name')
                 .eq('id', profile.organization_id)
                 .maybeSingle();
-              if (!org || org.profile_status === 'not_started' || !org.name || org.name.startsWith('New Organization')) {
-                router.replace('/onboarding/company-profile');
+              if (org && org.profile_status !== 'not_started' && org.name && !org.name.startsWith('New Organization')) {
+                hasOrgProfile = true;
               }
             } catch { /* non-fatal */ }
+          }
+
+          if (!hasOrgProfile) {
+            if (!pathname.startsWith('/onboarding/company-profile')) {
+              router.replace('/onboarding/company-profile');
+            }
+          } else {
+            // Manager has submitted onboarding. Now check approvalStatus.
+            if (approvalStatus === 'pending' || approvalStatus === 'rejected') {
+              if (pathname !== '/onboarding/pending-approval') {
+                router.replace('/onboarding/pending-approval');
+              }
+            } else if (approvalStatus === 'approved') {
+              if (pathname.startsWith('/onboarding')) {
+                router.replace('/dashboard');
+              }
+            }
           }
         }
       } catch {

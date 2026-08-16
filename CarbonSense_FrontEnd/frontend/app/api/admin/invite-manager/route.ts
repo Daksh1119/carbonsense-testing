@@ -166,11 +166,11 @@ export async function GET(req: NextRequest) {
     if (status === 'pending' && resultInvites.length > 0) {
       const { data: activeProfiles } = await supabase
         .from('user_profiles')
-        .select('email, role, approved, organization_id');
+        .select('email, role, approval_status, organization_id');
 
       const activeEmails = new Set(
         (activeProfiles ?? [])
-          .filter((p) => p.email && (p.role === 'manager' || p.approved || p.organization_id))
+          .filter((p) => p.email && (p.role === 'manager' || p.approval_status === 'approved' || p.organization_id))
           .map((p) => p.email.toLowerCase().trim())
       );
 

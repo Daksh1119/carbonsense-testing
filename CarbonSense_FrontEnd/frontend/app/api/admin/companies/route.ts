@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
       supabase
         .from('user_profiles')
-        .select('id, email, role, organization_id, first_name, last_name'),
+        .select('id, email, role, organization_id, first_name, last_name, approval_status'),
     ]);
 
     if (orgsRes.error) {
@@ -41,14 +41,20 @@ export async function GET(req: NextRequest) {
 
     const viewersCount: Record<string, number> = {};
     const managersMap: Record<string, string> = {};
+    const orgManagerApproved: Record<string, boolean> = {};
 
     for (const p of profiles) {
       if (!p.organization_id) continue;
       if (p.role === 'viewer') {
         viewersCount[p.organization_id] = (viewersCount[p.organization_id] ?? 0) + 1;
-      } else if (p.role === 'manager' && !managersMap[p.organization_id]) {
-        const name = [p.first_name, p.last_name].filter(Boolean).join(' ');
-        managersMap[p.organization_id] = name || p.email;
+      } else if (p.role === 'manager') {
+        if (p.approval_status === 'approved') {
+          orgManagerApproved[p.organization_id] = true;
+        }
+        if (!managersMap[p.organization_id]) {
+          const name = [p.first_name, p.last_name].filter(Boolean).join(' ');
+          managersMap[p.organization_id] = name || p.email;
+        }
       }
     }
 
@@ -57,7 +63,7 @@ export async function GET(req: NextRequest) {
       name: org.name,
       industry: org.industry ?? 'General',
       sector: org.sector ?? 'General',
-      profileStatus: org.profile_status ?? 'not_started',
+      profileStatus: (org.profile_status === 'complete' || orgManagerApproved[org.id]) ? 'complete' : (org.profile_status ?? 'not_started'),
       managerName: managersMap[org.id] ?? 'Unassigned',
       viewerCount: viewersCount[org.id] ?? 0,
       createdAt: org.created_at,
