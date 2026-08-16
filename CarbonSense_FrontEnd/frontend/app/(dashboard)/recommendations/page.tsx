@@ -39,7 +39,72 @@ import {
   Filter,
   Info,
   UserPlus,
+  ThumbsUp,
+  ThumbsDown,
+  Flag,
+  BookOpen,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
+
+// ---------------------------------------------------------------------------
+// Evidence citation mapping — mirrors the backend knowledge base sources
+// (GHG Protocol, IEA, ENERGY STAR, EPA SmartWay, DEFRA, CDP, IPCC AR6)
+// ---------------------------------------------------------------------------
+const CATEGORY_EVIDENCE: Record<string, { citation: string; framework: string }[]> = {
+  Energy: [
+    { citation: "ENERGY STAR Portfolio Manager Technical Reference, 2023", framework: "ENERGY STAR" },
+    { citation: "IEA Energy Efficiency 2023, Chapter 3: Buildings", framework: "IEA" },
+    { citation: "ASHRAE Standard 90.1-2022: Lighting & HVAC", framework: "ASHRAE" },
+    { citation: "GHG Protocol Corporate Standard: Scope 2 Accounting", framework: "GHG Protocol" },
+  ],
+  Transport: [
+    { citation: "EPA SmartWay Program Carrier Efficiency Guide, 2023", framework: "EPA SmartWay" },
+    { citation: "IPCC AR6 Working Group III, Chapter 10: Transport", framework: "IPCC AR6" },
+    { citation: "DEFRA GHG Reporting Conversion Factors, 2023", framework: "DEFRA" },
+    { citation: "GHG Protocol Category 6 & 7: Business Travel & Commuting", framework: "GHG Protocol" },
+  ],
+  Procurement: [
+    { citation: "CDP Supply Chain Report 2023: Supplier Engagement", framework: "CDP" },
+    { citation: "GHG Protocol Scope 3 Standard: Category 1 Purchased Goods", framework: "GHG Protocol" },
+    { citation: "Science Based Targets initiative (SBTi) Supplier Guidance", framework: "SBTi" },
+  ],
+  Waste: [
+    { citation: "EPA WARM Model v15, 2023", framework: "EPA WARM" },
+    { citation: "DEFRA UK Waste Conversion Factors, 2023", framework: "DEFRA" },
+    { citation: "GHG Protocol Category 5: Waste Generated in Operations", framework: "GHG Protocol" },
+    { citation: "IPCC AR6 WG3 Chapter 7: AFOLU — Waste Methane", framework: "IPCC AR6" },
+  ],
+  Offset: [
+    { citation: "Verra Verified Carbon Standard (VCS) VM0010, 2023", framework: "Verra VCS" },
+    { citation: "IPCC AR6 WG3 Chapter 7: Land-based mitigation", framework: "IPCC AR6" },
+    { citation: "Gold Standard for the Global Goals: Afforestation/Reforestation", framework: "Gold Standard" },
+    { citation: "CarbonSense TEME V4: Survival-adjusted sequestration", framework: "TEME" },
+  ],
+  Policy: [
+    { citation: "World Bank Carbon Pricing Leadership Coalition Guidance", framework: "World Bank" },
+    { citation: "SBTi Corporate Standard v2.0, 2023", framework: "SBTi" },
+    { citation: "CDP Climate Change 2023: Governance & Targets", framework: "CDP" },
+  ],
+};
+
+const FRAMEWORK_COLORS: Record<string, string> = {
+  "ENERGY STAR": "text-amber-400 bg-amber-500/10 border-amber-500/20",
+  IEA:           "text-sky-400 bg-sky-500/10 border-sky-500/20",
+  ASHRAE:        "text-violet-400 bg-violet-500/10 border-violet-500/20",
+  "GHG Protocol":"text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+  "EPA SmartWay":"text-teal-400 bg-teal-500/10 border-teal-500/20",
+  "IPCC AR6":    "text-rose-400 bg-rose-500/10 border-rose-500/20",
+  DEFRA:         "text-blue-400 bg-blue-500/10 border-blue-500/20",
+  CDP:           "text-orange-400 bg-orange-500/10 border-orange-500/20",
+  SBTi:          "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",
+  "EPA WARM":    "text-lime-400 bg-lime-500/10 border-lime-500/20",
+  "Verra VCS":   "text-green-400 bg-green-500/10 border-green-500/20",
+  "Gold Standard":"text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
+  TEME:          "text-primary bg-primary/10 border-primary/20",
+  "World Bank":  "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
+};
+
 
 // ---------------------------------------------------------------------------
 // Types
@@ -143,9 +208,15 @@ export default function RecommendationsPage() {
   const [statusUpdating, setStatusUpdating] = useState<Set<string>>(new Set());
   const [activeFilter, setActiveFilter] = useState<string>("all");
 
+  // Evidence panel + rating state
+  const [expandedEvidence, setExpandedEvidence] = useState<Set<string>>(new Set());
+  const [ratings, setRatings] = useState<Record<string, string>>({});
+  const [ratingSending, setRatingSending] = useState<Set<string>>(new Set());
+
   // Group 5.2 — team viewers for assignment
   const [viewers, setViewers] = useState<ViewerMember[]>([]);
   const [assigning, setAssigning] = useState<string | null>(null);
+
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -211,6 +282,38 @@ export default function RecommendationsPage() {
       setStatusUpdating((prev) => { const s = new Set(prev); s.delete(itemId); return s; });
     }
   }
+
+  // Rating handler — wired to POST /recommendations/items/{id}/rate
+  async function handleRate(itemId: string, rating: string) {
+    if (!userId || ratingSending.has(itemId)) return;
+    setRatingSending((prev) => new Set(prev).add(itemId));
+    try {
+      const res = await fetch(`${apiUrl}/recommendations/items/${itemId}/rate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId, rating }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setRatings((prev) => ({ ...prev, [itemId]: rating }));
+      if (rating === "helpful") showSuccessToast("Thanks! Your feedback helps improve recommendations.");
+      else showInfoToast("Feedback noted — we\u2019ll use this to tune future recommendations.");
+    } catch (e) {
+      showErrorToast("Couldn\u2019t save feedback: " + (e as Error).message);
+    } finally {
+      setRatingSending((prev) => { const s = new Set(prev); s.delete(itemId); return s; });
+    }
+  }
+
+  // Toggle evidence panel visibility for a given item
+  function toggleEvidence(itemId: string) {
+    setExpandedEvidence((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  }
+
 
   // Group 5.2 — fetch org viewers for assignment
   useEffect(() => {
@@ -427,10 +530,14 @@ export default function RecommendationsPage() {
             {filteredItems.map((item) => {
               const isUpdating = statusUpdating.has(item.id);
               const status = item.implementation_status;
+              const isEvidenceOpen = expandedEvidence.has(item.id);
+              const currentRating = ratings[item.id];
+              const isRatingSending = ratingSending.has(item.id);
+              const evidenceSources = CATEGORY_EVIDENCE[item.category] ?? CATEGORY_EVIDENCE["Energy"];
               return (
                 <div
                   key={item.id}
-                  className={`bg-slate-900/50 border rounded-xl p-5 transition-all ${
+                  className={`bg-slate-900/50 border rounded-xl transition-all ${
                     status === "implemented"
                       ? "border-emerald-500/30 bg-emerald-500/5"
                       : status === "rejected"
@@ -440,88 +547,170 @@ export default function RecommendationsPage() {
                       : "border-slate-800 hover:border-slate-700"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-4 flex-wrap">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="text-xs text-slate-500 font-mono">#{item.rank}</span>
-                        <Badge variant="default">{item.category}</Badge>
-                        {item.difficulty && (
-                          <Badge
-                            variant={
-                              item.difficulty === "Easy" ? "success"
-                                : item.difficulty === "Medium" ? "warning"
-                                : "default"
-                            }
-                          >
-                            {item.difficulty}
-                          </Badge>
-                        )}
+                  {/* ── Main card row ── */}
+                  <div className="p-5">
+                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className="text-xs text-slate-500 font-mono">#{item.rank}</span>
+                          <Badge variant="default">{item.category}</Badge>
+                          {item.difficulty && (
+                            <Badge
+                              variant={
+                                item.difficulty === "Easy" ? "success"
+                                  : item.difficulty === "Medium" ? "warning"
+                                  : "default"
+                              }
+                            >
+                              {item.difficulty}
+                            </Badge>
+                          )}
+                        </div>
+                        <h3 className="text-white font-semibold text-sm mb-1.5">{item.title}</h3>
+                        <p className="text-slate-400 text-xs leading-relaxed">{item.description}</p>
                       </div>
-                      <h3 className="text-white font-semibold text-sm mb-1.5">{item.title}</h3>
-                      <p className="text-slate-400 text-xs leading-relaxed">{item.description}</p>
-                    </div>
-                    <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                      <StatusBadge status={status} />
-                      {/* Action buttons */}
-                      {status !== "implemented" && status !== "rejected" && (
-                        <div className="flex gap-2 mt-1">
-                          {status === "proposed" && (
+                      <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                        <StatusBadge status={status} />
+                        {/* Action buttons */}
+                        {status !== "implemented" && status !== "rejected" && (
+                          <div className="flex gap-2 mt-1">
+                            {status === "proposed" && (
+                              <button
+                                disabled={isUpdating}
+                                onClick={() => handleStatusUpdate(item.id, "in_progress")}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 rounded-lg transition-colors disabled:opacity-50"
+                              >
+                                <PlayCircle className="size-3.5" />
+                                Start
+                              </button>
+                            )}
                             <button
                               disabled={isUpdating}
-                              onClick={() => handleStatusUpdate(item.id, "in_progress")}
-                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 rounded-lg transition-colors disabled:opacity-50"
+                              onClick={() => handleStatusUpdate(item.id, "implemented")}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 rounded-lg transition-colors disabled:opacity-50"
                             >
-                              <PlayCircle className="size-3.5" />
-                              Start
+                              <CheckCircle2 className="size-3.5" />
+                              {isUpdating ? "Saving…" : "Mark Implemented"}
                             </button>
-                          )}
+                            <button
+                              disabled={isUpdating}
+                              onClick={() => handleStatusUpdate(item.id, "rejected")}
+                              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-50"
+                            >
+                              <XCircle className="size-3.5" />
+                              Dismiss
+                            </button>
+                          </div>
+                        )}
+                        {(status === "implemented" || status === "rejected") && (
                           <button
                             disabled={isUpdating}
-                            onClick={() => handleStatusUpdate(item.id, "implemented")}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 rounded-lg transition-colors disabled:opacity-50"
+                            onClick={() => handleStatusUpdate(item.id, "proposed")}
+                            className="text-xs text-slate-500 hover:text-slate-300 underline transition-colors"
                           >
-                            <CheckCircle2 className="size-3.5" />
-                            {isUpdating ? "Saving…" : "Mark Implemented"}
+                            Undo
                           </button>
-                          <button
-                            disabled={isUpdating}
-                            onClick={() => handleStatusUpdate(item.id, "rejected")}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-50"
-                          >
-                            <XCircle className="size-3.5" />
-                            Dismiss
-                          </button>
-                        </div>
-                      )}
-                      {(status === "implemented" || status === "rejected") && (
-                        <button
-                          disabled={isUpdating}
-                          onClick={() => handleStatusUpdate(item.id, "proposed")}
-                          className="text-xs text-slate-500 hover:text-slate-300 underline transition-colors"
-                        >
-                          Undo
-                        </button>
-                      )}
+                        )}
 
-                      {/* Group 5.2 — Assign to viewer */}
-                      {viewers.length > 0 && (
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <UserPlus className="size-3 text-slate-500" />
-                          <select
-                            value={item.assigned_to ?? ""}
-                            onChange={(e) => handleAssign(item.id, e.target.value)}
-                            disabled={assigning === item.id}
-                            className="text-xs bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-300 focus:outline-none focus:border-teal-500 disabled:opacity-50"
-                          >
-                            <option value="">Assign to…</option>
-                            {viewers.map((v) => (
-                              <option key={v.id} value={v.id}>{v.display_name}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
+                        {/* Group 5.2 — Assign to viewer */}
+                        {viewers.length > 0 && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <UserPlus className="size-3 text-slate-500" />
+                            <select
+                              value={item.assigned_to ?? ""}
+                              onChange={(e) => handleAssign(item.id, e.target.value)}
+                              disabled={assigning === item.id}
+                              className="text-xs bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-300 focus:outline-none focus:border-teal-500 disabled:opacity-50"
+                            >
+                              <option value="">Assign to…</option>
+                              {viewers.map((v) => (
+                                <option key={v.id} value={v.id}>{v.display_name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ── Bottom bar: evidence toggle + rating buttons ── */}
+                    <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-800/60">
+                      {/* Evidence toggle */}
+                      <button
+                        onClick={() => toggleEvidence(item.id)}
+                        className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-teal-400 transition-colors"
+                      >
+                        <BookOpen className="size-3.5" />
+                        View Sources
+                        {isEvidenceOpen
+                          ? <ChevronUp className="size-3" />
+                          : <ChevronDown className="size-3" />}
+                      </button>
+
+                      {/* Rating buttons */}
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-slate-600 mr-1">Was this useful?</span>
+                        {currentRating ? (
+                          <span className="text-xs text-teal-400 font-medium">
+                            {currentRating === "helpful" ? "✔ Helpful" : currentRating === "not_helpful" ? "✕ Not helpful" : "⚑ Flagged"}
+                          </span>
+                        ) : (
+                          <>
+                            <button
+                              disabled={isRatingSending}
+                              onClick={() => handleRate(item.id, "helpful")}
+                              title="This recommendation is helpful"
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-40"
+                            >
+                              <ThumbsUp className="size-3.5" />
+                            </button>
+                            <button
+                              disabled={isRatingSending}
+                              onClick={() => handleRate(item.id, "not_helpful")}
+                              title="This recommendation is not helpful"
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors disabled:opacity-40"
+                            >
+                              <ThumbsDown className="size-3.5" />
+                            </button>
+                            <button
+                              disabled={isRatingSending}
+                              onClick={() => handleRate(item.id, "not_relevant")}
+                              title="This recommendation is not relevant to us"
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 transition-colors disabled:opacity-40"
+                            >
+                              <Flag className="size-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
+
+                  {/* ── Expandable Evidence Panel ── */}
+                  {isEvidenceOpen && (
+                    <div className="border-t border-slate-800/80 bg-slate-950/50 rounded-b-xl px-5 py-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <BookOpen className="size-3.5 text-teal-400" />
+                        <span className="text-xs font-semibold text-teal-400 uppercase tracking-wider">Evidence & Sources</span>
+                        <span className="text-xs text-slate-600 ml-1">— This recommendation is grounded in these verified frameworks</span>
+                      </div>
+                      <div className="space-y-2">
+                        {evidenceSources.map((src, idx) => (
+                          <div key={idx} className="flex items-start gap-2.5">
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 mt-0.5 ${
+                              FRAMEWORK_COLORS[src.framework] ?? "text-slate-400 bg-slate-800 border-slate-700"
+                            }`}>
+                              {src.framework}
+                            </span>
+                            <p className="text-xs text-slate-400 leading-relaxed">{src.citation}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-slate-600 mt-3">
+                        Impact ranges derived from GHG Protocol reduction factors applied to your organisation&apos;s actual KPI data.
+                        All citations are publicly available.
+                      </p>
+                    </div>
+                  )}
                 </div>
               );
             })}

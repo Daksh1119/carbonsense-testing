@@ -9,6 +9,11 @@ from dotenv import load_dotenv
 import requests
 
 from ml_services.common.supabase_client import supabase
+from ml_services.recommendations.knowledge_base import (
+    find_entries_for_focus_areas,
+    to_evidence_item,
+)
+from ml_services.recommendations.impact_calculator import apply_deterministic_impacts
 
 
 # Load backend env deterministically from repository root (.env).
@@ -170,6 +175,33 @@ def _build_evidence_catalog(payload: Dict[str, Any], org_profile: Dict[str, Any]
             }
         )
 
+    return catalog
+
+
+def _enrich_evidence_from_knowledge_base(
+    catalog: List[Dict[str, Any]],
+    focus_areas: List[str],
+) -> List[Dict[str, Any]]:
+    """
+    Augment an existing evidence catalog with curated knowledge base entries.
+    KB entries carry verified citations (GHG Protocol, IEA, ENERGY STAR, etc.)
+    so the LLM must ground its recommendations in real, traceable sources.
+    At most 6 KB entries are injected to keep the prompt manageable.
+    """
+    existing_ids: Set[str] = {str(e.get("evidence_id") or "") for e in catalog}
+    kb_entries = find_entries_for_focus_areas(focus_areas)
+    added = 0
+    for entry in kb_entries:
+        ev = to_evidence_item(entry)
+        if ev["evidence_id"] in existing_ids:
+            continue
+        # Strip internal metadata before adding to the LLM payload.
+        ev_clean = {k: v for k, v in ev.items() if not k.startswith("_")}
+        catalog.append(ev_clean)
+        existing_ids.add(ev["evidence_id"])
+        added += 1
+        if added >= 6:
+            break
     return catalog
 
 
@@ -541,6 +573,137 @@ def _call_openai_compatible(messages: List[Dict[str, str]]) -> Dict[str, Any]:
             status_code=502, detail=f"Invalid LLM response format: {e}")
 
 
+def _validate_with_evaluator(
+    recs: List[Dict[str, Any]],
+    llm_payload: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """
+    Optional second-pass LLM critic that checks each recommendation for:
+      - Consistency with the organisation's KPI data
+      - Realistic cost and timeline claims
+      - Proper evidence citation (not hallucinated)
+      - Duplication with other recommendations
+
+    Only runs when LLM_EVALUATOR_ENABLED=true in .env.
+    Returns a filtered/corrected list of recommendations.
+    If the evaluator fails or rejects >50%, the original list is returned.
+    """
+    enabled = os.getenv("LLM_EVALUATOR_ENABLED", "false").strip().lower() == "true"
+    if not enabled or not recs:
+        return recs
+
+    cfg = _llm_config()
+    if not cfg["api_key"]:
+        return recs
+
+    eval_schema = {
+        "evaluations": [
+            {
+                "rank": "integer — matches the recommendation rank",
+                "verdict": "pass | flag | reject",
+                "reason": "one-sentence explanation",
+                "corrected_confidence_score": "number 0-1 or null if unchanged",
+            }
+        ]
+    }
+
+    recs_summary = [
+        {
+            "rank": r.get("rank"),
+            "title": r.get("title"),
+            "estimated_impact_kg_co2e": r.get("estimated_impact_kg_co2e"),
+            "implementation_cost_usd": r.get("implementation_cost_usd"),
+            "confidence_score": r.get("confidence_score"),
+            "evidence_count": len(r.get("evidence") or []),
+        }
+        for r in recs
+    ]
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a critical sustainability auditor reviewing AI-generated carbon reduction recommendations. "
+                "Your job is to flag or reject any recommendation that: "
+                "(a) overclaims emission reductions relative to the organisation KPI data, "
+                "(b) cites fewer than 2 evidence items, "
+                "(c) has an unrealistic cost/timeline, or "
+                "(d) duplicates another recommendation. "
+                "Return only strict JSON with no prose outside it. "
+                "Be conservative: only reject if clearly wrong. Use 'flag' for borderline cases."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Evaluate these {len(recs)} recommendations against the organisation context.\n\n"
+                f"Organisation emission_kg: {llm_payload.get('emission_kg', 0)}\n"
+                f"Focus areas: {llm_payload.get('focus_areas', [])}\n\n"
+                f"Recommendations to evaluate:\n{json.dumps(recs_summary, ensure_ascii=True)}\n\n"
+                f"Output JSON schema:\n{json.dumps(eval_schema, ensure_ascii=True)}"
+            ),
+        },
+    ]
+
+    try:
+        body = {
+            "model": _llm_config()["model"],
+            "messages": messages,
+            "temperature": 0.0,
+            "response_format": {"type": "json_object"},
+        }
+        resp = requests.post(
+            f"{cfg['base_url']}/chat/completions",
+            json=body,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {cfg['api_key']}",
+                "HTTP-Referer": os.getenv("LLM_SITE_URL", "http://localhost:3000"),
+                "X-Title": os.getenv("LLM_APP_NAME", "CarbonSense-Evaluator"),
+            },
+            timeout=30,
+        )
+        if resp.status_code >= 400:
+            return recs  # Evaluator failed — return original.
+
+        content = resp.json()["choices"][0]["message"]["content"]
+        eval_result = json.loads(_strip_json_block(content))
+        evaluations = eval_result.get("evaluations", [])
+
+        # Build lookup by rank.
+        verdict_map: Dict[int, Dict[str, Any]] = {e["rank"]: e for e in evaluations if "rank" in e}
+
+        kept: List[Dict[str, Any]] = []
+        rejected_count = 0
+        for rec in recs:
+            ev = verdict_map.get(rec.get("rank"))
+            if ev is None:
+                kept.append(rec)  # No evaluation — keep.
+                continue
+            verdict = str(ev.get("verdict", "pass")).lower()
+            if verdict == "reject":
+                rejected_count += 1
+                continue
+            # Apply any confidence correction from the evaluator.
+            if ev.get("corrected_confidence_score") is not None:
+                try:
+                    corrected = float(ev["corrected_confidence_score"])
+                    rec = {**rec, "confidence_score": max(0.0, min(1.0, corrected))}
+                except Exception:
+                    pass
+            kept.append(rec)
+
+        # Safety valve: if evaluator rejects >50%, ignore its output.
+        if rejected_count > len(recs) / 2:
+            return recs
+
+        return kept if kept else recs
+
+    except Exception:
+        # Evaluator errors are non-fatal — return original recommendations.
+        return recs
+
+
 def _normalize_recommendations(items: List[Dict[str, Any]], allowed_evidence_ids: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     allowed_priority = {"low", "medium", "high", "critical"}
@@ -772,6 +935,14 @@ def generate_and_store_recommendations(payload: Dict[str, Any]) -> Dict[str, Any
     llm_payload["focus_areas"] = _derive_focus_areas(llm_payload)
     llm_payload["evidence_catalog"] = _build_evidence_catalog(
         llm_payload, org_profile, teme_run)
+
+    # ── Layer 1: Inject curated knowledge base entries as verified evidence ──
+    # KB entries carry GHG Protocol / IEA / ENERGY STAR citations so the LLM
+    # must ground its reasoning in real, traceable sources.
+    llm_payload["evidence_catalog"] = _enrich_evidence_from_knowledge_base(
+        llm_payload["evidence_catalog"], llm_payload["focus_areas"]
+    )
+
     llm_payload["target_recommendation_count"] = _target_recommendation_count(
         llm_payload, llm_payload["evidence_catalog"])
     llm_payload["recommendation_constraints"] = {
@@ -787,16 +958,38 @@ def generate_and_store_recommendations(payload: Dict[str, Any]) -> Dict[str, Any
         llm_payload, llm_payload["target_recommendation_count"])
     allowed_evidence_ids = {str(e.get("evidence_id"))
                             for e in llm_payload["evidence_catalog"] if e.get("evidence_id")}
+    # Gather KB entries for deterministic impact calculation (Layer 2).
+    from ml_services.recommendations.knowledge_base import get_all_entries as _get_all_kb
+    _kb_entries = _get_all_kb()
+
     try:
         raw = _call_openai_compatible(messages)
         recs = _normalize_recommendations(
             raw.get("recommendations", []), allowed_evidence_ids=allowed_evidence_ids)
+
+        # ── Layer 2: Replace LLM-guessed impacts with deterministic calculations ──
+        # Each recommendation is matched to a KB entry and the CO2 impact is
+        # recalculated from the org's actual KPI values using GHG-Protocol-based
+        # reduction factors. The LLM's original values are preserved for audit.
+        recs = apply_deterministic_impacts(
+            recs,
+            llm_payload.get("kpi_snapshots") or [],
+            float(llm_payload.get("emission_kg") or 0),
+            _kb_entries,
+        )
+
         recs = _rank_and_filter(
             recs,
             float(llm_payload.get("emission_kg") or 0),
             int(llm_payload["target_recommendation_count"]),
             llm_payload["focus_areas"],
         )
+
+        # ── Layer 3 (optional): Two-stage evaluator LLM ──
+        # Only active when LLM_EVALUATOR_ENABLED=true in .env.
+        # Filters out hallucinated or inconsistent recommendations.
+        recs = _validate_with_evaluator(recs, llm_payload)
+
         if not recs:
             raise ValueError("No recommendations returned")
     except Exception as e:

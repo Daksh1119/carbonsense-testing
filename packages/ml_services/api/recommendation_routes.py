@@ -151,3 +151,46 @@ def update_item_status(item_id: str, payload: ItemStatusUpdate):
         raise HTTPException(status_code=500, detail=f"Failed to update item status: {e}")
 
 
+class ItemRatingInput(BaseModel):
+    """Lightweight thumbs-up / thumbs-down feedback for catalog items."""
+    user_id: str
+    rating: str  # "helpful" | "not_helpful" | "not_relevant"
+    feedback_text: Optional[str] = None
+
+
+@router.post("/items/{item_id}/rate")
+def rate_recommendation_item(item_id: str, payload: ItemRatingInput):
+    """
+    Submit a quality rating for a catalog recommendation item.
+    Writes the rating directly to recommendation_items.user_rating.
+    Requires migration 20260816_recommendation_quality.sql to be applied.
+    Valid ratings: helpful | not_helpful | not_relevant
+    """
+    valid_ratings = {"helpful", "not_helpful", "not_relevant"}
+    if payload.rating not in valid_ratings:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid rating. Must be one of: {', '.join(valid_ratings)}"
+        )
+    try:
+        res = (
+            supabase.table("recommendation_items")
+            .update({
+                "user_rating": payload.rating,
+                "rating_updated_at": "now()",
+                "rating_updated_by": payload.user_id,
+            })
+            .eq("id", item_id)
+            .execute()
+        )
+        if not res.data:
+            raise HTTPException(status_code=404, detail=f"Item {item_id} not found")
+        return {"status": "ok", "rating": payload.rating}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save rating: {e}")
+
+
+
+
