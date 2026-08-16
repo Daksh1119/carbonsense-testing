@@ -144,12 +144,12 @@ export default function DashboardPage() {
           .map((s: { period_start: string; source_type?: string }) => ({
             monthLabel: formatMonthLabel(s.period_start),
             label: s.source_type === 'company_profile' ? 'Profile'
-                 : s.source_type === 'manual_entry' ? 'Manual'
-                 : 'Upload',
+              : s.source_type === 'manual_entry' ? 'Manual'
+                : 'Upload',
           }));
         setCycleMarkers(markers);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [user?.organizationId]);
 
   // Show error state
@@ -259,8 +259,8 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold text-white mb-2">Executive Dashboard</h1>
           <Breadcrumb />
         </div>
-        <Button 
-          onClick={() => router.push('/emissions')} 
+        <Button
+          onClick={() => router.push('/emissions')}
           icon={<Plus className="h-4 w-4" />}
         >
           Add Emission
@@ -487,9 +487,9 @@ export default function DashboardPage() {
         title="Carbon Path 2024-2026"
         subtitle="Recorded monthly emissions with evidence-based forecast for upcoming months"
         headerAction={
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => router.push('/analytics')}
             icon={<Eye className="h-4 w-4" />}
           >
@@ -705,9 +705,9 @@ export default function DashboardPage() {
               <span className="text-xs text-slate-400">Expected Months</span>
             </div>
           </div>
-          <Button 
-            variant="ghost" 
-            size="sm" 
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => router.push('/detailed-log')}
             icon={<Eye className="h-4 w-4" />}
           >
@@ -723,9 +723,9 @@ export default function DashboardPage() {
           title="Strategy Comparison"
           icon={<Zap className="size-5" />}
           headerAction={
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => router.push('/recommendations')}
               icon={<Eye className="h-4 w-4" />}
             >
@@ -756,14 +756,14 @@ export default function DashboardPage() {
                     </Badge>
                   </div>
                 </div>
-                <ProgressBar 
-                  value={strategy.certainty} 
-                  color={index === 0 ? "primary" : "success"} 
-                  size="md" 
+                <ProgressBar
+                  value={strategy.certainty}
+                  color={index === 0 ? "primary" : "success"}
+                  size="md"
                 />
                 <p className="text-xs text-slate-400 mt-2">
-                  {index === 0 
-                    ? "High-impact & supply-chain optimization" 
+                  {index === 0
+                    ? "High-impact & supply-chain optimization"
                     : "Delayed impact • 10-15y Maturity"}
                 </p>
               </div>
@@ -776,9 +776,9 @@ export default function DashboardPage() {
           title="Policy Snapshot"
           icon={<FileText className="size-5" />}
           headerAction={
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => router.push('/policy-intelligence')}
               icon={<ExternalLink className="h-4 w-4" />}
             >
@@ -878,7 +878,7 @@ export default function DashboardPage() {
                   </div>
                 ))}
               </div>
-          </div>
+            </div>
           </div>
         </DashboardCard>
       </div>

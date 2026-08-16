@@ -380,218 +380,216 @@ export default function TEMEDashboard() {
 			</DashboardCard>
 
 			<div ref={timeDebtSectionRef}>
-			<DashboardCard
-				title="Time-Debt Analysis"
-				subtitle="Projected CO2 absorption over years from TEME Monte Carlo output"
-				icon={<Target className="size-5" />}
-				className={
-					selectedTopCard === "current-absorption" || selectedTopCard === "payback-period"
-						? "ring-2 ring-primary/40"
-						: undefined
-				}
-			>
-				<div className="mb-3 flex items-center gap-2 text-xs">
-					<span
-						className={`rounded-full border px-2 py-1 ${
-							simulationEnabled
-								? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-								: "border-slate-600 bg-slate-800/70 text-slate-300"
-						}`}
-					>
-						Simulation: {simulationEnabled ? "Enabled" : "Disabled"}
-					</span>
-					{typeof simulationTrials === "number" && simulationEnabled && (
-						<span className="rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-cyan-300">
-							Trials: {simulationTrials}
+				<DashboardCard
+					title="Time-Debt Analysis"
+					subtitle="Projected CO2 absorption over years from TEME Monte Carlo output"
+					icon={<Target className="size-5" />}
+					className={
+						selectedTopCard === "current-absorption" || selectedTopCard === "payback-period"
+							? "ring-2 ring-primary/40"
+							: undefined
+					}
+				>
+					<div className="mb-3 flex items-center gap-2 text-xs">
+						<span
+							className={`rounded-full border px-2 py-1 ${simulationEnabled
+									? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+									: "border-slate-600 bg-slate-800/70 text-slate-300"
+								}`}
+						>
+							Simulation: {simulationEnabled ? "Enabled" : "Disabled"}
 						</span>
-					)}
-				</div>
-				<TimeDebtChart mean_curve={meanCurve} p5_curve={p5Curve} p95_curve={p95Curve} />
-				<div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-					<div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3 text-slate-300">
-						<p className="text-slate-200 font-medium mb-1">How to read this chart</p>
-						<p>
-							Expected line is the most likely absorption path. Best and worst lines show uncertainty range.
-						</p>
+						{typeof simulationTrials === "number" && simulationEnabled && (
+							<span className="rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-cyan-300">
+								Trials: {simulationTrials}
+							</span>
+						)}
 					</div>
-					<div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3 text-slate-300">
-						<p className="text-slate-200 font-medium mb-1">Recommendation</p>
-						<p>{recommendation}</p>
+					<TimeDebtChart mean_curve={meanCurve} p5_curve={p5Curve} p95_curve={p95Curve} />
+					<div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+						<div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3 text-slate-300">
+							<p className="text-slate-200 font-medium mb-1">How to read this chart</p>
+							<p>
+								Expected line is the most likely absorption path. Best and worst lines show uncertainty range.
+							</p>
+						</div>
+						<div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3 text-slate-300">
+							<p className="text-slate-200 font-medium mb-1">Recommendation</p>
+							<p>{recommendation}</p>
+						</div>
 					</div>
-				</div>
-			</DashboardCard>
+				</DashboardCard>
 			</div>
 
 			<div ref={speciesSectionRef}>
-			<DashboardCard
-				title="Species Recommendations"
-				subtitle="Generated from latest TEME offset plan"
-				icon={<TreePine className="size-5" />}
-				className={selectedTopCard === "trees-planned" ? "ring-2 ring-primary/40" : undefined}
-			>
-				<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-					{(focusedResult?.offset_plan || []).map((item, index) => {
-						const survivalYear5 =
-							item.survival_curve?.[5] ??
-							item.survival_curve?.[item.survival_curve.length - 1] ??
-							0;
-						const endYearIndex = Math.max((item.annual_sequestration_kg?.length || 1) - 1, 0);
-						const annualAbsorption = getSpeciesAnnualAbsorption(item, endYearIndex);
-						const survivalPercent = Math.round(survivalYear5 * 100);
+				<DashboardCard
+					title="Species Recommendations"
+					subtitle="Generated from latest TEME offset plan"
+					icon={<TreePine className="size-5" />}
+					className={selectedTopCard === "trees-planned" ? "ring-2 ring-primary/40" : undefined}
+				>
+					<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+						{(focusedResult?.offset_plan || []).map((item, index) => {
+							const survivalYear5 =
+								item.survival_curve?.[5] ??
+								item.survival_curve?.[item.survival_curve.length - 1] ??
+								0;
+							const endYearIndex = Math.max((item.annual_sequestration_kg?.length || 1) - 1, 0);
+							const annualAbsorption = getSpeciesAnnualAbsorption(item, endYearIndex);
+							const survivalPercent = Math.round(survivalYear5 * 100);
 
-						return (
-							<div
-								key={`${item.species}-${index}`}
-								className="p-5 rounded-lg border-2 bg-primary/5 border-primary/30"
-							>
-								<div className="flex items-start justify-between mb-3">
-									<div>
-										<h4 className="text-sm font-bold text-white">{item.species}</h4>
-										<p className="text-xs text-slate-400 mt-1">
-											{formatNumber(item.tree_count)} planned trees
-										</p>
-									</div>
-									<CheckCircle2 className="size-5 text-primary" />
-								</div>
-
-								<div className="space-y-3 mb-4">
-									<div>
-										<div className="flex items-center justify-between mb-1">
-											<span className="text-xs text-slate-400">Survival Rate (Year 5)</span>
-											<span className="text-xs font-semibold text-white">{survivalPercent}%</span>
-										</div>
-										<ProgressBar
-											value={survivalPercent}
-											color={survivalPercent > 75 ? "success" : "warning"}
-											size="sm"
-										/>
-									</div>
-
-									<div className="grid grid-cols-2 gap-2 text-xs">
+							return (
+								<div
+									key={`${item.species}-${index}`}
+									className="p-5 rounded-lg border-2 bg-primary/5 border-primary/30"
+								>
+									<div className="flex items-start justify-between mb-3">
 										<div>
-											<p className="text-slate-500">CO2 / Year</p>
-											<p className="text-white font-medium">{formatNumber(annualAbsorption)} kg</p>
+											<h4 className="text-sm font-bold text-white">{item.species}</h4>
+											<p className="text-xs text-slate-400 mt-1">
+												{formatNumber(item.tree_count)} planned trees
+											</p>
 										</div>
+										<CheckCircle2 className="size-5 text-primary" />
+									</div>
+
+									<div className="space-y-3 mb-4">
 										<div>
-											<p className="text-slate-500">Land (ha)</p>
-											<p className="text-white font-medium">{item.land_required_hectare?.toFixed(2) || "--"}</p>
+											<div className="flex items-center justify-between mb-1">
+												<span className="text-xs text-slate-400">Survival Rate (Year 5)</span>
+												<span className="text-xs font-semibold text-white">{survivalPercent}%</span>
+											</div>
+											<ProgressBar
+												value={survivalPercent}
+												color={survivalPercent > 75 ? "success" : "warning"}
+												size="sm"
+											/>
+										</div>
+
+										<div className="grid grid-cols-2 gap-2 text-xs">
+											<div>
+												<p className="text-slate-500">CO2 / Year</p>
+												<p className="text-white font-medium">{formatNumber(annualAbsorption)} kg</p>
+											</div>
+											<div>
+												<p className="text-slate-500">Land (ha)</p>
+												<p className="text-white font-medium">{item.land_required_hectare?.toFixed(2) || "--"}</p>
+											</div>
 										</div>
 									</div>
 								</div>
-							</div>
-						);
-					})}
-				</div>
-				{(!focusedResult?.offset_plan || focusedResult.offset_plan.length === 0) && (
-					<p className="text-sm text-slate-400">Run a project to view species recommendations.</p>
-				)}
-			</DashboardCard>
+							);
+						})}
+					</div>
+					{(!focusedResult?.offset_plan || focusedResult.offset_plan.length === 0) && (
+						<p className="text-sm text-slate-400">Run a project to view species recommendations.</p>
+					)}
+				</DashboardCard>
 			</div>
 
 			<div ref={activeProjectsSectionRef}>
-			<DashboardCard
-				title="Active Planting Projects"
-				icon={<MapPin className="size-5" />}
-				className={selectedTopCard === "active-projects" ? "ring-2 ring-primary/40" : undefined}
-			>
-				<p className="mb-3 text-xs text-slate-400">Click a project to see detailed breakdown and project-specific simulation.</p>
-				<p className="mb-3 text-xs text-slate-500">Confidence guide: High is 0.80 and above, Moderate is 0.60 to 0.79, Low is below 0.60.</p>
-				<div className="space-y-3">
-					{projects.map((project) => (
-						<div
-							key={project.id}
-							onClick={() => setSelectedProjectId(project.id)}
-							className={`cursor-pointer p-4 bg-navy-muted/50 border rounded-lg transition-colors ${
-								selectedProjectId === project.id
-									? "border-primary/60"
-									: "border-navy-border hover:border-primary/30"
-							}`}
-						>
-							<div className="flex items-start justify-between mb-3">
-								<div>
-									<h4 className="text-sm font-semibold text-white">{project.project_name}</h4>
-									<div className="flex items-center gap-4 mt-1 text-xs text-slate-400">
-										<span>{formatNumber(project.total_trees)} planned trees</span>
-										<span>{getSpeciesList(project)}</span>
-									</div>
-								</div>
-								<Badge variant="success">{project.confidence_score.toFixed(2)} confidence</Badge>
-							</div>
-
-							<div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-								<span>Created</span>
-								<span>{new Date(project.created_at).toLocaleDateString()}</span>
-							</div>
-							<ProgressBar
-								value={Math.max(5, Math.min(100, project.confidence_score * 100))}
-								color="success"
-								size="sm"
-							/>
-						</div>
-					))}
-				</div>
-
-				{selectedProject && (
-					<div className="mt-5 rounded-lg border border-slate-700 bg-slate-900/30 p-4 space-y-4">
-						<div className="flex items-start justify-between gap-4">
-							<div>
-								<p className="text-sm font-semibold text-white">Project Details: {selectedProject.project_name}</p>
-								<p className="text-xs text-slate-400 mt-1">
-									Location {selectedProject.input_payload?.location || "N/A"} • Created {new Date(selectedProject.created_at).toLocaleDateString()}
-								</p>
-							</div>
-							<Badge variant="success">{getConfidenceLabel(selectedProject.confidence_score)}</Badge>
-						</div>
-
-						<div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-							<div className="rounded-md border border-slate-700 p-2">
-								<p className="text-slate-400">Emission Target</p>
-								<p className="text-white font-medium">{formatNumber(selectedProject.emission_kg)} kg</p>
-							</div>
-							<div className="rounded-md border border-slate-700 p-2">
-								<p className="text-slate-400">Land Required</p>
-								<p className="text-white font-medium">{selectedProject.land_required_hectare.toFixed(2)} ha</p>
-							</div>
-							<div className="rounded-md border border-slate-700 p-2">
-								<p className="text-slate-400">Neutrality Time</p>
-								<p className="text-white font-medium">{formatNumber(selectedProject.time_to_neutral_years)} years</p>
-							</div>
-							<div className="rounded-md border border-slate-700 p-2">
-								<p className="text-slate-400">Simulation</p>
-								<p className="text-white font-medium">
-									{getMonteCarloCurves(selectedProject.result).simulationEnabled ? "Enabled" : "Disabled"}
-								</p>
-							</div>
-						</div>
-
-						<div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-							<div className="rounded-md border border-slate-700 p-3">
-								<p className="text-xs text-slate-400 mb-2">Species Mix</p>
-								<div className="space-y-2">
-									{(selectedProject.result?.offset_plan || []).map((item, idx) => (
-										<div key={`${item.species}-${idx}`} className="flex items-center justify-between text-xs">
-											<span className="text-slate-300">{item.species}</span>
-											<span className="text-white">{formatNumber(item.tree_count)} planned trees</span>
+				<DashboardCard
+					title="Active Planting Projects"
+					icon={<MapPin className="size-5" />}
+					className={selectedTopCard === "active-projects" ? "ring-2 ring-primary/40" : undefined}
+				>
+					<p className="mb-3 text-xs text-slate-400">Click a project to see detailed breakdown and project-specific simulation.</p>
+					<p className="mb-3 text-xs text-slate-500">Confidence guide: High is 0.80 and above, Moderate is 0.60 to 0.79, Low is below 0.60.</p>
+					<div className="space-y-3">
+						{projects.map((project) => (
+							<div
+								key={project.id}
+								onClick={() => setSelectedProjectId(project.id)}
+								className={`cursor-pointer p-4 bg-navy-muted/50 border rounded-lg transition-colors ${selectedProjectId === project.id
+										? "border-primary/60"
+										: "border-navy-border hover:border-primary/30"
+									}`}
+							>
+								<div className="flex items-start justify-between mb-3">
+									<div>
+										<h4 className="text-sm font-semibold text-white">{project.project_name}</h4>
+										<div className="flex items-center gap-4 mt-1 text-xs text-slate-400">
+											<span>{formatNumber(project.total_trees)} planned trees</span>
+											<span>{getSpeciesList(project)}</span>
 										</div>
-									))}
+									</div>
+									<Badge variant="success">{project.confidence_score.toFixed(2)} confidence</Badge>
 								</div>
-							</div>
 
-							<div className="rounded-md border border-slate-700 p-3">
-								<p className="text-xs text-slate-400 mb-2">Project Simulation View</p>
-								<TimeDebtChart
-									mean_curve={getMonteCarloCurves(selectedProject.result).meanCurve}
-									p5_curve={getMonteCarloCurves(selectedProject.result).p5Curve}
-									p95_curve={getMonteCarloCurves(selectedProject.result).p95Curve}
+								<div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+									<span>Created</span>
+									<span>{new Date(project.created_at).toLocaleDateString()}</span>
+								</div>
+								<ProgressBar
+									value={Math.max(5, Math.min(100, project.confidence_score * 100))}
+									color="success"
+									size="sm"
 								/>
 							</div>
-						</div>
+						))}
 					</div>
-				)}
-				{projects.length === 0 && !historyLoading && (
-					<p className="text-sm text-slate-400">No completed planting projects yet.</p>
-				)}
-			</DashboardCard>
+
+					{selectedProject && (
+						<div className="mt-5 rounded-lg border border-slate-700 bg-slate-900/30 p-4 space-y-4">
+							<div className="flex items-start justify-between gap-4">
+								<div>
+									<p className="text-sm font-semibold text-white">Project Details: {selectedProject.project_name}</p>
+									<p className="text-xs text-slate-400 mt-1">
+										Location {selectedProject.input_payload?.location || "N/A"} • Created {new Date(selectedProject.created_at).toLocaleDateString()}
+									</p>
+								</div>
+								<Badge variant="success">{getConfidenceLabel(selectedProject.confidence_score)}</Badge>
+							</div>
+
+							<div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+								<div className="rounded-md border border-slate-700 p-2">
+									<p className="text-slate-400">Emission Target</p>
+									<p className="text-white font-medium">{formatNumber(selectedProject.emission_kg)} kg</p>
+								</div>
+								<div className="rounded-md border border-slate-700 p-2">
+									<p className="text-slate-400">Land Required</p>
+									<p className="text-white font-medium">{selectedProject.land_required_hectare.toFixed(2)} ha</p>
+								</div>
+								<div className="rounded-md border border-slate-700 p-2">
+									<p className="text-slate-400">Neutrality Time</p>
+									<p className="text-white font-medium">{formatNumber(selectedProject.time_to_neutral_years)} years</p>
+								</div>
+								<div className="rounded-md border border-slate-700 p-2">
+									<p className="text-slate-400">Simulation</p>
+									<p className="text-white font-medium">
+										{getMonteCarloCurves(selectedProject.result).simulationEnabled ? "Enabled" : "Disabled"}
+									</p>
+								</div>
+							</div>
+
+							<div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+								<div className="rounded-md border border-slate-700 p-3">
+									<p className="text-xs text-slate-400 mb-2">Species Mix</p>
+									<div className="space-y-2">
+										{(selectedProject.result?.offset_plan || []).map((item, idx) => (
+											<div key={`${item.species}-${idx}`} className="flex items-center justify-between text-xs">
+												<span className="text-slate-300">{item.species}</span>
+												<span className="text-white">{formatNumber(item.tree_count)} planned trees</span>
+											</div>
+										))}
+									</div>
+								</div>
+
+								<div className="rounded-md border border-slate-700 p-3">
+									<p className="text-xs text-slate-400 mb-2">Project Simulation View</p>
+									<TimeDebtChart
+										mean_curve={getMonteCarloCurves(selectedProject.result).meanCurve}
+										p5_curve={getMonteCarloCurves(selectedProject.result).p5Curve}
+										p95_curve={getMonteCarloCurves(selectedProject.result).p95Curve}
+									/>
+								</div>
+							</div>
+						</div>
+					)}
+					{projects.length === 0 && !historyLoading && (
+						<p className="text-sm text-slate-400">No completed planting projects yet.</p>
+					)}
+				</DashboardCard>
 			</div>
 
 			{showModal && (

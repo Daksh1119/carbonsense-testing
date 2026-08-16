@@ -498,7 +498,7 @@ function AnalyticsContent() {
 
   const selectedUploadTotalKg = Math.round(activeSummary?.totals?.total_kg_co2e || 0);
   const selectedUploadTotalTco2e = Number((selectedUploadTotalKg / 1000).toFixed(2));
-  
+
   const trendPoints = granularityTrend;
   const periodLabelSingular = granularity === 'weekly' ? 'Week' : granularity === 'yearly' ? 'Year' : 'Month';
   const periodLabelPlural = granularity === 'weekly' ? 'Weeks' : granularity === 'yearly' ? 'Years' : 'Months';
@@ -509,7 +509,7 @@ function AnalyticsContent() {
   const lowestPeriod = trendPoints.length > 0
     ? trendPoints.reduce((prev, curr) => (curr.emissions < prev.emissions ? curr : prev), trendPoints[0])
     : null;
-  
+
   const totalTrendEmissions = trendPoints.reduce((sum, item) => sum + item.emissions, 0);
   const averageTrend = trendPoints.length > 0
     ? Number((totalTrendEmissions / trendPoints.length).toFixed(2))
@@ -517,7 +517,7 @@ function AnalyticsContent() {
 
   const currentPeriodPoint = trendPoints.length > 0 ? trendPoints[trendPoints.length - 1] : null;
   const previousPeriodPoint = trendPoints.length > 1 ? trendPoints[trendPoints.length - 2] : null;
-  
+
   const currentPeriodDeltaPct = previousPeriodPoint && previousPeriodPoint.emissions > 0
     ? Number((((currentPeriodPoint!.emissions - previousPeriodPoint.emissions) / previousPeriodPoint.emissions) * 100).toFixed(1))
     : null;
@@ -536,7 +536,7 @@ function AnalyticsContent() {
     <div className="space-y-6">
       {/* Breadcrumb */}
       <Breadcrumb />
-      
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -554,11 +554,10 @@ function AnalyticsContent() {
               <button
                 key={g}
                 onClick={() => setGranularity(g)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors capitalize ${
-                  granularity === g
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors capitalize ${granularity === g
                     ? 'bg-teal-600 text-white shadow'
                     : 'text-slate-400 hover:text-white'
-                }`}
+                  }`}
               >
                 {g}
               </button>
@@ -651,7 +650,7 @@ function AnalyticsContent() {
                 )}
               >
                 <span className="text-xs font-semibold block">All Uploads</span>
-                <span className={clsx("text-[11px] block mt-0.5", selectedUploadId === null ? "text-white/80" : "text-slate-500 dark:text-slate-400")}> 
+                <span className={clsx("text-[11px] block mt-0.5", selectedUploadId === null ? "text-white/80" : "text-slate-500 dark:text-slate-400")}>
                   {uploads.length} total file(s)
                 </span>
               </button>
@@ -837,7 +836,7 @@ function AnalyticsContent() {
                     {scope.value.toLocaleString()} kg CO₂e
                   </span>
                   <Badge variant="info">
-                      {Math.round((scope.value / Math.max(selectedUploadTotalKg, 1)) * 100)}%
+                    {Math.round((scope.value / Math.max(selectedUploadTotalKg, 1)) * 100)}%
                   </Badge>
                 </div>
               </div>

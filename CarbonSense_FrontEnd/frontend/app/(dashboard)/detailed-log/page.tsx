@@ -226,9 +226,9 @@ function DetailedEmissionsLogContent() {
   const periodLabel = isAllPeriods
     ? 'All Uploads'
     : new Date(selectedYear, selectedMonth - 1, 1).toLocaleDateString('en-US', {
-        month: 'short',
-        year: 'numeric',
-      });
+      month: 'short',
+      year: 'numeric',
+    });
 
   const viewEntry = useMemo(
     () => emissions.find((entry) => entry.id === viewEntryId) || null,
@@ -269,8 +269,8 @@ function DetailedEmissionsLogContent() {
   };
 
   // Filter data by category
-  const filteredData = selectedCategory === 'all' 
-    ? emissions 
+  const filteredData = selectedCategory === 'all'
+    ? emissions
     : emissions.filter(e => e.category === selectedCategory);
 
   // Table columns
@@ -476,7 +476,7 @@ function DetailedEmissionsLogContent() {
             </div>
             <div className="flex items-center gap-3">
               <BackButton href="/dashboard" label="Back to Dashboard" variant="outline" />
-              <button 
+              <button
                 onClick={() => router.push('/emissions')}
                 className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition-colors"
               >
@@ -511,7 +511,7 @@ function DetailedEmissionsLogContent() {
           </button>
         </div>
       )}
-      
+
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
@@ -525,7 +525,7 @@ function DetailedEmissionsLogContent() {
         </div>
         <div className="flex items-center gap-3">
           <BackButton href="/dashboard" label="Back to Dashboard" variant="outline" showIcon={true} />
-          <button 
+          <button
             onClick={() => router.push('/emissions')}
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition-colors shadow-lg shadow-emerald-600/20"
           >
@@ -807,7 +807,7 @@ function DetailedEmissionsLogContent() {
           <div>
             <p className="text-sm text-slate-600 dark:text-slate-400">Average per Entry</p>
             <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-              {filteredData.length > 0 
+              {filteredData.length > 0
                 ? (filteredData.reduce((sum, e) => sum + e.co2Amount, 0) / filteredData.length).toFixed(2)
                 : '0.00'} kg
             </p>

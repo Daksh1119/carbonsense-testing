@@ -32,9 +32,8 @@ function ChangeChip({ pct }: { pct: number }) {
   const down = pct < 0;
   return (
     <span
-      className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-        down ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'
-      }`}
+      className={`text-xs font-semibold px-2 py-0.5 rounded-full ${down ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'
+        }`}
     >
       {down ? '▼' : '▲'} {Math.abs(pct).toFixed(1)}% from last period
     </span>
@@ -96,7 +95,7 @@ function ViewerDashboardContent() {
         const data = uploadsRes.value;
         if (data.length > 0) {
           const sorted = data.sort(
-            (a: {created_at: string}, b: {created_at: string}) =>
+            (a: { created_at: string }, b: { created_at: string }) =>
               new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           );
           const totalTco2e = (data as Array<{ total_emissions_tco2e?: number | null }>)

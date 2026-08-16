@@ -56,10 +56,10 @@ function normalizeTask(item: ComplianceResultRecord) {
   const calculatedProgress = isDone
     ? 100
     : rawPct > 0
-    ? rawPct
-    : item.status === "in_progress"
-    ? 50
-    : 0;
+      ? rawPct
+      : item.status === "in_progress"
+        ? 50
+        : 0;
 
   return {
     id: item.id,
@@ -254,7 +254,7 @@ export default function CompliancePage() {
     <div className="space-y-6">
       {/* Breadcrumb */}
       <Breadcrumb />
-      
+
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -358,13 +358,12 @@ export default function CompliancePage() {
           {renderedTasks.map((task) => (
             <div
               key={task.id}
-              className={`p-5 rounded-lg border-2 transition-all ${
-                task.status === "overdue"
+              className={`p-5 rounded-lg border-2 transition-all ${task.status === "overdue"
                   ? "bg-rose-500/5 border-rose-500/30"
                   : task.status === "in-progress"
-                  ? "bg-amber-500/5 border-amber-500/30"
-                  : "bg-navy-muted/30 border-navy-border"
-              }`}
+                    ? "bg-amber-500/5 border-amber-500/30"
+                    : "bg-navy-muted/30 border-navy-border"
+                }`}
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex-1">
@@ -377,8 +376,8 @@ export default function CompliancePage() {
                         task.priority === "critical"
                           ? "danger"
                           : task.priority === "high"
-                          ? "warning"
-                          : "default"
+                            ? "warning"
+                            : "default"
                       }
                     >
                       {task.priority.toUpperCase()}
@@ -390,13 +389,12 @@ export default function CompliancePage() {
                       <span>Deadline: {task.deadline}</span>
                     </div>
                     <span
-                      className={`font-semibold ${
-                        task.daysLeft < 30
+                      className={`font-semibold ${task.daysLeft < 30
                           ? "text-rose-400"
                           : task.daysLeft < 60
-                          ? "text-amber-400"
-                          : "text-emerald-400"
-                      }`}
+                            ? "text-amber-400"
+                            : "text-emerald-400"
+                        }`}
                     >
                       {task.daysLeft} days left
                     </span>
@@ -423,8 +421,8 @@ export default function CompliancePage() {
                     task.status === "overdue"
                       ? "danger"
                       : task.status === "in-progress"
-                      ? "warning"
-                      : "primary"
+                        ? "warning"
+                        : "primary"
                   }
                 />
               </div>
@@ -486,31 +484,31 @@ export default function CompliancePage() {
           {calendarByMonth.map((month) => {
             const status = month.count >= 4 ? "urgent" : month.count >= 2 ? "warning" : "normal";
             return (
-            <div
-              key={month.month}
-              className="p-4 bg-navy-muted/50 border border-navy-border rounded-lg text-center hover:border-primary/30 transition-colors"
-            >
-              <p className="text-2xl font-bold text-white mb-1">
-                {month.count}
-              </p>
-              <p className="text-sm text-slate-400">{month.month}</p>
-              <Badge
-                variant={
-                  status === "urgent"
-                    ? "danger"
-                    : status === "warning"
-                    ? "warning"
-                    : "info"
-                }
-                size="sm"
+              <div
+                key={month.month}
+                className="p-4 bg-navy-muted/50 border border-navy-border rounded-lg text-center hover:border-primary/30 transition-colors"
               >
-                {status === "urgent"
-                  ? "URGENT"
-                  : status === "warning"
-                  ? "ATTENTION"
-                  : "SCHEDULED"}
-              </Badge>
-            </div>
+                <p className="text-2xl font-bold text-white mb-1">
+                  {month.count}
+                </p>
+                <p className="text-sm text-slate-400">{month.month}</p>
+                <Badge
+                  variant={
+                    status === "urgent"
+                      ? "danger"
+                      : status === "warning"
+                        ? "warning"
+                        : "info"
+                  }
+                  size="sm"
+                >
+                  {status === "urgent"
+                    ? "URGENT"
+                    : status === "warning"
+                      ? "ATTENTION"
+                      : "SCHEDULED"}
+                </Badge>
+              </div>
             );
           })}
           {!isLoading && calendarByMonth.length === 0 ? (
