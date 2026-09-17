@@ -69,13 +69,36 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
         if (!profile) return;
         const approvalStatus = profile.approval_status;
+
+        let orgName = profile.organization_name;
+        if (!orgName && profile.organization_id) {
+          try {
+            const { data: orgData } = await supabase
+              .from('organizations')
+              .select('name')
+              .eq('id', profile.organization_id)
+              .maybeSingle();
+            if (orgData?.name) {
+              orgName = orgData.name;
+              // Backfill user_profiles so future requests don't need the extra query
+              supabase
+                .from('user_profiles')
+                .update({ organization_name: orgName })
+                .eq('id', profile.id)
+                .then();
+            }
+          } catch (orgErr) {
+            console.warn('[AuthProvider] Failed to resolve org name:', orgErr);
+          }
+        }
+
         login(
           {
             id: profile.id,
             name: [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.email,
             email: profile.email,
             role: profile.role as 'admin' | 'manager' | 'viewer',
-            organization: profile.organization_name ?? undefined,
+            organization: orgName ?? undefined,
             organizationId: profile.organization_id ?? undefined,
             approvalStatus,
             reviewerNotes: profile.reviewer_notes ?? undefined,

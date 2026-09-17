@@ -326,12 +326,17 @@ export const useDashboardData = (): UseDashboardDataReturn => {
         return periodDate.getFullYear() === currentYear;
       });
 
-      const currentYearTotalKg = currentYearUploads.reduce(
-        (sum, upload) => sum + (upload.total_emissions_kg ?? 0),
+      const cumulativeTotalKg = uploads.reduce(
+        (sum, upload) => sum + (upload.total_emissions_kg ?? ((upload.total_emissions_tco2e ?? 0) * 1000)),
         0
       );
 
-      const totalEmissionsHasData = currentYearUploads.length > 0;
+      const currentYearTotalKg = currentYearUploads.reduce(
+        (sum, upload) => sum + (upload.total_emissions_kg ?? ((upload.total_emissions_tco2e ?? 0) * 1000)),
+        0
+      );
+
+      const totalEmissionsHasData = uploads.length > 0;
 
       const monthlyBuckets = new Map<string, { date: string; value: number }>();
       for (const upload of uploads) {
@@ -387,8 +392,8 @@ export const useDashboardData = (): UseDashboardDataReturn => {
         : 'Need at least 2 uploads';
 
       const totalEmissionsMeta = totalEmissionsHasData
-        ? `${currentYearUploads.length} uploads aggregated for ${currentYear}`
-        : `No uploads recorded for ${currentYear}`;
+        ? `${uploads.length} uploads total • ${currentYear} YTD: ${Number(((currentYearTotalKg || 0) / 1000).toFixed(2))} tCO₂e`
+        : `No uploads recorded`;
 
       const timeDebtYears = extractTimeDebtYears(latestTemeRun);
       const timeDebtConfidence = extractTimeDebtConfidence(latestTemeRun);
@@ -575,7 +580,7 @@ export const useDashboardData = (): UseDashboardDataReturn => {
           : 'Backtesting error is within operational tolerance for directional planning.';
 
       const dashboardData: DashboardData = {
-        totalEmissions: Number(((currentYearTotalKg || 0) / 1000).toFixed(2)),
+        totalEmissions: Number(((cumulativeTotalKg || 0) / 1000).toFixed(2)),
         totalEmissionsHasData,
         totalEmissionsMonth: currentMonth,
         totalEmissionsYear: currentYear,

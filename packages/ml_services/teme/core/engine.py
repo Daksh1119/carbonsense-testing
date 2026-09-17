@@ -165,19 +165,33 @@ def run_teme(input_payload: Dict[str, Any]) -> Dict[str, Any]:
         if offset_year is None and cumulative[t] >= E:
             offset_year = t
 
-    if offset_year is None:
-        raise InfeasiblePlanError(
-            "Carbon neutrality not achievable within time horizon"
-        )
+    total_sequestered = cumulative[-1] if cumulative else 0.0
+    offset_pct = min(100.0, (total_sequestered / max(1.0, E)) * 100.0)
 
-    if offset_year > 10:
+    if offset_year is None:
+        # Calculate projected payback year if current growth trajectory continues
+        avg_annual_seq = annual_total[-1] if annual_total[-1] > 0 else (total_sequestered / max(1, T))
+        if avg_annual_seq > 0:
+            projected_year = int(T + max(1.0, (E - total_sequestered) / avg_annual_seq))
+        else:
+            projected_year = T + 10
+        offset_year = projected_year
+
+        warnings.append(
+            f"Full carbon neutrality extends to ~Year {projected_year} ({offset_pct:.1f}% offset achieved within {T}-yr planning horizon). "
+            f"Consider expanding land area or combining with Scope 1/2 energy efficiency measures."
+        )
+    elif offset_year > 10:
         warnings.append("Offset not achieved in first 10 years")
 
     # --- Confidence score (heuristic baseline, may be upgraded by MC) ---
     if T > 0:
-        confidence = max(0.3, 1.0 - (offset_year / T))
+        if offset_pct >= 100.0:
+            confidence = max(0.35, 1.0 - (offset_year / (T * 1.5)))
+        else:
+            confidence = max(0.25, (offset_pct / 100.0) * 0.70)
     else:
-        confidence = 0.3
+        confidence = 0.30
 
     # ===================================================================
     # MONTE CARLO SIMULATION (optional, never breaks deterministic output)

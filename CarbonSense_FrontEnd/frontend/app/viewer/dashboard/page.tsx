@@ -2,11 +2,40 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useUserStore } from '@/store';
-import { Leaf, TrendingDown, BarChart3, Target, AlertCircle, RefreshCcw, Info } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
+import Link from 'next/link';
+import {
+  Leaf,
+  TrendingDown,
+  BarChart3,
+  Target,
+  AlertCircle,
+  RefreshCcw,
+  Info,
+  ClipboardList,
+  CheckCircle2,
+  PlayCircle,
+  ArrowRight,
+  Loader2,
+  Zap,
+  Building2,
+} from 'lucide-react';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import Badge from '@/components/Badge';
+import { showSuccessToast, showErrorToast } from '@/lib/toast';
 import { fetchEmissionsUploadsScoped } from '@/lib/emissions-api';
 import { fetchComplianceScore } from '@/lib/policy-compliance-api';
 import type { ComplianceScoreRecord } from '@/lib/policy-compliance-api';
+
+interface AssignedTaskItem {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  difficulty: string | null;
+  implementation_status: 'proposed' | 'in_progress' | 'implemented' | 'rejected';
+  status_updated_at: string | null;
+}
 
 interface EmissionsSummary {
   totalTco2e: number;
@@ -46,6 +75,8 @@ function ViewerDashboardContent() {
 
   const [emissions, setEmissions] = useState<EmissionsSummary | null>(null);
   const [complianceScore, setComplianceScore] = useState<ComplianceScoreRecord | null>(null);
+  const [assignedTasks, setAssignedTasks] = useState<AssignedTaskItem[]>([]);
+  const [taskUpdating, setTaskUpdating] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,16 +93,56 @@ function ViewerDashboardContent() {
 
     try {
       // Group 2.9 — try latest_cycle_per_org first (reads from the view)
-      const [cycleRes, uploadsRes, scoreRes] = await Promise.allSettled([
+      const [cycleRes, uploadsRes, scoreRes, tasksRes] = await Promise.allSettled([
         fetch(`${apiUrl}/assessment-cycles/${orgId}/latest`).then((r) => r.json()),
         fetchEmissionsUploadsScoped({ organizationId: orgId }),
         fetchComplianceScore(),
+        user?.id
+          ? supabase
+              .from('recommendation_items')
+              .select('id, title, description, category, difficulty, implementation_status, status_updated_at')
+              .eq('assigned_to', user.id)
+              .order('status_updated_at', { ascending: false })
+          : Promise.resolve({ data: [] }),
       ]);
 
-      // --- Emissions: prefer latest cycle, fall back to raw uploads ---
+      // --- Assigned tasks for current employee ---
+      if (tasksRes.status === 'fulfilled' && tasksRes.value?.data) {
+        setAssignedTasks(
+          (tasksRes.value.data as any[]).map((r) => ({
+            id: r.id,
+            title: r.title,
+            description: r.description,
+            category: String(r.category || '').toLowerCase(),
+            difficulty: r.difficulty,
+            implementation_status: r.implementation_status || 'proposed',
+            status_updated_at: r.status_updated_at,
+          }))
+        );
+      }
+
+      // --- Emissions: calculate accurate cumulative enterprise total from uploads ---
       let emissionsSummary: EmissionsSummary | null = null;
 
-      if (cycleRes.status === 'fulfilled' && cycleRes.value?.cycle) {
+      if (uploadsRes.status === 'fulfilled' && Array.isArray(uploadsRes.value) && uploadsRes.value.length > 0) {
+        const data = uploadsRes.value;
+        const sorted = [...data].sort(
+          (a: { created_at: string }, b: { created_at: string }) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        const totalTco2e = (data as Array<{ total_emissions_tco2e?: number | null; total_emissions_kg?: number | null }>)
+          .reduce((sum: number, u) => sum + (u.total_emissions_tco2e ?? ((u.total_emissions_kg || 0) / 1000)), 0);
+        const latestUpload = sorted[0] as { period_start?: string } | undefined;
+        const latestPeriodLabel = latestUpload?.period_start
+          ? new Date(latestUpload.period_start).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+          : 'Latest';
+
+        emissionsSummary = {
+          totalTco2e: Number(totalTco2e.toFixed(2)),
+          latestPeriodLabel: `${latestPeriodLabel} (${data.length} uploads)`,
+          uploadCount: data.length,
+        };
+      } else if (cycleRes.status === 'fulfilled' && cycleRes.value?.cycle) {
         const cycle = cycleRes.value.cycle;
         emissionsSummary = {
           totalTco2e: cycle.total_emissions_tco2e ?? 0,
@@ -90,22 +161,6 @@ function ViewerDashboardContent() {
             emissionsSummary.changePct = latest.change_pct ?? null;
           }
         } catch { /* non-fatal */ }
-
-      } else if (uploadsRes.status === 'fulfilled') {
-        const data = uploadsRes.value;
-        if (data.length > 0) {
-          const sorted = data.sort(
-            (a: { created_at: string }, b: { created_at: string }) =>
-              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          );
-          const totalTco2e = (data as Array<{ total_emissions_tco2e?: number | null }>)
-            .reduce((sum: number, u) => sum + (u.total_emissions_tco2e ?? 0), 0);
-          const latestUpload = sorted[0] as { period_start?: string } | undefined;
-          const latestPeriodLabel = latestUpload?.period_start
-            ? new Date(latestUpload.period_start).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-            : 'No data yet';
-          emissionsSummary = { totalTco2e, latestPeriodLabel, uploadCount: data.length };
-        }
       }
 
       setEmissions(emissionsSummary);
@@ -211,21 +266,192 @@ function ViewerDashboardContent() {
     },
   ];
 
+  const markInProgress = async (taskId: string) => {
+    setTaskUpdating(taskId);
+    try {
+      const { error: err } = await supabase
+        .from('recommendation_items')
+        .update({
+          implementation_status: 'in_progress',
+          status_updated_at: new Date().toISOString(),
+          status_updated_by: user?.id,
+        })
+        .eq('id', taskId)
+        .eq('assigned_to', user?.id);
+      if (err) throw err;
+      setAssignedTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, implementation_status: 'in_progress' } : t))
+      );
+      showSuccessToast('Task marked as In Progress — your manager will see this update.');
+    } catch (e) {
+      showErrorToast(`Update failed: ${(e as Error).message}`);
+    } finally {
+      setTaskUpdating(null);
+    }
+  };
+
+  const markImplemented = async (taskId: string) => {
+    setTaskUpdating(taskId);
+    try {
+      const { error: err } = await supabase
+        .from('recommendation_items')
+        .update({
+          implementation_status: 'implemented',
+          status_updated_at: new Date().toISOString(),
+          status_updated_by: user?.id,
+        })
+        .eq('id', taskId)
+        .eq('assigned_to', user?.id);
+      if (err) throw err;
+      setAssignedTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, implementation_status: 'implemented' } : t))
+      );
+      showSuccessToast('Great job! Task marked as Done — Compliance Action Score boosted.');
+    } catch (e) {
+      showErrorToast(`Update failed: ${(e as Error).message}`);
+    } finally {
+      setTaskUpdating(null);
+    }
+  };
+
+  const activeTasks = assignedTasks.filter((t) => t.implementation_status !== 'implemented' && t.implementation_status !== 'rejected');
+  const completedTasks = assignedTasks.filter((t) => t.implementation_status === 'implemented');
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white">
             Welcome, {user?.name || 'Employee'}
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            {user?.organization ? `${user.organization} — ` : ''}Your organisation's carbon insights
-          </p>
+          {user?.organization && (
+            <div className="flex items-center gap-2 mt-1.5">
+              <Building2 className="w-3.5 h-3.5 text-teal-400" />
+              <span className="text-sm font-semibold text-teal-300">{user.organization}</span>
+              <span className="text-slate-600">·</span>
+              <span className="text-xs text-slate-400">Your personal sustainability tasks &amp; company carbon insights</span>
+            </div>
+          )}
+          {!user?.organization && (
+            <p className="text-sm text-slate-400 mt-1">Your personal sustainability tasks and company carbon insights</p>
+          )}
         </div>
-        <span className="px-3 py-1 text-xs font-medium bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-full">
-          Viewer Access
-        </span>
+        <div className="flex items-center gap-2">
+          {user?.organization && (
+            <span className="px-3 py-1 text-xs font-semibold bg-teal-500/10 text-teal-400 border border-teal-500/20 rounded-full flex items-center gap-1.5">
+              <Building2 className="w-3 h-3" />
+              {user.organization}
+            </span>
+          )}
+          <span className="px-3 py-1 text-xs font-medium bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-full">
+            Employee / Viewer
+          </span>
+        </div>
+      </div>
+
+      {/* ── MY ASSIGNED TASKS WIDGET (EMPLOYEE-SPECIFIC ACTION HUB) ── */}
+      <div className="bg-gradient-to-r from-teal-950/50 via-slate-900 to-navy-card border border-teal-500/30 rounded-2xl p-6 shadow-xl space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-teal-500/20 rounded-xl border border-teal-500/40 text-teal-400">
+              <ClipboardList className="size-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                My Assigned Sustainability Tasks
+                {activeTasks.length > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-xs bg-teal-500 text-slate-950 font-extrabold">
+                    {activeTasks.length} Active
+                  </span>
+                )}
+              </h2>
+              <p className="text-xs text-slate-400">
+                Actions assigned directly to you by your manager. Updating your tasks boosts your organization&apos;s Compliance Action Score.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/viewer/my-tasks"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-400 hover:text-teal-300 transition-colors"
+          >
+            <span>View All Tasks ({assignedTasks.length})</span>
+            <ArrowRight className="size-3.5" />
+          </Link>
+        </div>
+
+        {assignedTasks.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-800 bg-slate-950/40 p-5 text-center space-y-1.5">
+            <p className="text-sm text-slate-300 font-medium">No tasks assigned to you right now</p>
+            <p className="text-xs text-slate-500">
+              When your manager delegates actions to you from the Recommendations catalog, they will appear right here with one-click completion.
+            </p>
+          </div>
+        ) : activeTasks.length === 0 ? (
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <CheckCircle2 className="size-5 text-emerald-400 flex-shrink-0" />
+              <div>
+                <p className="text-sm text-emerald-300 font-semibold">All assigned tasks completed!</p>
+                <p className="text-xs text-slate-400">You have completed all {completedTasks.length} sustainability task(s) assigned to you.</p>
+              </div>
+            </div>
+            <Link
+              href="/viewer/my-tasks"
+              className="text-xs text-emerald-400 hover:underline flex-shrink-0"
+            >
+              Review completed →
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {activeTasks.slice(0, 3).map((task) => {
+              const isUpdating = taskUpdating === task.id;
+              return (
+                <div
+                  key={task.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-950/70 border border-slate-800/90 hover:border-teal-500/40 transition-colors"
+                >
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-white text-sm truncate">{task.title}</span>
+                      <Badge variant={task.implementation_status === 'in_progress' ? 'info' : 'default'}>
+                        {task.implementation_status === 'in_progress' ? 'In Progress' : 'Pending'}
+                      </Badge>
+                      {task.difficulty && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+                          {task.difficulty}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">{task.description}</p>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0 self-end sm:self-center">
+                    {task.implementation_status === 'proposed' && (
+                      <button
+                        onClick={() => markInProgress(task.id)}
+                        disabled={isUpdating}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-500/15 border border-teal-500/30 text-teal-300 hover:bg-teal-500/25 text-xs font-semibold transition-colors disabled:opacity-50"
+                      >
+                        {isUpdating ? <Loader2 className="size-3.5 animate-spin" /> : <PlayCircle className="size-3.5" />}
+                        Start
+                      </button>
+                    )}
+                    <button
+                      onClick={() => markImplemented(task.id)}
+                      disabled={isUpdating}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30 text-xs font-semibold transition-colors disabled:opacity-50"
+                    >
+                      {isUpdating ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+                      Mark Done
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Baseline explanation (Group 2.9) */}

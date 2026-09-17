@@ -100,3 +100,58 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
   }
 }
+
+/**
+ * GET /api/auth/check-invite?email=...
+ * Public lookup used by signup forms to pre-populate details for invited users.
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const email = searchParams.get('email');
+
+    if (!email) {
+      return NextResponse.json({ invited: false });
+    }
+
+    const supabase = getSupabaseAdmin();
+    const { data: invite } = await supabase
+      .from('manager_invites')
+      .select('id, role, organization_id, notes, organizations(name), user_profiles!manager_invites_invited_by_fkey(email, first_name, last_name)')
+      .eq('email', email.toLowerCase().trim())
+      .eq('status', 'pending')
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!invite) {
+      return NextResponse.json({ invited: false });
+    }
+
+    let parsedNotes: any = {};
+    try {
+      if (invite.notes) parsedNotes = JSON.parse(invite.notes);
+    } catch {}
+
+    const orgName = (invite as any).organizations?.name ?? '';
+    const inviter = (invite as any).user_profiles;
+    const managerEmail = inviter?.email ?? parsedNotes.invitedByEmail ?? '';
+
+    return NextResponse.json({
+      invited: true,
+      role: invite.role,
+      organizationId: invite.organization_id,
+      organizationName: orgName,
+      managerEmail,
+      firstName: parsedNotes.firstName || '',
+      lastName: parsedNotes.lastName || '',
+      department: parsedNotes.department || '',
+      jobTitle: parsedNotes.jobTitle || '',
+    });
+  } catch (err) {
+    console.error('[check-invite GET] Error:', err);
+    return NextResponse.json({ invited: false });
+  }
+}
+

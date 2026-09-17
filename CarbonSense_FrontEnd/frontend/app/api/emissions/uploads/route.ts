@@ -82,7 +82,23 @@ function normalizeCategory(value?: string): string {
   return allowed.includes(category) ? category : "purchases";
 }
 
-function getFactorMap() {
+// Emission factors keyed by activity_type as it appears in uploaded CSV/TSV/JSON files.
+const CSV_EMISSION_FACTORS: Record<string, number> = {
+  electricity_grid_kwh:  0.708,   // Scope 2 — India CEA grid baseline (indicative)
+  diesel_liter:          2.68,    // Scope 1 — IPCC/EPA fuel combustion defaults
+  petrol_liter:          2.31,    // Scope 1 — IPCC/EPA fuel combustion defaults
+  cng_kg:                2.75,    // Scope 1 — IPCC/EPA fuel combustion defaults
+  flight_km_economy:     0.15,    // Scope 3 — DEFRA distance-based aviation factors
+  rail_km:               0.035,   // Scope 3 — DEFRA rail passenger factors
+  bus_km:                0.089,   // Scope 3 — DEFRA bus factors
+  landfill_waste_kg:     0.57,    // Scope 3 — EPA WARM/DEFRA waste defaults
+  recycled_waste_kg:     0.02,    // Scope 3 — EPA WARM recycling defaults
+  paper_kg:              0.94,    // Scope 3 — DEFRA material factor
+  hotel_night:           15.0,    // Scope 3 — Hotel stay intensity benchmark
+  purchased_goods_inr:   0.0005,  // Scope 3 — Spend-based EEIO placeholder for INR
+};
+
+function getFactorMap(): Map<string, number> {
   return new Map(
     [...transportFactors, ...energyFactors, ...wasteFactors, ...purchasesFactors].map((factor) => [
       factor.value,
@@ -91,13 +107,19 @@ function getFactorMap() {
   );
 }
 
-function computeCo2Kg(row: UploadRow, factorMap: Map<string, number>): number {
-  const activityKey = String(row.activity_type || "").toLowerCase();
-  const factor = factorMap.get(activityKey);
-  if (factor === undefined) {
-    return 0;
+function computeCo2Kg(row: UploadRow, factorMap?: Map<string, number>): number {
+  const activityKey = String(row.activity_type || "").toLowerCase().trim();
+  const directFactor = CSV_EMISSION_FACTORS[activityKey];
+  if (directFactor !== undefined) {
+    return Number(row.quantity || 0) * directFactor;
   }
-  return Number(row.quantity || 0) * factor;
+  if (factorMap) {
+    const factor = factorMap.get(activityKey);
+    if (factor !== undefined) {
+      return Number(row.quantity || 0) * factor;
+    }
+  }
+  return 0;
 }
 
 function parseFlexibleDate(value?: string): Date | null {

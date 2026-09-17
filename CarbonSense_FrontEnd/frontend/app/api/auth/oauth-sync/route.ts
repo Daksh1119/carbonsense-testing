@@ -69,6 +69,16 @@ export async function POST(req: NextRequest) {
       approvalStatus = profile?.approval_status ?? 'pending';
     }
 
+    let orgName: string | null = null;
+    if (organizationId) {
+      const { data: orgData } = await supabaseAdmin
+        .from('organizations')
+        .select('name')
+        .eq('id', organizationId)
+        .maybeSingle();
+      orgName = orgData?.name ?? null;
+    }
+
     if (!profile) {
       await supabaseAdmin.from('user_profiles').insert({
         id: userId,
@@ -76,6 +86,7 @@ export async function POST(req: NextRequest) {
         role,
         approval_status: approvalStatus,
         organization_id: organizationId,
+        organization_name: orgName,
         first_name: userMeta.full_name?.split(' ')[0] ?? userMeta.name ?? null,
         last_name: userMeta.full_name?.split(' ').slice(1).join(' ') ?? null,
         avatar_url: userMeta.avatar_url ?? userMeta.picture ?? null,
@@ -85,6 +96,7 @@ export async function POST(req: NextRequest) {
         role,
         approval_status: approvalStatus,
         organization_id: organizationId,
+        ...(orgName ? { organization_name: orgName } : {}),
         updated_at: now,
       }).eq('id', userId);
     }

@@ -8,6 +8,7 @@ import PolicyDrawer from "@/components/PolicyDrawer";
 import ApplyNowModal from "@/components/ApplyNowModal";
 import FundingModal from "@/components/FundingModal";
 import ReadPolicyModal from "@/components/ReadPolicyModal";
+import PolicyReferenceModal from "@/components/PolicyReferenceModal";
 import { Breadcrumb, BackButton } from "@/components/navigation";
 import {
   fetchBenchmark,
@@ -34,6 +35,8 @@ import {
   PlayCircle,
   XCircle,
   Info,
+  BookOpen,
+  Scale,
 } from "lucide-react";
 
 function formatDate(value?: string | null): string {
@@ -87,6 +90,7 @@ export default function PolicyIntelligencePage() {
   const [applyOpen, setApplyOpen] = useState(false);
   const [fundingOpen, setFundingOpen] = useState(false);
   const [readOpen, setReadOpen] = useState(false);
+  const [referenceOpen, setReferenceOpen] = useState(false);
   const [showAllPolicies, setShowAllPolicies] = useState(false);
   const [showAllFunding, setShowAllFunding] = useState(false);
   // Group 3B.3 — adoption tracking
@@ -223,6 +227,11 @@ export default function PolicyIntelligencePage() {
     setSelectedPolicy(policy);
     setReadOpen(true);
   };
+
+  const openReference = (policy: PolicyRecord) => {
+    setSelectedPolicy(policy);
+    setReferenceOpen(true);
+  };
   
   return (
     <div className="space-y-6">
@@ -230,16 +239,27 @@ export default function PolicyIntelligencePage() {
       <Breadcrumb />
       
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-3xl font-bold text-white mb-2">
-            Policy Intelligence
+            Policy Intelligence & Regulatory References
           </h1>
           <p className="text-slate-400">
-            AI-powered policy analysis and compliance tracking
+            Official Gazette citations, policy mandates, statutory thresholds, and compliance tracking
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Button
+            variant="outline"
+            icon={<Scale className="size-4 text-teal-400" />}
+            onClick={() => {
+              if (policies.length > 0) {
+                openReference(policies[0]);
+              }
+            }}
+          >
+            Policy Citations
+          </Button>
           <BackButton href="/dashboard" label="Back" variant="outline" showIcon={false} />
           <Button variant="outline" icon={<Download className="size-4" />}>
             Export Compliance Report
@@ -354,8 +374,9 @@ export default function PolicyIntelligencePage() {
 
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" onClick={() => openPolicy(policy)}>View Details</Button>
+                    <Button size="sm" variant="outline" onClick={() => openReference(policy)}>Statutory Ref</Button>
                     <Button size="sm" variant="outline" onClick={() => openApply(policy)}>Apply Now</Button>
-                    <Button size="sm" variant="ghost" onClick={() => openRead(policy)}>Read Policy Document</Button>
+                    <Button size="sm" variant="ghost" onClick={() => openRead(policy)}>Read Policy</Button>
                     <Button size="sm" variant="outline" onClick={() => openFunding(policy)}>View Funding</Button>
                   </div>
                 </div>
@@ -416,6 +437,7 @@ export default function PolicyIntelligencePage() {
       <ApplyNowModal isOpen={applyOpen} onClose={() => setApplyOpen(false)} policy={selectedPolicy ? { id: selectedPolicy.id, name: selectedPolicy.name, steps: selectedPolicy.steps } : null} resultIdByRequirementId={resultIdByRequirementId} />
       <FundingModal isOpen={fundingOpen} onClose={() => setFundingOpen(false)} policy={selectedPolicy ? { id: selectedPolicy.id, name: selectedPolicy.name, funding: selectedPolicy.funding } : null} />
       <ReadPolicyModal isOpen={readOpen} onClose={() => setReadOpen(false)} policy={selectedPolicy ? { name: selectedPolicy.name, external_url: selectedPolicy.external_url, document_summary: selectedPolicy.document_summary } : null} />
+      <PolicyReferenceModal isOpen={referenceOpen} onClose={() => setReferenceOpen(false)} policy={selectedPolicy} />
     </div>
   );
 }

@@ -9,3 +9,4 @@ export { useEmissionsUploads } from './useEmissionsUploads';
 export { usePolicies } from './usePolicies';
 export { useRecommendations } from './useRecommendations';
 export { useTeamMembers } from './useTeamMembers';
+export type { TeamMemberRecord } from './useTeamMembers';

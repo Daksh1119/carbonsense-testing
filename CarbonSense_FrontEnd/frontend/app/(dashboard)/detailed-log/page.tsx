@@ -13,6 +13,7 @@ import { Breadcrumb, BackButton } from '@/components/navigation';
 import Modal from '@/components/ui/Modal';
 import FormModal from '@/components/ui/FormModal';
 import { showSuccessToast, showErrorToast } from '@/lib/toast';
+import FormulaReferenceModal from '@/components/FormulaReferenceModal';
 import {
   transportFactors,
   energyFactors,
@@ -26,6 +27,7 @@ import {
   FileDown,
   Plus,
   BarChart3,
+  Calculator,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -84,6 +86,7 @@ function DetailedEmissionsLogContent() {
     co2Amount: '',
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [formulaModalOpen, setFormulaModalOpen] = useState(false);
   const [recomputedCycleId, setRecomputedCycleId] = useState<string | null>(null);
   const router = useRouter();
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -523,7 +526,14 @@ function DetailedEmissionsLogContent() {
             <span className="font-semibold text-emerald-600 dark:text-emerald-400">{total.toFixed(2)} kg CO₂e</span>
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Button
+            variant="outline"
+            icon={<Calculator className="w-4 h-4 text-emerald-500" />}
+            onClick={() => setFormulaModalOpen(true)}
+          >
+            Formulas & Factors
+          </Button>
           <BackButton href="/dashboard" label="Back to Dashboard" variant="outline" showIcon={true} />
           <button
             onClick={() => router.push('/emissions')}
@@ -848,10 +858,27 @@ function DetailedEmissionsLogContent() {
                 <p className="text-xs text-slate-400">CO₂ Impact</p>
                 <p className="text-sm text-emerald-400 font-semibold">{viewEntry.co2Amount.toFixed(2)} kg CO₂e</p>
               </div>
+              <div className="bg-slate-900/60 border border-teal-500/20 rounded-lg p-3 sm:col-span-2 space-y-1">
+                <p className="text-xs font-semibold text-teal-400 flex items-center gap-1.5">
+                  <Calculator className="size-3.5" /> Calculation Formula & Reference
+                </p>
+                <p className="text-xs text-slate-300 font-mono">
+                  {viewEntry.amount} {viewEntry.unit} × {factorMap.get(viewEntry.activity.trim().toLowerCase()) ?? (viewEntry.co2Amount / (viewEntry.amount || 1)).toFixed(3)} kgCO₂e/{viewEntry.unit} = {viewEntry.co2Amount.toFixed(2)} kg CO₂e
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  Standard Benchmark: GHG Protocol Corporate Standard • India CEA / IPCC Tier 1
+                </p>
+              </div>
             </div>
           </div>
         )}
       </Modal>
+
+      {/* Formula Reference Modal */}
+      <FormulaReferenceModal
+        isOpen={formulaModalOpen}
+        onClose={() => setFormulaModalOpen(false)}
+      />
 
       {/* Edit Entry Modal */}
       <FormModal

@@ -46,6 +46,8 @@ import {
   ExternalLink,
   Upload,
   Building2,
+  ClipboardList,
+  Users,
 } from "lucide-react";
 
 const fundingOpportunities = [
@@ -118,9 +120,36 @@ export default function DashboardPage() {
     target_reduction_pct: number | null;
   } | null>(null);
 
+  const [teamDelegation, setTeamDelegation] = useState<{
+    total: number;
+    assigned: number;
+    implemented: number;
+    inProgress: number;
+  }>({ total: 0, assigned: 0, implemented: 0, inProgress: 0 });
+
   useEffect(() => {
     const orgId = user?.organizationId;
     if (!orgId) return;
+
+    // Fetch team delegation metrics
+    (async () => {
+      try {
+        const { data: recs } = await supabase
+          .from('recommendation_items')
+          .select('assigned_to, implementation_status');
+        if (recs) {
+          const assigned = recs.filter((r) => r.assigned_to).length;
+          const implemented = recs.filter((r) => r.assigned_to && r.implementation_status === 'implemented').length;
+          const inProgress = recs.filter((r) => r.assigned_to && r.implementation_status === 'in_progress').length;
+          setTeamDelegation({
+            total: recs.length,
+            assigned,
+            implemented,
+            inProgress,
+          });
+        }
+      } catch { /* non-fatal */ }
+    })();
 
     // Fetch org profile details submitted during onboarding
     (async () => {
@@ -480,6 +509,65 @@ export default function DashboardPage() {
             Open the evidence panel directly
           </p>
         </button>
+      </div>
+
+      {/* Team Action Delegation & Employee Progress */}
+      <div className="bg-gradient-to-r from-teal-950/40 via-slate-900 to-navy-card border border-teal-500/30 rounded-2xl p-6 shadow-xl space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-teal-500/15 rounded-xl border border-teal-500/30 text-teal-400">
+              <ClipboardList className="size-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                Team Action Delegation & Employee Tasks
+                {teamDelegation.assigned > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                    {teamDelegation.assigned} Delegated
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-slate-400">
+                Actions assigned to viewer employees. Employee completions directly boost your organization&apos;s Compliance Action Score.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push('/recommendations')}
+              icon={<Users className="size-4 text-teal-400" />}
+            >
+              Delegate Actions
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push('/team-management')}
+            >
+              Manage Team →
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+          <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800">
+            <p className="text-xs text-slate-400 uppercase tracking-wide">Tasks Assigned to Employees</p>
+            <p className="text-2xl font-bold text-white mt-1">{teamDelegation.assigned}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">out of {teamDelegation.total} recommended catalog actions</p>
+          </div>
+          <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800">
+            <p className="text-xs text-amber-400 uppercase tracking-wide">In Progress by Employees</p>
+            <p className="text-2xl font-bold text-amber-300 mt-1">{teamDelegation.inProgress}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">actively underway on employee dashboards</p>
+          </div>
+          <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800">
+            <p className="text-xs text-emerald-400 uppercase tracking-wide">Completed by Employees</p>
+            <p className="text-2xl font-bold text-emerald-400 mt-1">{teamDelegation.implemented}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">verified done & boosted compliance</p>
+          </div>
+        </div>
       </div>
 
       {/* Main Chart */}

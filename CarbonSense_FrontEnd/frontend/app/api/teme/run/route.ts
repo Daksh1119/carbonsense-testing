@@ -33,32 +33,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ detail: "Invalid emission or constraints values" }, { status: 400 });
   }
 
-  // Simulate infeasible scenario to test 422 handling path.
-  if (maxLand < 0.05 || (emissionKg > 500000 && horizon < 15)) {
-    return NextResponse.json({ detail: "No feasible plan found" }, { status: 422 });
-  }
-
   const preferred = payload.constraints.preferred_species || [];
   const excluded = new Set(payload.constraints.exclude_species || []);
   const monteCarloEnabled = payload.ml_config?.enable_monte_carlo ?? true;
 
-  const candidateSpecies = (preferred.length > 0 ? preferred : [...VALID_SPECIES]).filter(
+  let candidateSpecies = (preferred.length > 0 ? preferred : [...VALID_SPECIES]).filter(
     (s) => !excluded.has(s)
   );
 
-  const selectedSpecies = candidateSpecies.slice(0, Math.min(3, candidateSpecies.length));
-  if (selectedSpecies.length === 0) {
-    return NextResponse.json({ detail: "No feasible plan found" }, { status: 422 });
+  if (candidateSpecies.length === 0) {
+    candidateSpecies = [...VALID_SPECIES];
   }
+
+  const selectedSpecies = candidateSpecies.slice(0, Math.min(3, candidateSpecies.length));
 
   const treeDensityPerHectare = 900;
-  const maxTreesByLand = Math.floor(maxLand * treeDensityPerHectare);
+  const maxTreesByLand = Math.max(10, Math.floor(maxLand * treeDensityPerHectare));
   const requiredTrees = Math.ceil(emissionKg / 25);
-  const totalTrees = clamp(requiredTrees, Math.min(100, maxTreesByLand), maxTreesByLand);
-
-  if (totalTrees <= 0) {
-    return NextResponse.json({ detail: "No feasible plan found" }, { status: 422 });
-  }
+  const totalTrees = clamp(requiredTrees, 10, maxTreesByLand);
 
   const treesPerSpecies = Math.floor(totalTrees / selectedSpecies.length);
   const remainder = totalTrees % selectedSpecies.length;

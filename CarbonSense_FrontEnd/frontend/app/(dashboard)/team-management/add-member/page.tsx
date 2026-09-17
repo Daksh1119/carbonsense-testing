@@ -42,29 +42,33 @@ export default function AddMemberPage() {
     setIsSubmitting(true);
 
     try {
-      // Insert into employee_signup_requests — the existing approval backend.
-      // The platform admin or manager then approves/rejects via the approval flow.
-      const { error } = await supabase.from("employee_signup_requests").insert({
-        organization_name: user.organization,
-        manager_email: user.email,
-        status: "pending",
-        form_data: {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      const res = await fetch("/api/team-management/invite", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
           firstName: formData.firstName,
           lastName: formData.lastName,
-          jobTitle: formData.jobTitle || null,
-          department: formData.department || null,
-          organizationId: user.organizationId,
-          organizationName: user.organization,
-          managerEmail: user.email,
-          // Role hint stored in form_data — approval flow uses this to set user_profiles.role
+          email: formData.email,
           role: formData.role,
-          invitedEmail: formData.email,
-        },
+          department: formData.department || null,
+          jobTitle: formData.jobTitle || null,
+          organizationId: user.organizationId,
+        }),
       });
 
-      if (error) throw new Error(error.message);
+      const data = await res.json();
 
-      showSuccessToast(`Signup request created for ${formData.email}`);
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to send invitation");
+      }
+
+      showSuccessToast(`Invitation email sent to ${formData.email}!`);
       setTimeout(() => router.push("/team-management"), 1500);
     } catch (err) {
       showErrorToast(err instanceof Error ? err.message : "Failed to create signup request");
@@ -195,7 +199,7 @@ export default function AddMemberPage() {
               }
               disabled={isSubmitting}
             >
-              {isSubmitting ? "Submitting…" : "Create Request"}
+              {isSubmitting ? "Sending Invite…" : "Send Invitation"}
             </Button>
             <Button
               type="button"
@@ -210,10 +214,10 @@ export default function AddMemberPage() {
       </DashboardCard>
 
       {/* Info */}
-      <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
-        <p className="text-sm text-blue-300">
-          💡 A signup request will be created in the system. Once the member signs up using
-          their email, the platform administrator will approve their account and grant access.
+      <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4">
+        <p className="text-sm text-emerald-300">
+          ✉️ An official invitation email will be delivered to the employee&apos;s inbox with a secure signup link.
+          When they sign up, their account is automatically linked to your organization with the selected role.
         </p>
       </div>
     </div>

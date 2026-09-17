@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Eye as EyeIcon, EyeOff, Mail, Lock, ArrowLeft, Leaf, UserPlus } from 'lucide-react';
-import { signInWithEmail, sendPasswordReset, getRoleDashboardPath } from '@/lib/authHelpers';
+import { signInWithEmail, sendPasswordReset, getRoleDashboardPath, signInWithGoogle } from '@/lib/authHelpers';
+import GoogleSignInButton from '@/components/auth/GoogleSignInButton';
 
 export default function ViewerLoginPage() {
   const router = useRouter();
@@ -12,6 +13,7 @@ export default function ViewerLoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const [resetSent, setResetSent] = useState(false);
 
@@ -26,6 +28,17 @@ export default function ViewerLoginPage() {
       // Approval check happens in ProtectedRoute / dashboard
       router.push(getRoleDashboardPath('viewer'));
     } catch { setError('An unexpected error occurred.'); } finally { setLoading(false); }
+  };
+
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
+    setError('');
+    try {
+      await signInWithGoogle('viewer');
+    } catch {
+      setError('Google sign-in failed. Please try again.');
+      setGoogleLoading(false);
+    }
   };
 
   const handleReset = async () => {
@@ -80,7 +93,7 @@ export default function ViewerLoginPage() {
             {error && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400">{error}</div>}
             {resetSent && <div className="mb-4 p-3 bg-sky-500/10 border border-sky-500/20 rounded-lg text-sm text-sky-300">Password reset email sent.</div>}
 
-            <form onSubmit={handleLogin} className="space-y-4 mb-6">
+            <form onSubmit={handleLogin} className="space-y-4 mb-5">
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1.5">Email</label>
                 <div className="relative">
@@ -101,19 +114,34 @@ export default function ViewerLoginPage() {
               <button type="submit" disabled={loading} className="w-full py-2.5 bg-sky-500 text-white font-semibold text-sm rounded-xl hover:bg-sky-400 transition-all shadow-lg shadow-sky-500/20 disabled:opacity-50 active:scale-[0.98]">
                 {loading?<span className="flex items-center justify-center gap-2"><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Signing in...</span>:'Sign in'}
               </button>
+              <div className="text-center">
+                <button type="button" onClick={handleReset} className="text-sm text-slate-400 hover:text-sky-300 transition-colors">Forgot password?</button>
+              </div>
             </form>
 
-            <div className="flex items-center gap-3 mb-6">
+            {/* Divider */}
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex-1 h-px bg-slate-700/50" />
+              <span className="text-[11px] uppercase tracking-wider text-slate-500">or continue with</span>
+              <div className="flex-1 h-px bg-slate-700/50" />
+            </div>
+
+            {/* Google Sign In for Employees */}
+            <div className="mb-5">
+              <GoogleSignInButton
+                onClick={handleGoogleLogin}
+                disabled={googleLoading}
+                label={googleLoading ? 'Signing in with Google...' : 'Sign in with Google'}
+              />
+            </div>
+
+            <div className="flex items-center gap-3 mb-4">
               <div className="flex-1 h-px bg-slate-700/50"/><span className="text-xs text-slate-500">NEW HERE?</span><div className="flex-1 h-px bg-slate-700/50"/>
             </div>
 
             <Link href="/signup/employee" className="flex items-center justify-center gap-2 w-full py-2.5 text-sm text-sky-300 border border-sky-500/30 rounded-xl hover:bg-sky-500/10 transition-all">
               <UserPlus className="w-4 h-4"/>Create Employee Account
             </Link>
-
-            <div className="text-center mt-4">
-              <button type="button" onClick={handleReset} className="text-sm text-slate-400 hover:text-sky-300 transition-colors">Forgot password?</button>
-            </div>
           </div>
         </div>
       </div>

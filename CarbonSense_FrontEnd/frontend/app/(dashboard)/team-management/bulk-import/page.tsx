@@ -141,28 +141,35 @@ export default function BulkImportPage() {
     let successCount = 0;
     let failCount = 0;
 
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+
     for (let i = 0; i < validRows.length; i++) {
       const row = validRows[i];
-      const { error } = await supabase.from("employee_signup_requests").insert({
-        organization_name: user.organization,
-        manager_email: user.email,
-        status: "pending",
-        form_data: {
-          firstName: row.firstName,
-          lastName: row.lastName,
-          invitedEmail: row.email,
-          role: row.role,
-          department: row.department || null,
-          organizationId: user.organizationId,
-          organizationName: user.organization,
-          managerEmail: user.email,
-        },
-      });
+      try {
+        const res = await fetch("/api/team-management/invite", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            firstName: row.firstName,
+            lastName: row.lastName,
+            email: row.email,
+            role: row.role,
+            department: row.department || null,
+            organizationId: user.organizationId,
+          }),
+        });
 
-      if (error) {
+        if (!res.ok) {
+          failCount++;
+        } else {
+          successCount++;
+        }
+      } catch {
         failCount++;
-      } else {
-        successCount++;
       }
 
       setSubmitProgress(Math.round(((i + 1) / validRows.length) * 100));
@@ -171,10 +178,10 @@ export default function BulkImportPage() {
     setIsSubmitting(false);
 
     if (failCount === 0) {
-      showSuccessToast(`${successCount} member request(s) created successfully`);
+      showSuccessToast(`${successCount} member invite(s) sent successfully via email`);
       setTimeout(() => router.push("/team-management"), 1500);
     } else {
-      showErrorToast(`${failCount} request(s) failed. ${successCount} succeeded.`);
+      showErrorToast(`${failCount} invite(s) failed. ${successCount} succeeded.`);
     }
   };
 
