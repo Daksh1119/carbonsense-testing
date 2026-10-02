@@ -30,6 +30,8 @@ interface UseRecommendationsReturn {
   error: string | null;
   llmUsed: boolean | null;
   llmWarning: string | null;
+  emissionKg?: number;
+  projectName?: string;
   refetch: () => void;
   generateFresh: () => void;
 }
@@ -93,6 +95,8 @@ export const useRecommendations = (uploadId?: string): UseRecommendationsReturn 
   const [error, setError] = useState<string | null>(null);
   const [llmUsed, setLlmUsed] = useState<boolean | null>(null);
   const [llmWarning, setLlmWarning] = useState<string | null>(null);
+  const [emissionKg, setEmissionKg] = useState<number | undefined>(undefined);
+  const [projectName, setProjectName] = useState<string | undefined>(undefined);
 
   // ------------------------------------------------------------------
   // Resolve user / org context
@@ -168,6 +172,8 @@ export const useRecommendations = (uploadId?: string): UseRecommendationsReturn 
       setRecommendations(mapped);
       setLlmUsed(Boolean(response.llm_used));
       setLlmWarning(response.llm_warning || null);
+      setEmissionKg(typeof response.emission_kg === "number" ? response.emission_kg : undefined);
+      setProjectName(response.project_name || undefined);
     },
     [resolveContext, uploadId]
   );
@@ -218,6 +224,8 @@ export const useRecommendations = (uploadId?: string): UseRecommendationsReturn 
     error,
     llmUsed,
     llmWarning,
+    emissionKg,
+    projectName,
     refetch: fetchRecommendations,
     generateFresh,
   };

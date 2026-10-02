@@ -10,13 +10,12 @@ import { useUserStore } from '@/store';
  * AuthProvider
  * Syncs the Supabase session → Zustand store.
  *
- * Fast path (SIGNED_IN):
- *   - Reads role directly from JWT user_metadata (no DB call)
- *   - Calls login() immediately so ProtectedRoute unlocks
- *   - Fetches full profile in the background for display data only
+ * Fast path (persisted user already in store AND session user matches):
+ *   - Immediately sets isLoading=false so ProtectedRoute unlocks instantly
+ *   - Enriches from DB in the background (non-blocking)
  *
- * Slow path (bootstrap / TOKEN_REFRESHED):
- *   - Fetches full profile from DB (already have a session, not time-critical)
+ * Slow path (no persisted user, or user ID mismatch):
+ *   - Falls back to full getSession() + DB profile fetch before unlocking
  */
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
   const { setSession, login, setLoading } = useUserStore();
@@ -153,12 +152,48 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
     // ─── Bootstrap: resolve existing session on page load ──────────────────────
     const bootstrap = async () => {
+      // ★ FAST PATH: If the store already has a valid user from localStorage,
+      // immediately unlock the UI (isLoading=false) so the page renders instantly.
+      // We still verify + enrich in the background, but the user sees the page NOW.
+      const persistedUser = useUserStore.getState().user;
+      const persistedToken = useUserStore.getState().token;
+
+      if (persistedUser?.id && persistedToken && persistedUser.approvalStatus === 'approved') {
+        // Unlock immediately — user is already known
+        setLoading(false);
+
+        // Background verification: silently re-check session validity
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (session?.user?.id === persistedUser.id) {
+            setSession(session);
+            // Background DB enrichment — does NOT block UI
+            enrichFromDB(session).catch(() => {});
+          } else if (!session) {
+            // Session expired — force re-login
+            setSession(null);
+            useUserStore.setState({
+              user: null,
+              token: null,
+              isAuthenticated: false,
+              supabaseSession: null,
+              isLoading: false,
+            });
+          }
+        }).catch(() => {
+          // Network error — keep existing state, don't block UI
+          setLoading(false);
+        });
+
+        return; // Fast path complete — page renders immediately
+      }
+
+      // ★ SLOW PATH: No persisted user — full bootstrap required
       setLoading(true);
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           setSession(session);
-          // Set initial JWT state
+          // Set initial JWT state immediately
           loginFromJWT(session);
           // Await DB profile enrichment to ensure exact role & approved status
           await enrichFromDB(session);

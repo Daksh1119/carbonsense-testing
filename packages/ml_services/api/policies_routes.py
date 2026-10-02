@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from ml_services.common.authz import ensure_user_in_org, ensure_permission
@@ -29,6 +29,7 @@ def get_policies(
     organization_id: Optional[str] = None,
     size: Optional[str] = None,
     total_emissions_kg: Optional[float] = None,
+    response: Response = None,
 ):
     try:
         data = list_policies(
@@ -39,6 +40,8 @@ def get_policies(
             size=size,
             total_emissions_kg=total_emissions_kg,
         )
+        if response is not None:
+            response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=60"
         return {"policies": data, "count": len(data)}
     except HTTPException:
         raise

@@ -76,13 +76,27 @@ interface UseDashboardDataReturn {
   refetch: () => void;
 }
 
+// ---------------------------------------------------------------------------
+// Module-level SWR cache: persists across component mount/unmount cycles.
+// Key: organizationId+userId combo. TTL: 60 seconds.
+// This eliminates skeleton screens on every back-navigation to the dashboard.
+// ---------------------------------------------------------------------------
+const _dashboardCache = new Map<string, { data: DashboardData; ts: number }>();
+const CACHE_TTL_MS = 60_000;
+
 /**
  * useDashboardData Hook
- * Fetches and manages dashboard summary data
+ * Fetches and manages dashboard summary data with stale-while-revalidate caching.
  */
 export const useDashboardData = (): UseDashboardDataReturn => {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { organizationId, userId } = getCurrentUserContext();
+  const cacheKey = `${organizationId ?? 'none'}:${userId ?? 'none'}`;
+  const cached = _dashboardCache.get(cacheKey);
+  const hasValidCache = !!cached && Date.now() - cached.ts < CACHE_TTL_MS;
+
+  // Seed state from cache immediately — avoids skeleton on back-navigation
+  const [data, setData] = useState<DashboardData | null>(hasValidCache ? cached!.data : null);
+  const [isLoading, setIsLoading] = useState(!hasValidCache);
   const [error, setError] = useState<string | null>(null);
 
   const formatPeriodLabel = (periodStart: string | null | undefined): string => {
@@ -637,6 +651,9 @@ export const useDashboardData = (): UseDashboardDataReturn => {
       };
 
       setData(dashboardData);
+      // Update module-level cache using the org/user context resolved in this call
+      const { organizationId: cacheOrgId, userId: cacheUserId } = getCurrentUserContext();
+      _dashboardCache.set(`${cacheOrgId ?? 'none'}:${cacheUserId ?? 'none'}`, { data: dashboardData, ts: Date.now() });
     } catch (err) {
       setData(createFallbackDashboardData());
       setError(err instanceof Error ? err.message : 'Failed to load dashboard data.');
@@ -646,8 +663,8 @@ export const useDashboardData = (): UseDashboardDataReturn => {
   }, []);
 
   useEffect(() => {
-    // Initial fetch (displays loading skeleton once)
-    fetchData(false);
+    // Initial fetch — skip spinner if we already showed cached data
+    fetchData(hasValidCache ? true : false);
 
     // Silent refresh callback on Realtime database mutations
     const handleSilentRefresh = () => {

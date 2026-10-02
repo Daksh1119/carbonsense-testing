@@ -48,6 +48,8 @@ export interface GenerateRecommendationsResponse {
   llm_used: boolean;
   llm_warning?: string | null;
   recommendations: GeneratedRecommendation[];
+  emission_kg?: number;
+  project_name?: string;
 }
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL;

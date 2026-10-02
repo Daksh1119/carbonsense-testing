@@ -3,7 +3,7 @@ import os
 import tempfile
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from ml_services.common.authz import ensure_permission, ensure_user_in_org
@@ -158,12 +158,13 @@ def recalculate_score_route(payload: RecalculateScoreInput):
 
 
 @router.get("/score")
-def get_score(organization_id: str, user_id: str):
+def get_score(organization_id: str, user_id: str, response: Response):
     try:
         ensure_user_in_org(user_id, organization_id)
         ensure_permission(user_id, organization_id, "compliance.read")
 
         score = get_current_score(organization_id)
+        response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=60"
         return {"score": score}
     except HTTPException:
         raise
@@ -188,12 +189,14 @@ def get_score_history(organization_id: str, user_id: str, days: int = 365):
 
 
 @router.get("/deadlines")
-def get_deadlines(organization_id: str, user_id: str, days: int = 90):
+def get_deadlines(organization_id: str, user_id: str, days: int = 90, response: Response = None):
     try:
         ensure_user_in_org(user_id, organization_id)
         ensure_permission(user_id, organization_id, "compliance.read")
 
         data = upcoming_deadlines(organization_id, within_days=days)
+        if response is not None:
+            response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=60"
         return {"deadlines": data, "count": len(data)}
     except HTTPException:
         raise
@@ -203,13 +206,15 @@ def get_deadlines(organization_id: str, user_id: str, days: int = 90):
 
 
 @router.get("/top-actions")
-def get_top_actions(organization_id: str, user_id: str, industry: Optional[str] = None, top_n: int = 3):
+def get_top_actions(organization_id: str, user_id: str, industry: Optional[str] = None, top_n: int = 3, response: Response = None):
     try:
         ensure_user_in_org(user_id, organization_id)
         ensure_permission(user_id, organization_id, "compliance.read")
 
         data = top_actions(organization_id=organization_id,
                            industry=industry, top_n=top_n)
+        if response is not None:
+            response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=60"
         return {"actions": data, "count": len(data)}
     except HTTPException:
         raise

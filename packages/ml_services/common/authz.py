@@ -1,8 +1,37 @@
 import os
+import time
 from typing import Optional
 from fastapi import HTTPException
 
 from ml_services.common.supabase_client import supabase
+
+# ---------------------------------------------------------------------------
+# In-process TTL cache for authorization checks.
+# Avoids 2-4 Supabase round-trips per API request for the same user/org pair.
+# TTL: 60 seconds — short enough to catch role changes, long enough to batch
+# all the parallel requests the dashboard fires on load.
+# ---------------------------------------------------------------------------
+_authz_cache: dict[str, tuple[bool, float]] = {}
+_AUTHZ_CACHE_TTL = 60.0  # seconds
+
+
+def _cache_key(user_id: str, organization_id: str, suffix: str = "") -> str:
+    return f"{user_id}:{organization_id}:{suffix}"
+
+
+def _cache_get(key: str) -> bool | None:
+    entry = _authz_cache.get(key)
+    if entry is None:
+        return None
+    value, expires_at = entry
+    if time.monotonic() > expires_at:
+        del _authz_cache[key]
+        return None
+    return value
+
+
+def _cache_set(key: str, value: bool) -> None:
+    _authz_cache[key] = (value, time.monotonic() + _AUTHZ_CACHE_TTL)
 
 
 def _strict_authz_enabled() -> bool:
@@ -17,6 +46,12 @@ def _strict_authz_enabled() -> bool:
 
 
 def _is_active_org_member(user_id: str, organization_id: str) -> bool:
+    cache_key = _cache_key(user_id, organization_id, "member")
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    result = False
     try:
         q_profile = (
             supabase.table("user_profiles")
@@ -27,28 +62,36 @@ def _is_active_org_member(user_id: str, organization_id: str) -> bool:
             .execute()
         )
         if q_profile.data:
-            return True
+            result = True
     except Exception:
         pass
 
-    try:
-        q_members = (
-            supabase.table("organization_members")
-            .select("user_id")
-            .eq("organization_id", organization_id)
-            .eq("user_id", user_id)
-            .limit(1)
-            .execute()
-        )
-        if q_members.data:
-            return True
-    except Exception:
-        pass
+    if not result:
+        try:
+            q_members = (
+                supabase.table("organization_members")
+                .select("user_id")
+                .eq("organization_id", organization_id)
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
+            if q_members.data:
+                result = True
+        except Exception:
+            pass
 
-    return False
+    _cache_set(cache_key, result)
+    return result
 
 
 def _has_permission(user_id: str, organization_id: str, permission_key: str) -> bool:
+    cache_key = _cache_key(user_id, organization_id, f"perm:{permission_key}")
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    result = False
     try:
         q_profile = (
             supabase.table("user_profiles")
@@ -61,27 +104,32 @@ def _has_permission(user_id: str, organization_id: str, permission_key: str) -> 
         if q_profile.data:
             role = q_profile.data[0].get("role")
             if role in ("manager", "admin"):
-                return True
+                result = True
     except Exception:
         pass
 
-    try:
-        q_perm = (
-            supabase.table("org_member_permissions")
-            .select("enabled")
-            .eq("organization_id", organization_id)
-            .eq("user_id", user_id)
-            .eq("permission_key", permission_key)
-            .eq("enabled", True)
-            .limit(1)
-            .execute()
-        )
-        if q_perm.data:
-            return True
-    except Exception:
-        pass
+    if not result:
+        try:
+            q_perm = (
+                supabase.table("org_member_permissions")
+                .select("enabled")
+                .eq("organization_id", organization_id)
+                .eq("user_id", user_id)
+                .eq("permission_key", permission_key)
+                .eq("enabled", True)
+                .limit(1)
+                .execute()
+            )
+            if q_perm.data:
+                result = True
+        except Exception:
+            pass
 
-    return _is_active_org_member(user_id, organization_id)
+    if not result:
+        result = _is_active_org_member(user_id, organization_id)
+
+    _cache_set(cache_key, result)
+    return result
 
 
 def ensure_user_in_org(user_id: str, organization_id: str) -> None:

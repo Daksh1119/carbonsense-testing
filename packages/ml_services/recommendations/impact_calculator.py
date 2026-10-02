@@ -74,6 +74,21 @@ def _resolve_kpi(anchor: str, kpi_snapshots: List[Dict[str, Any]]) -> Optional[D
 # Core calculation
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Per-recommendation hard cap: no single action can claim more savings than
+# this fraction of total emissions. Prevents LLM-inflated numbers.
+# ---------------------------------------------------------------------------
+_MAX_SINGLE_REC_FRACTION = 0.65  # 65% of total is already very aggressive
+
+
+def _cap_impact(impact: float, total_emission_kg: float) -> float:
+    """Cap a single-recommendation impact to a realistic fraction of total."""
+    if total_emission_kg <= 0:
+        return impact
+    ceiling = total_emission_kg * _MAX_SINGLE_REC_FRACTION
+    return min(impact, ceiling)
+
+
 def calculate_impact(
     kb_entry: Dict[str, Any],
     kpi_snapshots: List[Dict[str, Any]],
@@ -87,6 +102,8 @@ def calculate_impact(
     1. Use the anchor KPI from the knowledge base entry (most specific).
     2. Fall back to total_emission_kg × scope_fraction (less specific).
     3. If nothing is available, return None so the LLM value is preserved.
+
+    Hard cap: no result ever exceeds _MAX_SINGLE_REC_FRACTION of total emissions.
 
     Returns a dict that can be merged directly onto a recommendation record.
     """
@@ -105,17 +122,20 @@ def calculate_impact(
         kpi_name = str(kpi.get("kpi_name", anchor))
         kpi_unit = str(kpi.get("kpi_unit") or "kg CO2e")
 
-        # The KPI value IS the applicable emission quantity for this anchor.
-        # Apply the scope fraction to get the portion this strategy acts on,
-        # then apply the reduction percentage.
-        impact_base = base_value * scope_frac_mid * red_mid
-        impact_low = base_value * scope_frac_low * red_low
-        impact_high = base_value * scope_frac_high * red_high
+        # Safety: KPI values should not exceed total emissions (data anomaly guard)
+        if total_emission_kg > 0:
+            base_value = min(base_value, total_emission_kg)
+
+        # Apply scope fraction then reduction factor
+        impact_base = _cap_impact(base_value * scope_frac_mid * red_mid, total_emission_kg)
+        impact_low  = _cap_impact(base_value * scope_frac_low  * red_low,  total_emission_kg)
+        impact_high = _cap_impact(base_value * scope_frac_high * red_high, total_emission_kg)
 
         formula = (
             f"{kpi_name} ({round(base_value, 2)} {kpi_unit}) × "
             f"scope_fraction ({scope_frac_low:.0%}–{scope_frac_high:.0%}) × "
             f"reduction_factor ({red_low:.0%}–{red_high:.0%})"
+            + (f" [capped at {_MAX_SINGLE_REC_FRACTION:.0%} of total]" if impact_base < base_value * scope_frac_mid * red_mid else "")
         )
         source = kb_entry["citations"][0] if kb_entry.get("citations") else "Knowledge base"
 
@@ -132,9 +152,9 @@ def calculate_impact(
 
     # 2. Fall back to total emissions × scope fraction.
     if total_emission_kg > 0:
-        impact_base = total_emission_kg * scope_frac_mid * red_mid
-        impact_low = total_emission_kg * scope_frac_low * red_low
-        impact_high = total_emission_kg * scope_frac_high * red_high
+        impact_base = _cap_impact(total_emission_kg * scope_frac_mid * red_mid, total_emission_kg)
+        impact_low  = _cap_impact(total_emission_kg * scope_frac_low  * red_low,  total_emission_kg)
+        impact_high = _cap_impact(total_emission_kg * scope_frac_high * red_high, total_emission_kg)
 
         formula = (
             f"total_emission_kg ({round(total_emission_kg, 2)}) × "

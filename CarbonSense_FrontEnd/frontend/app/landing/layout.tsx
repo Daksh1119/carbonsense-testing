@@ -1,7 +1,7 @@
-﻿import type { Metadata } from 'next';
+import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'CarbonSense ΓÇö Carbon Intelligence Platform',
+  title: 'CarbonSense - Carbon Intelligence Platform',
   description:
     'Carbon footprint monitoring and intelligent decision support for emission reduction. Real-time insights, science-backed reporting, zero greenwashing.',
   keywords: [

@@ -45,67 +45,25 @@ import {
   BookOpen,
   ChevronDown,
   ChevronUp,
-  Scale,
-  Loader2,
 } from "lucide-react";
-import PolicyReferenceModal from "@/components/PolicyReferenceModal";
 
 // ---------------------------------------------------------------------------
-// Evidence citation mapping — mirrors the backend knowledge base sources
-// (GHG Protocol, IEA, ENERGY STAR, EPA SmartWay, DEFRA, CDP, IPCC AR6)
+// Source type badge colours — shown in the real EvidencePanel
 // ---------------------------------------------------------------------------
-const CATEGORY_EVIDENCE: Record<string, { citation: string; framework: string }[]> = {
-  Energy: [
-    { citation: "ENERGY STAR Portfolio Manager Technical Reference, 2023", framework: "ENERGY STAR" },
-    { citation: "IEA Energy Efficiency 2023, Chapter 3: Buildings", framework: "IEA" },
-    { citation: "ASHRAE Standard 90.1-2022: Lighting & HVAC", framework: "ASHRAE" },
-    { citation: "GHG Protocol Corporate Standard: Scope 2 Accounting", framework: "GHG Protocol" },
-  ],
-  Transport: [
-    { citation: "EPA SmartWay Program Carrier Efficiency Guide, 2023", framework: "EPA SmartWay" },
-    { citation: "IPCC AR6 Working Group III, Chapter 10: Transport", framework: "IPCC AR6" },
-    { citation: "DEFRA GHG Reporting Conversion Factors, 2023", framework: "DEFRA" },
-    { citation: "GHG Protocol Category 6 & 7: Business Travel & Commuting", framework: "GHG Protocol" },
-  ],
-  Procurement: [
-    { citation: "CDP Supply Chain Report 2023: Supplier Engagement", framework: "CDP" },
-    { citation: "GHG Protocol Scope 3 Standard: Category 1 Purchased Goods", framework: "GHG Protocol" },
-    { citation: "Science Based Targets initiative (SBTi) Supplier Guidance", framework: "SBTi" },
-  ],
-  Waste: [
-    { citation: "EPA WARM Model v15, 2023", framework: "EPA WARM" },
-    { citation: "DEFRA UK Waste Conversion Factors, 2023", framework: "DEFRA" },
-    { citation: "GHG Protocol Category 5: Waste Generated in Operations", framework: "GHG Protocol" },
-    { citation: "IPCC AR6 WG3 Chapter 7: AFOLU — Waste Methane", framework: "IPCC AR6" },
-  ],
-  Offset: [
-    { citation: "Verra Verified Carbon Standard (VCS) VM0010, 2023", framework: "Verra VCS" },
-    { citation: "IPCC AR6 WG3 Chapter 7: Land-based mitigation", framework: "IPCC AR6" },
-    { citation: "Gold Standard for the Global Goals: Afforestation/Reforestation", framework: "Gold Standard" },
-    { citation: "CarbonSense TEME V4: Survival-adjusted sequestration", framework: "TEME" },
-  ],
-  Policy: [
-    { citation: "World Bank Carbon Pricing Leadership Coalition Guidance", framework: "World Bank" },
-    { citation: "SBTi Corporate Standard v2.0, 2023", framework: "SBTi" },
-    { citation: "CDP Climate Change 2023: Governance & Targets", framework: "CDP" },
-  ],
+const SOURCE_TYPE_LABELS: Record<string, { label: string; color: string }> = {
+  kpi_snapshot:  { label: "Your Data",  color: "text-teal-400 bg-teal-500/10 border-teal-500/30" },
+  teme_run:      { label: "TEME",        color: "text-primary bg-primary/10 border-primary/30" },
+  external:      { label: "Framework",   color: "text-sky-400 bg-sky-500/10 border-sky-500/20" },
+  manual:        { label: "Reference",   color: "text-violet-400 bg-violet-500/10 border-violet-500/20" },
+  org_profile:   { label: "Org Profile", color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
+  trend_comparison: { label: "Trend Insight", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
 };
 
-const FRAMEWORK_COLORS: Record<string, string> = {
-  "ENERGY STAR": "text-amber-400 bg-amber-500/10 border-amber-500/20",
-  IEA:           "text-sky-400 bg-sky-500/10 border-sky-500/20",
-  ASHRAE:        "text-violet-400 bg-violet-500/10 border-violet-500/20",
-  "GHG Protocol":"text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-  "EPA SmartWay":"text-teal-400 bg-teal-500/10 border-teal-500/20",
-  "IPCC AR6":    "text-rose-400 bg-rose-500/10 border-rose-500/20",
-  DEFRA:         "text-blue-400 bg-blue-500/10 border-blue-500/20",
-  CDP:           "text-orange-400 bg-orange-500/10 border-orange-500/20",
-  SBTi:          "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",
-  "EPA WARM":    "text-lime-400 bg-lime-500/10 border-lime-500/20",
-  "Verra VCS":   "text-green-400 bg-green-500/10 border-green-500/20",
-  "Gold Standard":"text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
-  TEME:          "text-primary bg-primary/10 border-primary/20",
-  "World Bank":  "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
+const CALC_METHOD_CONFIG: Record<string, { label: string; color: string; tip: string }> = {
+  deterministic_kpi:          { label: "Calculated from your data", color: "text-teal-400",   tip: "Impact calculated using real formula applied to your uploaded KPI values." },
+  deterministic_total_emission:{ label: "Calculated from your data", color: "text-teal-400",  tip: "Impact calculated from your total reported emissions using standard reduction factors." },
+  llm_estimated:              { label: "AI-estimated",              color: "text-amber-400",   tip: "Impact estimated by AI — no matching KPI data found to calculate precisely." },
+  llm_preserved:              { label: "AI-estimated",              color: "text-amber-400",   tip: "Impact estimated by AI — no matching KPI data found to calculate precisely." },
 };
 
 
@@ -115,27 +73,35 @@ const FRAMEWORK_COLORS: Record<string, string> = {
 
 type ItemStatus = "proposed" | "in_progress" | "implemented" | "rejected";
 
+interface EvidenceItem {
+  evidence_id?: string | null;
+  source_type?: string;
+  citation?: string;
+  excerpt?: string;
+  source_table?: string;
+  uri?: string;
+}
+
 interface RecommendationItem {
   id: string;
   title: string;
   description: string;
-  summary?: string;
-  rationale?: string;
   category: string;
-  action_type?: string;
-  priority?: string;
   difficulty?: string;
   implementation_status: ItemStatus;
   rank: number;
   catalog_entry_id?: string;
-  assigned_to?: string | null; // Group 5.2
+  assigned_to?: string | null;
+  // Real evidence from backend
+  evidence?: EvidenceItem[];
+  // Calculation provenance
+  calculation_method?: string;
   estimated_impact_kg_co2e?: number;
   estimated_impact_kg_co2e_low?: number;
   estimated_impact_kg_co2e_high?: number;
-  implementation_cost_usd?: number;
-  time_to_impact_months?: number;
+  impact_model?: { formula?: string; kpi_refs?: string[] };
+  verification_status?: string;
   confidence_score?: number;
-  implementation_steps?: string[];
 }
 
 // Group 5.2
@@ -217,7 +183,17 @@ function RecommendationsContent() {
   const userId = user?.id ?? "";
 
   // Hook: scoped per-upload (backend caches session per upload_id)
-  const { recommendations: liveRecommendations, isLoading: legacyLoading, error: legacyError, llmUsed, llmWarning, refetch, generateFresh } = useRecommendations(uploadId);
+  const {
+    recommendations: liveRecommendations,
+    isLoading: legacyLoading,
+    error: legacyError,
+    llmUsed,
+    llmWarning,
+    emissionKg: hookEmissionKg,
+    projectName: hookProjectName,
+    refetch,
+    generateFresh,
+  } = useRecommendations(uploadId);
   const [isRegenerating, setIsRegenerating] = useState(false);
 
   const handleRegenerate = useCallback(async () => {
@@ -254,7 +230,6 @@ function RecommendationsContent() {
   // Group 5.2 — team viewers for assignment
   const [viewers, setViewers] = useState<ViewerMember[]>([]);
   const [assigning, setAssigning] = useState<string | null>(null);
-  const [selectedPolicyRef, setSelectedPolicyRef] = useState<any | null>(null);
 
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -297,7 +272,19 @@ function RecommendationsContent() {
   // Summary stats — use liveRecommendations from the cache-first hook.
   // Because the hook now loads stored items and only generates once, these
   // values are stable across page visits (no more random LLM regeneration).
-  const totalPotential = liveRecommendations.reduce((sum, rec) => sum + Number(rec.impact || 0), 0);
+  const rawTotalPotential = liveRecommendations.reduce((sum, rec) => sum + Number(rec.impact || 0), 0);
+
+  // Sanity cap: total savings can never physically exceed actual total emissions.
+  // Prefer upload/backend emission, fall back to sessionStorage CSV summary.
+  const csvRaw = typeof window !== "undefined" ? sessionStorage.getItem("latest_csv_emissions_summary") : null;
+  const csvSummary = csvRaw ? (() => { try { return JSON.parse(csvRaw); } catch { return null; } })() : null;
+  const totalEmissionsKg = hookEmissionKg && hookEmissionKg > 0
+    ? hookEmissionKg
+    : Number(csvSummary?.totals?.total_kg_co2e || 0);
+  const totalPotential = totalEmissionsKg > 0
+    ? Math.min(rawTotalPotential, totalEmissionsKg * 0.90)
+    : rawTotalPotential;
+
   const highImpactCount = items.length > 0
     ? items.filter((i) => i.rank <= 2).length   // top-ranked stored items = high impact
     : liveRecommendations.filter((r) => r.impact >= 150).length;
@@ -360,125 +347,48 @@ function RecommendationsContent() {
   }
 
 
-  // Group 5.2 — fetch org viewers from user_profiles
-  const [delegatedMap, setDelegatedMap] = useState<Record<string, { assignedTo: string; status: string; id: string }>>({});
-
-  const fetchDelegatedItems = useCallback(async () => {
-    if (!orgId) return;
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      const res = await fetch(`/api/recommendations/delegate?organizationId=${orgId}`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const map: Record<string, { assignedTo: string; status: string; id: string }> = {};
-        for (const it of (data.items || [])) {
-          if (it.assigned_to) {
-            map[it.title] = { assignedTo: it.assigned_to, status: it.implementation_status, id: it.id };
-            map[it.id] = { assignedTo: it.assigned_to, status: it.implementation_status, id: it.id };
-          }
-        }
-        setDelegatedMap(map);
-      }
-    } catch (e) {
-      console.warn("Could not fetch delegated items:", e);
-    }
-  }, [orgId]);
-
+  // Group 5.2 — fetch org viewers for assignment
   useEffect(() => {
     if (!orgId) return;
     (async () => {
-      // Query user_profiles directly for viewers in this org
       const { data } = await supabase
-        .from("user_profiles")
-        .select("id, first_name, last_name, email, job_title")
+        .from("organization_members")
+        .select("user_id, user_profiles(first_name, last_name)")
         .eq("organization_id", orgId)
         .eq("role", "viewer");
-
-      if (data && data.length > 0) {
+      if (data) {
         setViewers(
-          data.map((m) => {
-            const name = [m.first_name, m.last_name].filter(Boolean).join(" ");
-            const label = name ? `${name} (${m.email})` : m.email;
-            return {
-              id: m.id,
-              display_name: label,
-            };
-          })
+          (data as unknown as Array<{ user_id: string; user_profiles: { first_name: string | null; last_name: string | null } | null }>)
+            .map((m) => ({
+              id: m.user_id,
+              display_name: m.user_profiles
+                ? `${m.user_profiles.first_name ?? ""} ${m.user_profiles.last_name ?? ""}`.trim() || m.user_id.slice(0, 8)
+                : m.user_id.slice(0, 8),
+            }))
         );
       }
     })();
-
-    fetchDelegatedItems();
-  }, [orgId, fetchDelegatedItems]);
-
-  const handleDelegateTask = async (
-    title: string,
-    description: string,
-    category: string,
-    viewerId: string,
-    recId?: string
-  ) => {
-    const key = recId || title;
-    setAssigning(key);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-
-      const res = await fetch("/api/recommendations/delegate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          recommendationId: recId,
-          title,
-          description,
-          category,
-          assignedTo: viewerId || null,
-          organizationId: orgId,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Delegation failed");
-
-      setDelegatedMap((prev) => {
-        const next = { ...prev };
-        if (viewerId) {
-          next[title] = { assignedTo: viewerId, status: "proposed", id: data.item?.id || recId || "" };
-          if (recId) next[recId] = { assignedTo: viewerId, status: "proposed", id: data.item?.id || recId };
-        } else {
-          delete next[title];
-          if (recId) delete next[recId];
-        }
-        return next;
-      });
-
-      if (recId) {
-        setItems((prev) => prev.map((i) => (i.id === recId ? { ...i, assigned_to: viewerId || null } : i)));
-      }
-
-      if (viewerId) {
-        const viewer = viewers.find((v) => v.id === viewerId);
-        showSuccessToast(`Action delegated to ${viewer?.display_name || "employee"}! They can now view and update it from their dashboard.`);
-      } else {
-        showInfoToast("Delegation removed.");
-      }
-    } catch (e) {
-      showErrorToast(`Delegation failed: ${(e as Error).message}`);
-    } finally {
-      setAssigning(null);
-    }
-  };
+  }, [orgId]);
 
   const handleAssign = async (itemId: string, viewerId: string) => {
-    const it = items.find((i) => i.id === itemId);
-    if (it) {
-      await handleDelegateTask(it.title, it.description, it.category, viewerId, itemId);
+    setAssigning(itemId);
+    try {
+      const { error } = await supabase
+        .from("recommendation_items")
+        .update({ assigned_to: viewerId || null, status_updated_at: new Date().toISOString() })
+        .eq("id", itemId);
+      if (error) throw error;
+      setItems((prev) => prev.map((i) => i.id === itemId ? { ...i, assigned_to: viewerId || null } : i));
+      if (viewerId) {
+        const viewer = viewers.find((v) => v.id === viewerId);
+        showSuccessToast(`Task assigned to ${viewer?.display_name ?? "viewer"}.`);
+      } else {
+        showInfoToast("Assignment removed.");
+      }
+    } catch (e) {
+      showErrorToast(`Assignment failed: ${(e as Error).message}`);
+    } finally {
+      setAssigning(null);
     }
   };
 
@@ -551,64 +461,22 @@ function RecommendationsContent() {
         <div>
           <h1 className="text-3xl font-bold text-white mb-2">Personalised Recommendations</h1>
           <p className="text-slate-400">
-            Curated action plan from the Indian MSME emission reduction catalog — ranked by impact and ease
+            {hookProjectName
+              ? `Tailored action plan for ${hookProjectName}${totalEmissionsKg > 0 ? ` (${totalEmissionsKg.toLocaleString("en-IN", { maximumFractionDigits: 1 })} kgCO₂e)` : ""} — ranked by impact and ease`
+              : "Curated action plan from the Indian MSME emission reduction catalog — ranked by impact and ease"}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            icon={<Scale className="size-3.5 text-teal-400" />}
-            onClick={() => {
-              setSelectedPolicyRef({
-                name: "National Action Plan on Climate Change & Energy Conservation Act",
-                short_name: "NAPCC & ECA 2022",
-                authority: "Ministry of Power / BEE / MoEFCC",
-                category: "Energy",
-                layer: "core",
-                act_year: "2022",
-                gazette_no: "Gazette Notification No. CG-DL-E-20122022-241243",
-                citation_standard: "ISO 14064 & GHG Protocol Corporate Standard",
-                document_summary: {
-                  gazette_reference: "Energy Conservation (Amendment) Act 2022 / BEE Carbon Credit Trading Scheme",
-                  key_mandates: [
-                    "Prescription of minimum share of consumption of non-fossil sources by designated consumers",
-                    "Issuance of Carbon Credit Certificates under Indian Carbon Market (ICM)",
-                    "Establishment of domestic carbon accounting and reduction standards for commercial and industrial sectors",
-                  ],
-                  applies_to: [
-                    "Designated Consumers across manufacturing, data centres, transport, and commercial buildings",
-                    "MSMEs and supply chain partners adopting voluntary decarbonization targets",
-                  ],
-                  penalties: [
-                    "Failure to comply with non-fossil consumption mandates attracts penalties up to ₹10 Lakh plus value of shortfall per metric tonne of oil equivalent",
-                  ],
-                  key_dates: [
-                    "Annual compliance filing due within 90 days of financial year end",
-                  ],
-                  source_url: "https://beeindia.gov.in",
-                },
-                requirements: [
-                  "Energy audit report filing with State Designated Agency (SDA)",
-                  "Scope 1 & 2 carbon accounting and target baseline setting",
-                ],
-              });
-            }}
-          >
-            Policy Citations
-          </Button>
-          <BackButton href="/dashboard" label="Back to Dashboard" variant="outline" />
-          <button
-            type="button"
-            disabled={isRegenerating}
-            onClick={handleRegenerate}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border border-slate-600 text-slate-300 hover:border-primary hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Force-generate a fresh set of recommendations using latest data"
-          >
-            <Sparkles className="size-3.5" />
-            {isRegenerating ? "Regenerating…" : "Regenerate"}
-          </button>
-        </div>
+        <BackButton href="/dashboard" label="Back to Dashboard" variant="outline" />
+        <button
+          type="button"
+          disabled={isRegenerating}
+          onClick={handleRegenerate}
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border border-slate-600 text-slate-300 hover:border-primary hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Force-generate a fresh set of recommendations using latest data"
+        >
+          <Sparkles className="size-3.5" />
+          {isRegenerating ? "Regenerating…" : "Regenerate"}
+        </button>
       </div>
 
       {/* Summary Banner */}
@@ -709,7 +577,13 @@ function RecommendationsContent() {
               const isEvidenceOpen = expandedEvidence.has(item.id);
               const currentRating = ratings[item.id];
               const isRatingSending = ratingSending.has(item.id);
-              const evidenceSources = CATEGORY_EVIDENCE[item.category] ?? CATEGORY_EVIDENCE["Energy"];
+
+              // Real evidence from backend (may be empty for catalog items without payload)
+              const realEvidence: EvidenceItem[] = item.evidence ?? [];
+              const hasRealEvidence = realEvidence.length > 0;
+              const calcMethod = item.calculation_method ?? "";
+              const calcConfig = CALC_METHOD_CONFIG[calcMethod] ?? null;
+              const verificationStatus = item.verification_status ?? "not_checked";
               return (
                 <div
                   key={item.id}
@@ -727,25 +601,9 @@ function RecommendationsContent() {
                   <div className="p-5">
                     <div className="flex items-start justify-between gap-4 flex-wrap">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <span className="text-xs text-slate-500 font-mono font-semibold">#{item.rank}</span>
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className="text-xs text-slate-500 font-mono">#{item.rank}</span>
                           <Badge variant="default">{item.category}</Badge>
-                          {item.action_type && (
-                            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400 border border-teal-500/20">
-                              {item.action_type}
-                            </span>
-                          )}
-                          {item.priority && (
-                            <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border ${
-                              item.priority === "critical" || item.priority === "high"
-                                ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                                : item.priority === "medium"
-                                ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                                : "bg-slate-800 text-slate-400 border-slate-700"
-                            }`}>
-                              {item.priority} Priority
-                            </span>
-                          )}
                           {item.difficulty && (
                             <Badge
                               variant={
@@ -757,13 +615,25 @@ function RecommendationsContent() {
                               {item.difficulty}
                             </Badge>
                           )}
+                          {/* Calculation method tag */}
+                          {calcConfig && (
+                            <span
+                              className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border ${calcConfig.color === "text-teal-400" ? "border-teal-500/20 bg-teal-500/10" : "border-amber-500/20 bg-amber-500/10"}`}
+                              title={calcConfig.tip}
+                            >
+                              {calcConfig.color === "text-teal-400" ? "📊" : "🤖"} {calcConfig.label}
+                            </span>
+                          )}
+                          {/* Verification badge */}
+                          {verificationStatus === "verified" && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-400" title="Cross-checked by a second independent AI pass against your organisation's actual data.">
+                              ✓ Verified
+                            </span>
+                          )}
                         </div>
-                        <h3 className="text-white font-semibold text-base mb-1.5">{item.title}</h3>
-                        <p className="text-slate-300 text-xs leading-relaxed">
-                          {item.summary || item.description}
-                        </p>
+                        <h3 className="text-white font-semibold text-sm mb-1.5">{item.title}</h3>
+                        <p className="text-slate-400 text-xs leading-relaxed">{item.description}</p>
                       </div>
-
                       <div className="flex flex-col items-end gap-2 flex-shrink-0">
                         <StatusBadge status={status} />
                         {/* Action buttons */}
@@ -809,102 +679,23 @@ function RecommendationsContent() {
 
                         {/* Group 5.2 — Assign to viewer */}
                         {viewers.length > 0 && (
-                          <div className="flex items-center gap-1.5 mt-1 flex-wrap justify-end">
-                            <UserPlus className="size-3 text-teal-400" />
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <UserPlus className="size-3 text-slate-500" />
                             <select
                               value={item.assigned_to ?? ""}
                               onChange={(e) => handleAssign(item.id, e.target.value)}
                               disabled={assigning === item.id}
-                              className={`text-xs rounded-lg px-2.5 py-1 focus:outline-none focus:border-teal-500 disabled:opacity-50 transition-colors ${
-                                item.assigned_to
-                                  ? "bg-teal-500/15 border border-teal-500/40 text-teal-300 font-medium"
-                                  : "bg-slate-800 border border-slate-700 text-slate-300"
-                              }`}
+                              className="text-xs bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-300 focus:outline-none focus:border-teal-500 disabled:opacity-50"
                             >
-                              <option value="">Assign Employee…</option>
+                              <option value="">Assign to…</option>
                               {viewers.map((v) => (
-                                <option key={v.id} value={v.id}>
-                                  👤 {v.display_name}
-                                </option>
+                                <option key={v.id} value={v.id}>{v.display_name}</option>
                               ))}
                             </select>
-                            {item.assigned_to && (
-                              <span className="text-[10px] text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded-full border border-teal-500/20">
-                                Delegated to {viewers.find((v) => v.id === item.assigned_to)?.display_name || "Employee"}
-                              </span>
-                            )}
                           </div>
                         )}
                       </div>
                     </div>
-
-                    {/* ── Key Metrics Strip ── */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-3 border-t border-slate-800/80">
-                      <div className="p-2.5 bg-slate-950/40 rounded-lg border border-slate-800/60">
-                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-0.5">Potential Savings</span>
-                        <span className="text-sm font-bold text-teal-400">
-                          {item.estimated_impact_kg_co2e != null && item.estimated_impact_kg_co2e > 0
-                            ? `${Math.round(item.estimated_impact_kg_co2e).toLocaleString()} kgCO₂e`
-                            : "High Impact"}
-                        </span>
-                      </div>
-                      <div className="p-2.5 bg-slate-950/40 rounded-lg border border-slate-800/60">
-                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-0.5">Estimated Cost</span>
-                        <span className="text-sm font-bold text-white">
-                          {item.implementation_cost_usd != null && item.implementation_cost_usd > 0
-                            ? new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", notation: "compact", maximumFractionDigits: 1 }).format(item.implementation_cost_usd * 83)
-                            : "Low Capex / Policy"}
-                        </span>
-                      </div>
-                      <div className="p-2.5 bg-slate-950/40 rounded-lg border border-slate-800/60">
-                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-0.5">Time to Impact</span>
-                        <span className="text-sm font-bold text-white">
-                          {item.time_to_impact_months != null ? `${item.time_to_impact_months} months` : "1-3 months"}
-                        </span>
-                      </div>
-                      <div className="p-2.5 bg-slate-950/40 rounded-lg border border-slate-800/60">
-                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block mb-0.5">Certainty Score</span>
-                        <span className="text-sm font-bold text-emerald-400">
-                          {item.confidence_score != null ? `${Math.round(item.confidence_score * 100)}%` : "80%"}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* ── Manager's Strategic Rationale Box ── */}
-                    {item.rationale && (
-                      <div className="mt-3.5 p-3.5 bg-teal-950/20 border border-teal-500/20 rounded-xl">
-                        <div className="flex items-center gap-1.5 mb-1.5 text-xs font-semibold text-teal-300">
-                          <Sparkles className="size-3.5 text-teal-400" />
-                          <span>Manager&apos;s Strategic Rationale &amp; Operational Case</span>
-                        </div>
-                        <p className="text-xs text-slate-300 leading-relaxed">
-                          {item.rationale}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* ── Manager's Action Roadmap (What to do) ── */}
-                    {item.implementation_steps && item.implementation_steps.length > 0 && (
-                      <div className="mt-3.5">
-                        <h4 className="text-xs font-semibold text-slate-200 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                          <Target className="size-3.5 text-teal-400" />
-                          <span>Action Plan: What the Manager &amp; Team Should Do</span>
-                        </h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {item.implementation_steps.map((step, idx) => (
-                            <div
-                              key={idx}
-                              className="flex items-start gap-2.5 p-2.5 bg-slate-950/40 border border-slate-800/70 rounded-lg"
-                            >
-                              <span className="flex-shrink-0 size-5 rounded-full bg-teal-500/15 border border-teal-500/30 text-teal-300 text-[10px] font-bold flex items-center justify-center mt-0.5">
-                                {idx + 1}
-                              </span>
-                              <span className="text-xs text-slate-300 leading-snug">{step}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
 
                     {/* ── Bottom bar: evidence toggle + rating buttons ── */}
                     <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-800/60">
@@ -964,24 +755,65 @@ function RecommendationsContent() {
                     <div className="border-t border-slate-800/80 bg-slate-950/50 rounded-b-xl px-5 py-4">
                       <div className="flex items-center gap-2 mb-3">
                         <BookOpen className="size-3.5 text-teal-400" />
-                        <span className="text-xs font-semibold text-teal-400 uppercase tracking-wider">Evidence & Sources</span>
-                        <span className="text-xs text-slate-600 ml-1">— This recommendation is grounded in these verified frameworks</span>
+                        <span className="text-xs font-semibold text-teal-400 uppercase tracking-wider">Evidence &amp; Sources</span>
+                        {hasRealEvidence ? (
+                          <span className="text-xs text-emerald-400/70 ml-1">— from your actual data &amp; verified frameworks</span>
+                        ) : (
+                          <span className="text-xs text-slate-600 ml-1">— verified frameworks</span>
+                        )}
                       </div>
-                      <div className="space-y-2">
-                        {evidenceSources.map((src, idx) => (
-                          <div key={idx} className="flex items-start gap-2.5">
-                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 mt-0.5 ${
-                              FRAMEWORK_COLORS[src.framework] ?? "text-slate-400 bg-slate-800 border-slate-700"
-                            }`}>
-                              {src.framework}
-                            </span>
-                            <p className="text-xs text-slate-400 leading-relaxed">{src.citation}</p>
-                          </div>
-                        ))}
-                      </div>
+
+                      {hasRealEvidence ? (
+                        // REAL evidence from backend — prioritise "Your Data" items first
+                        <div className="space-y-2">
+                          {[...realEvidence]
+                            .sort((a, b) => {
+                              const order = ["kpi_snapshot", "teme_run", "external", "manual", "org_profile"];
+                              return order.indexOf(a.source_type ?? "") - order.indexOf(b.source_type ?? "");
+                            })
+                            .map((ev, idx) => {
+                              const stConfig = SOURCE_TYPE_LABELS[ev.source_type ?? ""] ?? { label: ev.source_type ?? "Source", color: "text-slate-400 bg-slate-800 border-slate-700" };
+                              return (
+                                <div key={idx} className="flex items-start gap-2.5">
+                                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 mt-0.5 ${stConfig.color}`}>
+                                    {stConfig.label}
+                                  </span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs text-slate-300 leading-relaxed">{ev.citation || ev.evidence_id}</p>
+                                    {ev.excerpt && (
+                                      <p className="text-[10px] text-slate-500 mt-0.5 font-mono truncate" title={ev.excerpt}>{ev.excerpt}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      ) : (
+                        // Fallback: show framework citations if no real evidence stored
+                        <div className="space-y-2">
+                          <p className="text-[10px] text-amber-400/70 mb-2">⚠ Real evidence not available for this item — showing framework references.</p>
+                          {["GHG Protocol Corporate Standard", "IEA Energy Efficiency 2023", "IPCC AR6 Working Group III"].map((cite, idx) => (
+                            <div key={idx} className="flex items-start gap-2.5">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0 mt-0.5 text-sky-400 bg-sky-500/10 border-sky-500/20">Framework</span>
+                              <p className="text-xs text-slate-400 leading-relaxed">{cite}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Calculation formula trail */}
+                      {item.impact_model?.formula && (
+                        <div className="mt-3 pt-3 border-t border-slate-800/60">
+                          <p className="text-[10px] text-slate-500 font-mono">
+                            <span className="text-slate-400">Formula: </span>{item.impact_model.formula}
+                          </p>
+                        </div>
+                      )}
+
                       <p className="text-[10px] text-slate-600 mt-3">
-                        Impact ranges derived from GHG Protocol reduction factors applied to your organisation&apos;s actual KPI data.
-                        All citations are publicly available.
+                        {hasRealEvidence
+                          ? "Impact ranges applied to your organisation's actual uploaded KPI data. All framework citations are publicly available."
+                          : "Impact ranges derived from GHG Protocol reduction factors. Upload emissions data to get calculations grounded in your real numbers."}
                       </p>
                     </div>
                   )}
@@ -1012,9 +844,6 @@ function RecommendationsContent() {
                     className={rec.priority <= 2 ? "border-primary/30 bg-primary/5" : ""}
                     headerAction={
                       <div className="flex items-center gap-2">
-                        {delegatedMap[rec.title]?.assignedTo && (
-                          <Badge variant="success">Assigned to Employee</Badge>
-                        )}
                         <Badge variant={rec.impact === "High" ? "success" : rec.impact === "Medium" ? "warning" : "default"}>
                           {rec.impact} Impact
                         </Badge>
@@ -1057,17 +886,9 @@ function RecommendationsContent() {
                           <Button
                             variant={rec.priority <= 2 ? "primary" : "outline"}
                             icon={<ArrowRight className="size-4" />}
-                            onClick={() => {
-                              const assigned = delegatedMap[rec.title]?.assignedTo;
-                              if (assigned) {
-                                const vName = viewers.find(v => v.id === assigned)?.display_name || "employee";
-                                showSuccessToast(`This action is in progress with ${vName}!`);
-                              } else {
-                                showInfoToast("Use the delegation dropdown below to assign this task to an employee.");
-                              }
-                            }}
+                            onClick={() => showInfoToast("Generate custom roadmap or upload emissions data to start tracking live items.")}
                           >
-                            {delegatedMap[rec.title]?.assignedTo ? "Delegated & In Progress" : "Begin Implementation"}
+                            Begin Implementation
                           </Button>
                           <Button
                             variant="ghost"
@@ -1075,47 +896,6 @@ function RecommendationsContent() {
                           >
                             View Detailed Plan
                           </Button>
-                        </div>
-
-                        {/* Group 5.2 Delegation Section */}
-                        <div className="mt-5 pt-4 border-t border-navy-border/60 flex items-center justify-between flex-wrap gap-3">
-                          <div className="flex items-center gap-2">
-                            <UserPlus className="size-4 text-teal-400" />
-                            <span className="text-xs font-semibold text-slate-300">Delegate Task:</span>
-                            <select
-                              value={delegatedMap[rec.title]?.assignedTo || ""}
-                              onChange={(e) => handleDelegateTask(rec.title, rec.description, rec.category, e.target.value)}
-                              disabled={assigning === rec.title}
-                              className={`text-xs rounded-lg px-3 py-1.5 focus:outline-none transition-colors ${
-                                delegatedMap[rec.title]?.assignedTo
-                                  ? "bg-teal-500/15 border border-teal-500/40 text-teal-300 font-medium"
-                                  : "bg-navy-muted border border-navy-border text-slate-300 hover:border-slate-500"
-                              }`}
-                            >
-                              <option value="">Choose employee to assign…</option>
-                              {viewers.map((v) => (
-                                <option key={v.id} value={v.id}>
-                                  👤 {v.display_name}
-                                </option>
-                              ))}
-                            </select>
-                            {assigning === rec.title && <Loader2 className="size-3.5 animate-spin text-teal-400" />}
-                          </div>
-
-                          {delegatedMap[rec.title]?.assignedTo && (
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-teal-300 bg-teal-500/15 border border-teal-500/30 px-2.5 py-1 rounded-full flex items-center gap-1.5">
-                                <CheckCircle2 className="size-3.5 text-teal-400" />
-                                Assigned to {viewers.find((v) => v.id === delegatedMap[rec.title]?.assignedTo)?.display_name || "Employee"}
-                              </span>
-                              <button
-                                onClick={() => handleDelegateTask(rec.title, rec.description, rec.category, "")}
-                                className="text-xs text-slate-500 hover:text-rose-400 underline transition-colors"
-                              >
-                                Unassign
-                              </button>
-                            </div>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -1150,13 +930,6 @@ function RecommendationsContent() {
           </div>
         </div>
       </div>
-
-      {/* Policy Reference Modal */}
-      <PolicyReferenceModal
-        isOpen={Boolean(selectedPolicyRef)}
-        onClose={() => setSelectedPolicyRef(null)}
-        policy={selectedPolicyRef}
-      />
     </div>
   );
 }

@@ -85,11 +85,7 @@ export default function DataIngestionPage() {
         showSuccessToast(`Successfully processed ${processedCount}/${files.length} file(s)`);
         setCsvProcessed(true);
       } else {
-        for (let i = 0; i <= 100; i += 10) {
-          setUploadProgress(i);
-          await new Promise((resolve) => setTimeout(resolve, 200));
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        setUploadProgress(100);
         showSuccessToast(`Successfully uploaded ${files.length} file(s)`);
       }
 
@@ -97,9 +93,7 @@ export default function DataIngestionPage() {
       setUploadProgress(0);
 
       if (type !== 'csv') {
-        setTimeout(() => {
-          router.push('/detailed-log');
-        }, 1200);
+        router.push('/detailed-log');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Upload failed';

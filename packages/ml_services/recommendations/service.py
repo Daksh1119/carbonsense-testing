@@ -175,7 +175,90 @@ def _build_evidence_catalog(payload: Dict[str, Any], org_profile: Dict[str, Any]
             }
         )
 
+    # Priority 5: Inject trend comparison evidence against preceding upload
+    org_id = payload.get("organization_id")
+    upload_id = payload.get("emissions_upload_id")
+    if org_id:
+        trend_items = _build_trend_evidence(org_id, upload_id, kpis)
+        catalog.extend(trend_items)
+
     return catalog
+
+
+def _build_trend_evidence(
+    org_id: str,
+    current_upload_id: Optional[str],
+    current_kpis: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """
+    Compare current upload's KPIs against the immediately preceding upload for this org.
+    Returns trend evidence items (e.g. 'Transport emissions increased +12.4% vs Oct 2025').
+    """
+    if not org_id or not current_kpis:
+        return []
+    try:
+        query = (
+            supabase.table("organization_uploads")
+            .select("id, original_file_name, total_emissions_kg, created_at, period_start, period_end")
+            .eq("organization_id", org_id)
+            .order("created_at", desc=True)
+            .limit(5)
+        )
+        res = query.execute()
+        uploads = res.data or []
+        if not uploads:
+            return []
+
+        # Find previous upload (skip current if matched)
+        prev_upload = None
+        for u in uploads:
+            if current_upload_id and str(u.get("id")) == str(current_upload_id):
+                continue
+            prev_upload = u
+            break
+
+        if not prev_upload:
+            return []
+
+        prev_id = prev_upload.get("id")
+        prev_entries_res = (
+            supabase.table("emission_entries")
+            .select("category, co2_kg")
+            .eq("upload_id", prev_id)
+            .execute()
+        )
+        prev_entries = prev_entries_res.data or []
+        prev_by_cat: Dict[str, float] = {}
+        for pe in prev_entries:
+            c = str(pe.get("category") or "other").lower().strip()
+            prev_by_cat[c] = prev_by_cat.get(c, 0.0) + float(pe.get("co2_kg") or 0)
+
+        prev_file = prev_upload.get("original_file_name") or "previous upload"
+        trend_items = []
+        for curr_kpi in current_kpis:
+            kpi_name = str(curr_kpi.get("kpi_name") or "").lower()
+            cat = kpi_name.replace("_kg", "").strip()
+            curr_val = _safe_float(curr_kpi.get("kpi_value"), 0.0)
+            if cat in prev_by_cat and prev_by_cat[cat] > 0 and curr_val > 0:
+                prev_val = prev_by_cat[cat]
+                diff_pct = round(((curr_val - prev_val) / prev_val) * 100, 1)
+                direction = "increased" if diff_pct > 0 else "decreased"
+                sign = "+" if diff_pct > 0 else ""
+                trend_items.append(
+                    {
+                        "evidence_id": f"trend::{cat}",
+                        "source_type": "trend_comparison",
+                        "source_table": "organization_uploads",
+                        "source_record_id": prev_id,
+                        "citation": f"Trend vs {prev_file}: {cat.title()}",
+                        "excerpt": f"{cat.title()} emissions {direction} by {sign}{diff_pct}% ({curr_val:.1f} vs {prev_val:.1f} kgCO2e)",
+                        "tags": ["trend", cat, "kpi"],
+                    }
+                )
+        return trend_items
+    except Exception as e:
+        print(f"[recommendations] Could not build trend evidence: {e}")
+        return []
 
 
 def _enrich_evidence_from_knowledge_base(
@@ -313,136 +396,116 @@ def _heuristic_fallback(
     templates = [
         {
             "title": "Optimize HVAC and lighting schedules",
-            "summary": "Deploy automated occupancy sensors, programmable thermostats, and LED retrofits across facility operating zones to eliminate idle electricity waste.",
+            "summary": "Deploy occupancy-based controls and LED retrofits to reduce avoidable electricity use.",
             "action_type": "reduction",
             "priority": "high",
-            "confidence_score": 0.84,
+            "confidence_score": 0.82,
             "estimated_impact_kg_co2e": round(emission * 0.22, 2),
             **_impact_bounds(emission * 0.22),
             "implementation_cost_usd": 12000,
             "time_to_impact_months": 2,
-            "rationale": (
-                "Scope 2 purchased electricity accounts for a substantial share of operational emissions. "
-                "Implementing zoned building management schedules and daylight-harvesting controls directly cuts peak kilowatt-hour "
-                "consumption with negligible disruption to daily business operations, delivering fast cost payback and measurable compliance improvements under energy conservation standards."
-            ),
+            "rationale": "Electricity optimization is the fastest controllable lever in most office operations.",
             "impact_model": {
                 "kpi_refs": ["scope_2_kg"],
                 "formula": "impact = scope_2_kg * 0.22",
             },
             "implementation_steps": [
-                "Commission a floor-by-floor submetering energy audit to locate idle load outside standard operating hours",
-                "Procure and install smart programmable thermostats and PIR occupancy sensors across conference rooms, restrooms, and open offices",
-                "Replace remaining fluorescent and CFL fixtures with high-efficacy BEE 5-star / ENERGY STAR certified LED fixtures",
-                "Establish automated shutdown rules and train facilities team to review weekly power variance against baseline",
+                "Audit floor-wise electricity load",
+                "Install occupancy sensors and control schedules",
+                "Replace high-usage fixtures with LEDs",
+                "Track baseline vs post-implementation savings",
             ],
             "evidence": _pick_evidence(["scope_2_energy", "kpi", "organization", "methodology"], fallback_min=2),
         },
         {
-            "title": "Low-carbon commute and flexible mobility policy",
-            "summary": "Implement a formal corporate green commuting policy combining role-based hybrid work, public transit subsidies, and carpooling matching.",
+            "title": "Low-carbon commute policy for employees",
+            "summary": "Launch hybrid work and transit incentives focused on high-commute departments.",
             "action_type": "reduction",
             "priority": "medium",
-            "confidence_score": 0.78,
+            "confidence_score": 0.76,
             "estimated_impact_kg_co2e": round(emission * 0.14, 2),
             **_impact_bounds(emission * 0.14),
             "implementation_cost_usd": 5000,
             "time_to_impact_months": 3,
-            "rationale": (
-                "Employee daily commuting forms an addressable Scope 3 Category 7 hotspot. "
-                "By incentivizing mass transit and optimizing onsite attendance without requiring capital-intensive asset purchases, "
-                "managers can achieve swift carbon reductions, boost workforce satisfaction, and fulfill ESG reporting expectations."
-            ),
+            "rationale": "Commuting emissions are policy-addressable and can be reduced without heavy capex.",
             "impact_model": {
                 "kpi_refs": ["transport_kg"],
                 "formula": "impact = transport_kg * 0.14",
             },
             "implementation_steps": [
-                "Conduct an internal employee mobility survey to map primary commuter routes, transit access, and departmental travel frequency",
-                "Define departmental hybrid work schedules targeting high-commute clusters (e.g., 2 designated remote days per week)",
-                "Roll out corporate public transit reimbursement and establish an internal carpooling coordination channel",
-                "Review monthly commute survey metrics and calculate verified Scope 3 emission reductions against baseline",
+                "Identify top commuting hotspots",
+                "Define hybrid eligibility by role",
+                "Subsidize public transport/carpooling",
+                "Review impact quarterly",
             ],
             "evidence": _pick_evidence(["transport", "kpi", "organization", "methodology"], fallback_min=2),
         },
         {
             "title": "TEME-backed native species offset plan",
-            "summary": "Execute a survival-adjusted afforestation plan focused on climate-resilient native tree species to neutralize residual organizational emissions.",
+            "summary": "Execute the modeled tree-planting strategy as a secondary lever after direct reductions.",
             "action_type": "offset",
             "priority": "medium",
-            "confidence_score": 0.73,
+            "confidence_score": 0.71,
             "estimated_impact_kg_co2e": round(tree_impact, 2),
             **_impact_bounds(tree_impact),
             "implementation_cost_usd": max(3000, total_trees * 3),
             "time_to_impact_months": 12,
-            "rationale": (
-                "High-integrity nature-based carbon sequestration should be deployed as a complementary mechanism alongside direct operational cuts. "
-                "Using the TEME framework ensures plantings account for local soil, species-specific mortality rates, and multi-year maintenance covenants, "
-                "giving management certifiable carbon credits backed by verifiable canopy growth."
-            ),
+            "rationale": "Offsets are meaningful when paired with direct reduction and validated survival assumptions.",
             "impact_model": {
                 "kpi_refs": ["teme_total_trees"],
                 "formula": "impact = max(50, emission_kg * 0.18)",
             },
             "implementation_steps": [
-                "Finalize the land parcel and native species mix recommended by the TEME ecological assessment",
-                "Contract a certified local agroforestry implementation partner with guaranteed 3-year watering and maintenance covenants",
-                "Institute digital geotagging and annual survivorship audits to verify net biomass increment",
-                "Integrate verified offset certificates into annual sustainability disclosure and compliance reporting",
+                "Finalize species mix from TEME output",
+                "Secure land and maintenance contracts",
+                "Track survival and growth annually",
+                "Recalibrate offsets with observed mortality",
             ],
             "evidence": _pick_evidence(["teme", "offset", "methodology", "organization"], fallback_min=2),
         },
         {
-            "title": "Supplier decarbonization scorecard and procurement policy",
-            "summary": "Establish a mandatory green procurement scorecard prioritizing vendors that measure, report, and reduce their Scope 1 & 2 emissions intensity.",
+            "title": "Supplier decarbonization scorecard",
+            "summary": "Target top Scope 3 procurement hotspots using supplier-level intensity and contract clauses.",
             "action_type": "policy",
             "priority": "high",
-            "confidence_score": 0.76,
+            "confidence_score": 0.74,
             "estimated_impact_kg_co2e": round(emission * 0.12, 2),
             **_impact_bounds(emission * 0.12),
             "implementation_cost_usd": 8000,
             "time_to_impact_months": 5,
-            "rationale": (
-                "Purchased goods and services often constitute the largest share of an organization's aggregate carbon footprint. "
-                "Instituting contractual disclosure mandates and awarding preferential bidding terms to low-carbon suppliers systematically "
-                "drives supply chain decarbonization without inflating operational expenditure."
-            ),
+            "rationale": "Procurement clauses and preferred-vendor policies reduce embedded emissions at scale.",
             "impact_model": {
                 "kpi_refs": ["scope_3_purchases_kg", "purchased_goods_kg"],
                 "formula": "impact = purchases_related_kg * 0.12",
             },
             "implementation_steps": [
-                "Aggregate annual procurement spend to identify the top 20 emitting suppliers and vendor categories",
-                "Distribute a standardized CarbonSense supplier ESG questionnaire covering carbon accounting and renewable energy adoption",
-                "Incorporate mandatory carbon disclosure covenants and emission-intensity criteria into vendor contract renewal cycles",
-                "Conduct quarterly vendor reviews and track collective Scope 3 upstream emission reduction progress",
+                "Identify top 20 emitting vendors by spend and category",
+                "Set supplier disclosure and reduction requirements",
+                "Embed low-carbon criteria in renewal cycles",
+                "Track quarterly supplier-specific intensity trends",
             ],
             "evidence": _pick_evidence(["purchases", "kpi", "organization", "methodology"], fallback_min=2),
         },
         {
-            "title": "Corporate travel and logistics fleet rationalization",
-            "summary": "Transition business travel and logistics to low-carbon modalities through strict travel criteria and load optimization.",
+            "title": "Fleet and travel demand control",
+            "summary": "Cut high-emission travel through trip substitution rules and route optimization governance.",
             "action_type": "reduction",
             "priority": "medium",
-            "confidence_score": 0.74,
+            "confidence_score": 0.72,
             "estimated_impact_kg_co2e": round(emission * 0.1, 2),
             **_impact_bounds(emission * 0.1),
             "implementation_cost_usd": 6000,
             "time_to_impact_months": 4,
-            "rationale": (
-                "Unrestricted business flights and unoptimized logistics generate avoidable emissions and high operational expense. "
-                "Implementing clear corporate travel hierarchies—mandating high-speed rail for trips under 500km and teleconferencing for internal reviews— "
-                "provides immediate, cash-flow-positive carbon abatement."
-            ),
+            "rationale": "Travel controls produce measurable reductions without long infrastructure lead times.",
             "impact_model": {
                 "kpi_refs": ["travel_kg", "transport_kg"],
                 "formula": "impact = transport_related_kg * 0.10",
             },
             "implementation_steps": [
-                "Audit the last 12 months of travel expenditure to pinpoint high-frequency flight corridors and logistical dispatch routes",
-                "Enforce a travel approval matrix requiring virtual meetings for internal coordination and commercial rail for intercity journeys under 5 hours",
-                "Consolidate logistical delivery routes and mandate SmartWay / EV freight carriers for regional transport",
-                "Publish a monthly business travel dashboard tracking passenger-kilometer reductions and cost savings",
+                "Set thresholds where virtual meetings are mandatory",
+                "Prioritize rail over short-haul flights",
+                "Enforce route and occupancy optimization",
+                "Publish monthly compliance and emissions dashboard",
             ],
             "evidence": _pick_evidence(["transport", "kpi", "organization", "methodology"], fallback_min=2),
         },
@@ -501,8 +564,8 @@ def _build_prompt(payload: Dict[str, Any], target_count: int) -> List[Dict[str, 
     schema_hint = {
         "recommendations": [
             {
-                "title": "str (concise, directive action title)",
-                "summary": "str (2-3 sentences: executive overview, business case, and strategic goal)",
+                "title": "str",
+                "summary": "str (1-2 sentences)",
                 "action_type": "reduction|offset|policy|compliance",
                 "priority": "low|medium|high|critical",
                 "confidence_score": "0.0-1.0",
@@ -511,11 +574,9 @@ def _build_prompt(payload: Dict[str, Any], target_count: int) -> List[Dict[str, 
                 "estimated_impact_kg_co2e_high": "number",
                 "implementation_cost_usd": "number|null",
                 "time_to_impact_months": "int|null",
-                "rationale": "str (3-4 sentences: detailed managerial explanation clarifying why this action was prioritized, how it cuts emissions for the hotspot, and operational feasibility)",
+                "rationale": "str (1 sentence)",
                 "impact_model": {"kpi_refs": ["str"], "formula": "str"},
-                "implementation_steps": [
-                    "str (3-5 concrete sequential action steps explaining exactly what the manager and team must execute)"
-                ],
+                "implementation_steps": ["str x3-5"],
                 "evidence": [
                     {"evidence_id": "must match catalog ID above", "source_type": "str",
                      "citation": "str", "excerpt": "str"}
@@ -528,23 +589,25 @@ def _build_prompt(payload: Dict[str, Any], target_count: int) -> List[Dict[str, 
         {
             "role": "system",
             "content": (
-                "You are an enterprise decarbonization co-pilot and climate advisory expert. "
-                "Your direct audience is corporate sustainability and operations managers who need clear, thorough, executive-ready guidance. "
+                "You are a climate strategy co-pilot for enterprise decarbonization. "
                 "Return ONLY strict JSON — no markdown fences, no prose outside JSON. "
                 "Every recommendation MUST cite ≥2 evidence_ids from the catalog. "
-                "Frame all recommendations specifically so a manager immediately understands: "
-                "1) The strategic objective and business case (summary). "
-                "2) A detailed explanation and rationale explaining why this action is prioritized, how it addresses the organization's emissions hotspot, and operational feasibility (rationale). "
-                "3) A concrete, sequential 3-5 step roadmap outlining exactly what the manager and their team must execute from audit to verification (implementation_steps)."
+                "Do not invent data. Keep summaries and rationale concise (1-2 sentences max). "
+                "CRITICAL RULES FOR IMPACT NUMBERS: "
+                f"(1) The organisation's TOTAL emissions are {round(emission_kg, 1)} kgCO2e. "
+                f"(2) No single recommendation may claim more than {round(emission_kg * 0.30, 1)} kgCO2e savings "
+                f"(30% of total is already very aggressive). "
+                "(3) The sum of ALL recommendations combined must not exceed 90% of total emissions. "
+                "(4) Use ONLY the emission numbers from the context provided — do NOT invent large round numbers."
             ),
         },
         {
             "role": "user",
             "content": (
-                f"Generate {target_count} carbon reduction recommendations framed for the manager. "
+                f"Generate {target_count} carbon reduction recommendations. "
                 "Rules: ≥60% must be 'reduction' action_type; max 1 'offset'; "
                 "impact bounds (low=80%, high=120% of central estimate); "
-                "Provide detailed, manager-level explanations (both in summary and rationale) and 3-5 actionable implementation steps per recommendation.\n\n"
+                f"3-5 implementation_steps per recommendation.\n\n"
                 f"Context:\n{compact_context}\n\n"
                 f"Output schema:\n{json.dumps(schema_hint, ensure_ascii=True)}"
             ),
@@ -562,7 +625,7 @@ def _call_openai_compatible(messages: List[Dict[str, str]]) -> Dict[str, Any]:
             "model": model_name,
             "messages": messages,
             "temperature": 0.1,
-            "max_tokens": 2800,
+            "max_tokens": 1500,
             "response_format": {"type": "json_object"},
         }
 
@@ -804,67 +867,31 @@ def _normalize_recommendations(items: List[Dict[str, Any]], allowed_evidence_ids
 
         evidence = rec.get("evidence", []) or []
         normalized_evidence = []
-        catalog_list = list(allowed_evidence_ids) if allowed_evidence_ids else []
         for ev in evidence:
             source_type = str(ev.get("source_type", "manual")).strip()
             if source_type not in allowed_sources:
                 source_type = "manual"
             evidence_id = str(ev.get("evidence_id") or "").strip()
-            matched_id = evidence_id if (allowed_evidence_ids is None or evidence_id in allowed_evidence_ids) else None
-            if not matched_id and allowed_evidence_ids:
-                for candidate in allowed_evidence_ids:
-                    if candidate.lower() in evidence_id.lower() or evidence_id.lower() in candidate.lower():
-                        matched_id = candidate
-                        break
-            if not matched_id and catalog_list:
-                matched_id = catalog_list[len(normalized_evidence) % len(catalog_list)]
-
+            if allowed_evidence_ids is not None and evidence_id and evidence_id not in allowed_evidence_ids:
+                continue
             normalized_evidence.append(
                 {
-                    "evidence_id": matched_id or evidence_id or None,
+                    "evidence_id": evidence_id or None,
                     "source_type": source_type,
                     "source_table": ev.get("source_table"),
-                    "source_record_id": ev.get("source_record_id") or matched_id or evidence_id or None,
+                    "source_record_id": ev.get("source_record_id") or evidence_id or None,
                     "uri": ev.get("uri"),
-                    "citation": ev.get("citation") or f"Reference: {matched_id or 'CarbonSense catalog'}",
-                    "excerpt": ev.get("excerpt") or str(ev.get("citation") or "Verified evidence from organization data."),
+                    "citation": ev.get("citation"),
+                    "excerpt": ev.get("excerpt"),
                 }
             )
-
-        if len(normalized_evidence) < 2 and catalog_list:
-            for fallback_ev_id in catalog_list:
-                if any(ne.get("evidence_id") == fallback_ev_id for ne in normalized_evidence):
-                    continue
-                normalized_evidence.append({
-                    "evidence_id": fallback_ev_id,
-                    "source_type": "manual",
-                    "source_table": "recommendation_kpi_snapshots",
-                    "source_record_id": fallback_ev_id,
-                    "uri": None,
-                    "citation": f"Evidence: {fallback_ev_id}",
-                    "excerpt": "Linked organization baseline evidence.",
-                })
-                if len(normalized_evidence) >= 2:
-                    break
-
-        raw_action = str(rec.get("action_type", "reduction")).strip().lower()
-        if any(x in raw_action for x in ["reduce", "reduction", "efficiency", "energy", "optim", "switch", "retrofit"]):
-            action_type = "reduction"
-        elif any(x in raw_action for x in ["offset", "tree", "plant", "sequest"]):
-            action_type = "offset"
-        elif any(x in raw_action for x in ["policy", "guideline", "rule", "governance"]):
-            action_type = "policy"
-        elif any(x in raw_action for x in ["compliance", "report", "brsr", "audit"]):
-            action_type = "compliance"
-        else:
-            action_type = "reduction"
 
         out.append(
             {
                 "rank": idx,
                 "title": str(rec.get("title", f"Recommendation {idx}"))[:240],
                 "summary": str(rec.get("summary", ""))[:1200],
-                "action_type": action_type,
+                "action_type": str(rec.get("action_type", "reduction"))[:64],
                 "priority": priority,
                 "confidence_score": confidence,
                 "estimated_impact_kg_co2e": impact,
@@ -873,11 +900,7 @@ def _normalize_recommendations(items: List[Dict[str, Any]], allowed_evidence_ids
                 "implementation_cost_usd": rec.get("implementation_cost_usd"),
                 "time_to_impact_months": rec.get("time_to_impact_months"),
                 "rationale": str(rec.get("rationale", ""))[:2000],
-                "implementation_steps": rec.get("implementation_steps") if rec.get("implementation_steps") else [
-                    "Conduct initial assessment",
-                    "Deploy operational intervention",
-                    "Monitor emission impact and calibrate"
-                ],
+                "implementation_steps": rec.get("implementation_steps", []),
                 "impact_model": rec.get("impact_model", {}),
                 "evidence": normalized_evidence,
                 "evidence_score": _evidence_score(normalized_evidence),
@@ -891,25 +914,28 @@ def _rank_and_filter(recs: List[Dict[str, Any]], emission_kg: float, target_coun
     if not recs:
         return []
 
-    # Require at least 1 evidence items per recommendation.
+    # Require at least 2 evidence items per recommendation.
     filtered = [
         r
         for r in recs
-        if len(r.get("evidence", [])) >= 1
-        and float(r.get("confidence_score") or 0.0) >= 0.40
+        if len(r.get("evidence", [])) >= 2
+        and len([s for s in (r.get("implementation_steps") or []) if str(s).strip()]) >= 3
+        and float(r.get("confidence_score") or 0.0) >= 0.45
     ]
     if not filtered:
-        filtered = recs
+        return []
 
     # Enforce action mix constraints.
     reductions = [r for r in filtered if r.get("action_type") == "reduction"]
     offsets = [r for r in filtered if r.get("action_type") == "offset"]
+    min_reductions = 2 if target_count >= 4 else 1
+    if len(reductions) < min_reductions:
+        return []
     if len(offsets) > 1:
         offsets = offsets[:1]
-        filtered = reductions + offsets + [r for r in filtered if r.get("action_type") not in {"reduction", "offset"}]
-
-    if not filtered:
-        filtered = recs
+        filtered = reductions + offsets + \
+            [r for r in filtered if r.get("action_type") not in {
+                "reduction", "offset"}]
 
     max_impact = max([_safe_float(r.get("estimated_impact_kg_co2e"), 0.0)
                      for r in filtered] + [1.0])
@@ -963,6 +989,34 @@ def _rank_and_filter(recs: List[Dict[str, Any]], emission_kg: float, target_coun
     for idx, rec in enumerate(filtered, start=1):
         rec["rank"] = idx
 
+    # Per-recommendation hard cap: no single action can claim more than
+    # 30% of the organisation's total emissions. Guards against any
+    # LLM-hallucinated large round numbers that slipped through.
+    if emission_kg > 0:
+        per_rec_ceiling = emission_kg * 0.30
+        for r in filtered:
+            impact = float(r.get("estimated_impact_kg_co2e") or 0)
+            if impact > per_rec_ceiling:
+                scale = per_rec_ceiling / impact
+                r["estimated_impact_kg_co2e"]      = round(impact * scale, 2)
+                r["estimated_impact_kg_co2e_low"]  = round(float(r.get("estimated_impact_kg_co2e_low")  or 0) * scale, 2)
+                r["estimated_impact_kg_co2e_high"] = round(float(r.get("estimated_impact_kg_co2e_high") or 0) * scale, 2)
+
+    # Cap total impact to 90% of emissions to avoid overclaiming.
+    if emission_kg > 0:
+        cap = emission_kg * 0.9
+        total = sum(float(r.get("estimated_impact_kg_co2e") or 0)
+                    for r in filtered)
+        if total > cap and total > 0:
+            scale = cap / total
+            for r in filtered:
+                r["estimated_impact_kg_co2e"] = round(
+                    float(r.get("estimated_impact_kg_co2e") or 0) * scale, 2)
+                r["estimated_impact_kg_co2e_low"] = round(
+                    float(r.get("estimated_impact_kg_co2e_low") or 0) * scale, 2)
+                r["estimated_impact_kg_co2e_high"] = round(
+                    float(r.get("estimated_impact_kg_co2e_high") or 0) * scale, 2)
+
     return filtered[: max(2, min(target_count, len(filtered)))]
 
 
@@ -1003,7 +1057,7 @@ def _fetch_upload_context(upload_id: str) -> Dict[str, Any]:
     try:
         # Get the upload header row (total_emissions_kg, period, file name)
         upload_res = (
-            supabase.table("emissions_uploads")
+            supabase.table("organization_uploads")
             .select("id,original_file_name,period_start,period_end,total_emissions_kg,organization_id")
             .eq("id", upload_id)
             .limit(1)
@@ -1017,6 +1071,7 @@ def _fetch_upload_context(upload_id: str) -> Dict[str, Any]:
         project_name = str(upload.get("original_file_name") or "Emissions Upload").strip()
         period_start = upload.get("period_start")
         period_end = upload.get("period_end")
+        organization_id = upload.get("organization_id")
 
         # Get emission entries for this upload to build KPI snapshots + breakdown
         entries_res = (
@@ -1030,8 +1085,12 @@ def _fetch_upload_context(upload_id: str) -> Dict[str, Any]:
         # Build category breakdown
         by_category: Dict[str, float] = {}
         for e in entries:
-            cat = str(e.get("category") or "other").lower()
+            cat = str(e.get("category") or "other").lower().strip()
             by_category[cat] = round(by_category.get(cat, 0.0) + float(e.get("co2_kg") or 0), 4)
+
+        computed_from_entries = sum(float(e.get("co2_kg") or 0) for e in entries)
+        if emission_kg <= 0 and computed_from_entries > 0:
+            emission_kg = round(computed_from_entries, 4)
 
         # If no entries but we have total_emissions_kg, still produce minimal KPIs
         if not by_category and emission_kg > 0:
@@ -1045,7 +1104,7 @@ def _fetch_upload_context(upload_id: str) -> Dict[str, Any]:
                 "kpi_unit": "kgCO2e",
                 "period_start": period_start,
                 "period_end": period_end,
-                "meta": {"source": "emissions_upload", "upload_id": upload_id},
+                "meta": {"source": "organization_uploads", "upload_id": upload_id},
             }
             for cat, val in by_category.items()
             if val > 0
@@ -1058,6 +1117,7 @@ def _fetch_upload_context(upload_id: str) -> Dict[str, Any]:
             "period_start": period_start,
             "period_end": period_end,
             "by_category_kg_co2e": by_category,
+            "organization_id": organization_id,
         }
     except Exception as exc:
         print(f"[recommendations] Could not fetch upload context for {upload_id}: {exc}")
@@ -1133,12 +1193,22 @@ def _lookup_cached_session(org_id: str, cache_key: str) -> Optional[Dict[str, An
         recs = rec_res.data or []
         if not recs:
             return None  # Session exists but has no recs — re-generate
+
+        # Discard stale cached sessions that have 0 impact or 0 emission
+        total_impact = sum(float(r.get("estimated_impact_kg_co2e") or 0) for r in recs)
+        session_emission = float(session.get("emission_kg") or 0)
+        if total_impact <= 0 or session_emission <= 0:
+            print(f"[recommendations] Cached session {session['id']} has invalid impact ({total_impact}) or emission ({session_emission}) — skipping cache to regenerate")
+            return None
+
         return {
             "session_id": session["id"],
             "llm_used": True,
             "llm_warning": session.get("error_message"),
             "recommendations": recs,
             "_cache_hit": True,
+            "emission_kg": float(session.get("emission_kg") or 0),
+            "project_name": session.get("project_name"),
         }
     except Exception:
         return None  # Cache lookup failure is non-fatal — just re-generate
@@ -1149,20 +1219,43 @@ def generate_and_store_recommendations(payload: Dict[str, Any], force_refresh: b
     org_id = payload["organization_id"]
     emissions_upload_id = str(payload.get("emissions_upload_id") or "").strip() or None
 
+    # If no upload_id was passed and emission_kg is 0, auto-resolve the latest upload for this org
+    if not emissions_upload_id and float(payload.get("emission_kg") or 0) <= 0:
+        try:
+            latest_upload = (
+                supabase.table("organization_uploads")
+                .select("id")
+                .eq("organization_id", org_id)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if latest_upload.data:
+                emissions_upload_id = str(latest_upload.data[0]["id"])
+                print(f"[recommendations] Auto-selected latest upload {emissions_upload_id} for org={org_id}")
+        except Exception as exc:
+            print(f"[recommendations] Could not auto-fetch latest upload: {exc}")
+
     # ── If an upload_id is given, enrich payload with that upload's actual data ─
     # This ensures each upload gets its own tailored context rather than relying
     # on whatever was cached in sessionStorage at the frontend.
     if emissions_upload_id:
         upload_ctx = _fetch_upload_context(emissions_upload_id)
-        if upload_ctx:
+        if upload_ctx and upload_ctx.get("emission_kg", 0) > 0:
             # Merge: upload data takes precedence over anything passed from frontend
             payload = {
                 **payload,
                 "emission_kg": upload_ctx["emission_kg"],
                 "project_name": upload_ctx.get("project_name") or payload.get("project_name"),
-                "kpi_snapshots": upload_ctx["kpi_snapshots"],
+                "kpi_snapshots": upload_ctx.get("kpi_snapshots") or payload.get("kpi_snapshots", []),
                 "emissions_upload_id": emissions_upload_id,
             }
+            if upload_ctx.get("by_category_kg_co2e"):
+                payload.setdefault("teme_result", {})
+                if not isinstance(payload["teme_result"], dict):
+                    payload["teme_result"] = {}
+                payload["teme_result"].setdefault("csv_summary", {})
+                payload["teme_result"]["csv_summary"]["by_category_kg_co2e"] = upload_ctx["by_category_kg_co2e"]
             print(f"[recommendations] Enriched payload from upload {emissions_upload_id}: "
                   f"{upload_ctx['emission_kg']:.1f} kgCO2e, {len(upload_ctx['kpi_snapshots'])} KPIs")
 
@@ -1396,6 +1489,8 @@ def generate_and_store_recommendations(payload: Dict[str, Any], force_refresh: b
         "llm_used": llm_used,
         "llm_warning": llm_warning,
         "recommendations": inserted_rows,
+        "emission_kg": float(llm_payload.get("emission_kg") or 0),
+        "project_name": llm_payload.get("project_name"),
     }
 
 

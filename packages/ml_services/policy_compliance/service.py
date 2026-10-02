@@ -31,29 +31,30 @@ def _normalize_multiline_text(value: str) -> str:
     return "\n".join(cleaned).strip()
 
 
-def _llm_config() -> Dict[str, str]:
-    from dotenv import load_dotenv
-    from pathlib import Path
-    _REPO_ROOT = Path(__file__).resolve().parents[3]
-    load_dotenv(_REPO_ROOT / ".env", override=True)
+# Cache LLM config at module load — load_dotenv() does disk I/O and should not
+# be called on every request. dotenv is already loaded by supabase_client at startup.
+_LLM_CONFIG_CACHE: Dict[str, str] | None = None
 
-    provider = os.getenv("LLM_PROVIDER", "openrouter").strip().lower()
-    base_url = os.getenv("LLM_API_BASE_URL",
-                         "https://openrouter.ai/api/v1").strip().rstrip("/")
-    model = os.getenv("LLM_MODEL", "openrouter/auto").strip()
-    api_key = os.getenv("LLM_API_KEY", "").strip()
-    site_url = os.getenv("LLM_SITE_URL", "").strip()
-    app_name = os.getenv("LLM_APP_NAME", "CarbonSense").strip()
-    embed_model = os.getenv("LLM_EMBED_MODEL", "").strip()
-    return {
-        "provider": provider,
-        "base_url": base_url,
-        "model": model,
-        "api_key": api_key,
-        "site_url": site_url,
-        "app_name": app_name,
-        "embed_model": embed_model,
+def _llm_config() -> Dict[str, str]:
+    global _LLM_CONFIG_CACHE
+    if _LLM_CONFIG_CACHE is not None:
+        return _LLM_CONFIG_CACHE
+
+    from pathlib import Path
+    from dotenv import load_dotenv
+    _REPO_ROOT = Path(__file__).resolve().parents[3]
+    load_dotenv(_REPO_ROOT / ".env", override=False)  # override=False: env vars already set win
+
+    _LLM_CONFIG_CACHE = {
+        "provider": os.getenv("LLM_PROVIDER", "openrouter").strip().lower(),
+        "base_url": os.getenv("LLM_API_BASE_URL", "https://openrouter.ai/api/v1").strip().rstrip("/"),
+        "model": os.getenv("LLM_MODEL", "openrouter/auto").strip(),
+        "api_key": os.getenv("LLM_API_KEY", "").strip(),
+        "site_url": os.getenv("LLM_SITE_URL", "").strip(),
+        "app_name": os.getenv("LLM_APP_NAME", "CarbonSense").strip(),
+        "embed_model": os.getenv("LLM_EMBED_MODEL", "").strip(),
     }
+    return _LLM_CONFIG_CACHE
 
 
 def _embedding_enabled() -> bool:

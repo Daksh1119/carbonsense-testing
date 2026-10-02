@@ -80,11 +80,14 @@ export const useUserStore = create<UserState>()(
         isAuthenticated: state.isAuthenticated,
         // Do NOT persist session — let AuthProvider re-hydrate from Supabase
       }),
-      // After rehydration, force isLoading=true so ProtectedRoute waits
-      // for AuthProvider to finish the Supabase session check before rendering.
+      // After rehydration, only force isLoading=true when there is NO persisted
+      // user. If a user is already in localStorage, AuthProvider's fast path
+      // will immediately set isLoading=false so the page renders without a
+      // blocking spinner on every navigation.
       onRehydrateStorage: () => (state) => {
         if (state) {
-          state.isLoading = true;
+          // Only block on loading if there's no persisted authenticated user
+          state.isLoading = !(state.user?.id && state.isAuthenticated);
         }
       },
     }

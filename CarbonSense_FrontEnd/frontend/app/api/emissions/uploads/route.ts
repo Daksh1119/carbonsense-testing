@@ -224,6 +224,17 @@ function isDuplicateUploadError(message?: string): boolean {
   return text.includes("duplicate key value violates unique constraint");
 }
 
+function isNetworkError(message?: string): boolean {
+  const text = String(message || "").toLowerCase();
+  return (
+    text.includes("enotfound") ||
+    text.includes("fetch failed") ||
+    text.includes("network error") ||
+    text.includes("econnrefused") ||
+    text.includes("etimedout")
+  );
+}
+
 export async function POST(req: NextRequest) {
   let payload: UploadPayload;
 
@@ -462,22 +473,41 @@ export async function GET(req: NextRequest) {
     return NextResponse.json([], { status: 200 });
   }
 
-  let { data, error } = await query;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let data: any[] | null = null;
+  let error: { message?: string } | null = null;
 
-  if ((!data || data.length === 0) && hasValidOrganizationId && hasValidUserId) {
-    const fallbackResult = await supabase
-      .from("organization_uploads")
-      .select(
-        "id, organization_id, uploaded_by, source_type, original_file_name, created_at, period_start, period_end, total_emissions_kg, total_emissions_tco2e, record_count"
-      )
-      .eq("uploaded_by", userId)
-      .order("created_at", { ascending: false });
+  try {
+    const result = await query;
+    data = result.data;
+    error = result.error;
 
-    data = fallbackResult.data;
-    error = fallbackResult.error;
+    if ((!data || data.length === 0) && hasValidOrganizationId && hasValidUserId) {
+      const fallbackResult = await supabase
+        .from("organization_uploads")
+        .select(
+          "id, organization_id, uploaded_by, source_type, original_file_name, created_at, period_start, period_end, total_emissions_kg, total_emissions_tco2e, record_count"
+        )
+        .eq("uploaded_by", userId)
+        .order("created_at", { ascending: false });
+
+      data = fallbackResult.data;
+      error = fallbackResult.error;
+    }
+  } catch (thrownError) {
+    // Network-level throw (e.g. ENOTFOUND, fetch failed) — treat as empty dataset.
+    const msg = thrownError instanceof Error ? thrownError.message : String(thrownError);
+    if (isNetworkError(msg)) {
+      return NextResponse.json([], { status: 200 });
+    }
+    return NextResponse.json({ detail: msg || "Failed to load uploads" }, { status: 500 });
   }
 
   if (error) {
+    // Network/DNS errors mean Supabase is unreachable — return empty list so UI still renders.
+    if (isNetworkError(error.message)) {
+      return NextResponse.json([], { status: 200 });
+    }
     return NextResponse.json({ detail: error.message || "Failed to load uploads" }, { status: 500 });
   }
 
@@ -488,35 +518,40 @@ export async function GET(req: NextRequest) {
       .map((row) => row.id);
 
     if (unpopulatedIds.length > 0) {
-      const { data: entryDates } = await supabase
-        .from("emission_entries")
-        .select("upload_id, entry_date")
-        .in("upload_id", unpopulatedIds);
+      try {
+        const { data: entryDates } = await supabase
+          .from("emission_entries")
+          .select("upload_id, entry_date")
+          .in("upload_id", unpopulatedIds);
 
-      if (entryDates && entryDates.length > 0) {
-        const boundsMap = new Map<string, { min: string; max: string }>();
-        for (const entry of entryDates) {
-          if (!entry.entry_date) continue;
-          const current = boundsMap.get(entry.upload_id) || { min: entry.entry_date, max: entry.entry_date };
-          if (entry.entry_date < current.min) current.min = entry.entry_date;
-          if (entry.entry_date > current.max) current.max = entry.entry_date;
-          boundsMap.set(entry.upload_id, current);
-        }
+        if (entryDates && entryDates.length > 0) {
+          const boundsMap = new Map<string, { min: string; max: string }>();
+          for (const entry of entryDates) {
+            if (!entry.entry_date) continue;
+            const current = boundsMap.get(entry.upload_id) || { min: entry.entry_date, max: entry.entry_date };
+            if (entry.entry_date < current.min) current.min = entry.entry_date;
+            if (entry.entry_date > current.max) current.max = entry.entry_date;
+            boundsMap.set(entry.upload_id, current);
+          }
 
-        for (const row of data) {
-          const bounds = boundsMap.get(row.id);
-          if (bounds) {
-            row.period_start = bounds.min;
-            row.period_end = bounds.max;
+          for (const row of data) {
+            const bounds = boundsMap.get(row.id);
+            if (bounds) {
+              row.period_start = bounds.min;
+              row.period_end = bounds.max;
 
-            // Persist back to Supabase in background
-            supabase
-              .from("organization_uploads")
-              .update({ period_start: bounds.min, period_end: bounds.max })
-              .eq("id", row.id)
-              .then(() => {});
+              // Persist back to Supabase in background (best-effort, ignore errors)
+              void Promise.resolve(
+                supabase
+                  .from("organization_uploads")
+                  .update({ period_start: bounds.min, period_end: bounds.max })
+                  .eq("id", row.id)
+              ).catch(() => {});
+            }
           }
         }
+      } catch {
+        // Ignore period auto-repair errors — not critical to serve the response.
       }
     }
   }
@@ -526,5 +561,13 @@ export async function GET(req: NextRequest) {
     file_format: inferFileFormat(row.source_type, row.original_file_name, undefined),
   }));
 
-  return NextResponse.json(normalized, { status: 200 });
+  return NextResponse.json(normalized, {
+    status: 200,
+    headers: {
+      // Return cached data instantly; refresh in background after 30s.
+      // max-age=30 means fresh for 30s; stale-while-revalidate=60 serves
+      // the cached copy for up to 60s more while fetching a new copy.
+      'Cache-Control': 'private, max-age=30, stale-while-revalidate=60',
+    },
+  });
 }

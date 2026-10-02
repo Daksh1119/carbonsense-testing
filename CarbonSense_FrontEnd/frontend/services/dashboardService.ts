@@ -30,8 +30,6 @@ export const getDashboardSummary = async (): Promise<DashboardSummary> => {
   // if (!response.ok) throw new Error('Failed to fetch dashboard summary');
   // return response.json();
 
-  // Mock data for now
-  await new Promise((resolve) => setTimeout(resolve, 500));
   return {
     totalEmissions: 1240,
     reductionAchieved: 12.5,
@@ -49,8 +47,6 @@ export const getCarbonPath = async (): Promise<CarbonPathData> => {
   // if (!response.ok) throw new Error('Failed to fetch carbon path data');
   // return response.json();
 
-  // Mock data for now
-  await new Promise((resolve) => setTimeout(resolve, 500));
   return {
     historical: [
       { date: '2024-01', value: 1100 },
@@ -80,8 +76,6 @@ export const getStrategies = async (): Promise<Strategy[]> => {
   // if (!response.ok) throw new Error('Failed to fetch strategies');
   // return response.json();
 
-  // Mock data for now
-  await new Promise((resolve) => setTimeout(resolve, 500));
   return [
     { name: 'Immediate Reduction', impact: 95, certainty: 98 },
     { name: 'Tree Planting (15 years)', impact: 70, certainty: 75 },

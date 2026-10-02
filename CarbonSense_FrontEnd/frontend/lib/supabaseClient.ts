@@ -24,6 +24,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
+    // Use a fixed storage key to avoid WebLock conflicts in React Strict Mode
+    // and when Supabase is temporarily unreachable.
+    storageKey: 'carbonsense-auth-token',
+    lock: async <R>(_name: string, _acquireTimeout: number, fn: () => Promise<R>): Promise<R> => {
+      // Bypass the WebLock API entirely to prevent AbortError: Lock broken
+      // by another request with the 'steal' option.
+      return fn();
+    },
   },
 });
 

@@ -29,9 +29,7 @@ export const getEmissions = async (params?: EmissionsQueryParams): Promise<Emiss
   // if (!response.ok) throw new Error('Failed to fetch emissions');
   // return response.json();
 
-  // Mock data for now
-  await new Promise((resolve) => setTimeout(resolve, 800));
-
+  // Mock data (no artificial delay)
   const mockEntries: EmissionEntry[] = [
     {
       id: 'EMI-0001',
@@ -89,9 +87,6 @@ export const addEmission = async (
   // if (!response.ok) throw new Error('Failed to add emission');
   // return response.json();
 
-  // Mock API call
-  await new Promise((resolve) => setTimeout(resolve, 1000));
-
   const newEmission: EmissionEntry = {
     ...emission,
     id: `EMI-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`,
@@ -117,9 +112,6 @@ export const updateEmission = async (
   // if (!response.ok) throw new Error('Failed to update emission');
   // return response.json();
 
-  // Mock API call
-  await new Promise((resolve) => setTimeout(resolve, 800));
-
   return {
     id,
     ...updates,
@@ -135,7 +127,4 @@ export const deleteEmission = async (id: string): Promise<void> => {
   //   method: 'DELETE',
   // });
   // if (!response.ok) throw new Error('Failed to delete emission');
-
-  // Mock API call
-  await new Promise((resolve) => setTimeout(resolve, 500));
 };

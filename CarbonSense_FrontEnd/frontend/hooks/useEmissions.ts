@@ -160,8 +160,7 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
       // const response = await fetch(`/api/emissions?${queryParams}`);
       // const data = await response.json();
 
-      // Mock data for now
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      // Mock data (no artificial delay)
 
       const mockEmissions: EmissionEntry[] = [
         {
@@ -209,8 +208,7 @@ export const useEmissions = (params?: UseEmissionsParams): UseEmissionsReturn =>
       // });
       // const newEmission = await response.json();
 
-      // Mock API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Mock API call (no artificial delay)
 
       const newEmission: EmissionEntry = {
         ...emission,

@@ -108,7 +108,7 @@ export const getFundingOpportunities = async (): Promise<FundingOpportunity[]> =
   // return response.json();
 
   // Mock data for now
-  await new Promise((resolve) => setTimeout(resolve, 600));
+  // Mock data (no artificial delay)
 
   return [
     {
@@ -148,5 +148,5 @@ export const updatePolicyStatus = async (
   // if (!response.ok) throw new Error('Failed to update policy status');
 
   // Mock API call
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  // Mock API call (no artificial delay)
 };
