@@ -112,23 +112,50 @@ The platform uses a strict RBAC model with three roles:
 
 ---
 
-### 2.2 Ingestion and Emissions Engine
+### 2.2 Ingestion and Emissions Engine (Approach B Unified Emitter Architecture)
 
-The ingestion flow computes emissions from a canonical company CSV schema:
+The ingestion flow computes emissions from a flexible, multi-emitter schema compliant with GHG Protocol Scope 1, 2, and 3 accounting:
 $$\text{Emissions (kgCO}_2\text{e)} = \text{Activity Data} \times \text{Emission Factor}$$
 
-It outputs:
-- Category & Scope breakdown (Scope 1, Scope 2, Scope 3)
-- Top emitting departments and employees
-- KPI snapshots & upload history logs
+**Unified Emitter Architecture (`emitter_type` + `emitter_id` + `emitter_name`):**
+Rather than attributing all organizational emissions solely to employees, the engine categorizes emissions by physical asset source:
+- **`facility` (Scope 2 & 3):** Fixed building infrastructure, campus electricity meters (`electricity_grid_kwh`), central HVAC chillers, and municipal solid waste.
+- **`machinery` (Scope 1):** Operational engines, backup diesel generators (DG sets: `diesel_liter`), delivery fleet trucks (`petrol_liter`), and warehouse forklifts (`cng_kg`).
+- **`employee` (Scope 3):** Personnel-driven activities, business air travel (`flight_km_economy`), intercity rail journeys (`rail_km`), hotel stays, and cafeteria meals.
+
+**100% Backward Compatibility:**
+- Ingestion pipelines fully support legacy CSV files that only contain `employee_id` and `employee_name`.
+- Legacy rows automatically alias to `emitter_type = "employee"`, `emitter_id = employee_id`, and `emitter_name = employee_name` with zero breaking changes or errors.
+- Automatic emitter inference based on `activity_type` handles unclassified or ambiguous asset entries.
+
+**Granular Analytical Outputs:**
+- **Breakdown by Emitter Class:** `by_emitter_type_kg_co2e` (e.g. `{"facility": 58%, "machinery": 29%, "employee": 13%}`)
+- **Asset-Specific Leaderboards:** `top_facilities_kg_co2e`, `top_machinery_kg_co2e`, and `top_employees_kg_co2e`
+- **Scope & Category Breakdown:** Scope 1, Scope 2, Scope 3 with KPI snapshots for each emitter class
+- **Migrated 12-Month Sample Datasets:** All 12 bulk sample files in `data/raw/sample_org_data/monthly_emissions_bulk_12m/` (4 CSV, 4 TSV, 4 JSON) are pre-mapped with realistic physical facility IDs (`FAC-MUM-HQ`, `FAC-DEL-BR`), fleet/machinery IDs (`FLEET-TRUCK-01`, `POOL-VAN-03`, `FORKLIFT-CNG-02`), and personnel records.
 
 ---
 
 ### 2.3 AI Recommendation & Task Delegation Service
 
-Recommendations are orchestrated using Groq (`llama-3.3-70b-versatile`) or OpenAI-compatible LLMs with deterministic calculation layers and fallback catalogs.
+Recommendations are orchestrated using Groq (`llama-3.3-70b-versatile` / `gpt-oss-120b`) or OpenAI-compatible LLMs with deterministic calculation layers, rigorous criteria guardrails, and catalog fallback.
 
-**Features:**
+**Token Limits & Generation Envelope:**
+- **Output Completion Limit (`max_tokens`):** **`2,800 tokens`** to generate 3–5 comprehensive recommendations with executive summaries, multi-sentence managerial rationales, 3–5 step execution roadmaps, and evidence citations without mid-JSON truncation.
+- **Input Context Budget:** **`~1,200 tokens`** compact context builder keeping payloads well within free-tier API rate limits.
+- **Total Request Envelope:** $\approx 4,000\text{ tokens}$.
+
+**Response Criteria & Guardrails (Notebook Point 6):**
+All AI-generated recommendations are validated against 6 deterministic criteria:
+1. **Evidence Grounding Criteria:** Every recommendation must cite $\ge 2$ verified evidence items from the organization's catalog (GHG Protocol, BEE, ISO 14064).
+2. **Anti-Greenwashing Action Mix:** $\ge 60\%$ must be direct operational carbon reductions; capped at **max 1 offset** to prevent bypassing actual decarbonization.
+3. **Plausibility & Anti-Overclaiming Cap:** Total recommended carbon reductions cannot exceed **90% of total company emissions**; impact estimates provide $[80\%, 120\%]$ low/high bounds.
+4. **Multi-Objective Feasibility Scoring:** Ranks actions using weighted criteria:
+   $$\text{Score} = 0.32(\text{Evidence}) + 0.24(\text{Confidence}) + 0.20(\text{Hotspot Relevance}) + 0.14(\text{Impact}) + 0.10(\text{Feasibility})$$
+5. **Auditor / Evaluator Guard:** Built-in critic (`_validate_with_evaluator`) flags unrealistic cost/timeline claims and removes duplicates.
+6. **Deterministic Rule-Based Fallback Engine:** Instantly serves domain-curated templates if the LLM provider experiences network timeouts or rate limits.
+
+**Key Features:**
 - **Manager-Targeted AI Prompts**: Prompts explicitly instruct the engine to generate executive summaries, detailed managerial rationales, and 3-5 concrete implementation steps.
 - **Deterministic Impact Calculation**: Applies verified GHG Protocol reduction factors against organization activity data so impact figures are mathematically grounded.
 - **Enriched API Payload**: `GET /recommendations/items` delivers complete structured metadata: `summary`, `rationale`, `implementation_steps`, `estimated_impact_kg_co2e`, `implementation_cost_usd`, `time_to_impact_months`, and `confidence_score`.

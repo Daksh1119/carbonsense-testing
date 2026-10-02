@@ -175,21 +175,27 @@ export default function DataIngestionPage() {
           <div className="px-5 pb-4 space-y-4 border-t border-slate-700/40">
             {/* Required Columns */}
             <div className="pt-4">
-              <h4 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                <CheckCircle className="size-3.5" />
-                Required Columns
-              </h4>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <CheckCircle className="size-3.5" />
+                  Required Columns (Approach B Unified Schema)
+                </h4>
+                <span className="text-[11px] text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700">
+                  Legacy <code className="text-emerald-300">employee_id</code> &amp; <code className="text-emerald-300">employee_name</code> backward-compatible
+                </span>
+              </div>
               <div className="flex flex-wrap gap-2">
                 {[
                   { name: 'record_id', hint: 'Unique row ID' },
                   { name: 'organization_id', hint: 'Your org ID' },
-                  { name: 'employee_id', hint: 'Employee ID' },
-                  { name: 'employee_name', hint: 'Full name' },
+                  { name: 'emitter_type', hint: 'facility | machinery | employee' },
+                  { name: 'emitter_id', hint: 'Asset or Person ID' },
+                  { name: 'emitter_name', hint: 'Asset or Person Name' },
                   { name: 'department', hint: 'Dept name' },
                   { name: 'date', hint: 'YYYY-MM-DD' },
                   { name: 'activity_type', hint: 'See activity types' },
                   { name: 'quantity', hint: 'Numeric value' },
-                  { name: 'unit', hint: 'e.g. kWh, liters' },
+                  { name: 'unit', hint: 'e.g. kWh, liter, km' },
                 ].map((col) => (
                   <span
                     key={col.name}
@@ -200,6 +206,43 @@ export default function DataIngestionPage() {
                     <span className="text-emerald-500/50 font-sans text-[10px]">({col.hint})</span>
                   </span>
                 ))}
+              </div>
+            </div>
+
+            {/* Emitter Types Guide */}
+            <div className="bg-slate-800/60 border border-slate-700/50 rounded-lg p-3">
+              <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Info className="size-3.5 text-sky-400" />
+                Emitter Categories (GHG Protocol Asset Mapping)
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                <div className="bg-slate-900/60 rounded-md p-2 border border-slate-700/40">
+                  <div className="font-semibold text-emerald-400 flex items-center gap-1 mb-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    facility
+                  </div>
+                  <p className="text-slate-400 text-[11px] leading-relaxed">
+                    Building grid power (Scope 2), HVAC chillers, natural gas heating, office waste.
+                  </p>
+                </div>
+                <div className="bg-slate-900/60 rounded-md p-2 border border-slate-700/40">
+                  <div className="font-semibold text-amber-400 flex items-center gap-1 mb-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                    machinery
+                  </div>
+                  <p className="text-slate-400 text-[11px] leading-relaxed">
+                    Backup diesel generators (DG sets), warehouse forklifts, delivery fleet vehicles.
+                  </p>
+                </div>
+                <div className="bg-slate-900/60 rounded-md p-2 border border-slate-700/40">
+                  <div className="font-semibold text-sky-400 flex items-center gap-1 mb-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-sky-400"></span>
+                    employee
+                  </div>
+                  <p className="text-slate-400 text-[11px] leading-relaxed">
+                    Business air travel, train journeys, daily commuting, hotel stays, cafeteria meals.
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -254,9 +297,16 @@ export default function DataIngestionPage() {
             </div>
 
             {/* Sample row hint */}
-            <div className="bg-slate-800/50 border border-slate-700/30 rounded-lg px-3 py-2">
-              <p className="text-[11px] text-slate-500 font-mono leading-relaxed">
-                <span className="text-slate-400">Example row:</span> REC-001, ORG-01, EMP-101, John Doe, Operations, 2025-03-15, electricity_grid_kwh, 500, kWh
+            <div className="bg-slate-800/50 border border-slate-700/30 rounded-lg p-3 space-y-1.5 font-mono text-[11px]">
+              <p className="text-slate-400 font-semibold mb-1 font-sans text-xs">Example Rows by Emitter Type:</p>
+              <p className="text-slate-300 truncate">
+                <span className="text-emerald-400 font-semibold">[Facility]</span> REC-001, ORG-01, facility, FAC-MUM-HQ, Mumbai Main Campus, Operations, 2026-04-03, electricity_grid_kwh, 1120, kWh
+              </p>
+              <p className="text-slate-300 truncate">
+                <span className="text-amber-400 font-semibold">[Machinery]</span> REC-002, ORG-01, machinery, DG-SET-01, Cummins 500kVA Generator, Facilities, 2026-04-08, diesel_liter, 250, liter
+              </p>
+              <p className="text-slate-300 truncate">
+                <span className="text-sky-400 font-semibold">[Employee]</span> REC-003, ORG-01, employee, EMP-104, Sarah Chen, Sales, 2026-04-12, flight_km_economy, 1350, km
               </p>
             </div>
           </div>

@@ -11,9 +11,29 @@ export interface EmissionsSummary {
   breakdown: {
     by_category_kg_co2e: Record<string, number>;
     by_scope_kg_co2e: Record<string, number>;
+    by_emitter_type_kg_co2e?: Record<string, number>;
     top_employees_kg_co2e: Array<{
-      employee_id: string;
-      employee_name: string;
+      employee_id?: string;
+      employee_name?: string;
+      emitter_id?: string;
+      emitter_name?: string;
+      emitter_type?: string;
+      department: string;
+      emissions_kg_co2e: number;
+      records: number;
+    }>;
+    top_machinery_kg_co2e?: Array<{
+      emitter_id: string;
+      emitter_name: string;
+      emitter_type?: string;
+      department: string;
+      emissions_kg_co2e: number;
+      records: number;
+    }>;
+    top_facilities_kg_co2e?: Array<{
+      emitter_id: string;
+      emitter_name: string;
+      emitter_type?: string;
       department: string;
       emissions_kg_co2e: number;
       records: number;
@@ -40,9 +60,29 @@ export interface IngestionCalculateResponse {
   breakdown: {
     by_category_kg_co2e: Record<string, number>;
     by_scope_kg_co2e: Record<string, number>;
+    by_emitter_type_kg_co2e?: Record<string, number>;
     top_employees_kg_co2e: Array<{
-      employee_id: string;
-      employee_name: string;
+      employee_id?: string;
+      employee_name?: string;
+      emitter_id?: string;
+      emitter_name?: string;
+      emitter_type?: string;
+      department: string;
+      emissions_kg_co2e: number;
+      records: number;
+    }>;
+    top_machinery_kg_co2e?: Array<{
+      emitter_id: string;
+      emitter_name: string;
+      emitter_type?: string;
+      department: string;
+      emissions_kg_co2e: number;
+      records: number;
+    }>;
+    top_facilities_kg_co2e?: Array<{
+      emitter_id: string;
+      emitter_name: string;
+      emitter_type?: string;
       department: string;
       emissions_kg_co2e: number;
       records: number;

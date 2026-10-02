@@ -42,8 +42,6 @@ CATEGORY_MAP: Dict[str, str] = {
 REQUIRED_COLUMNS = [
     "record_id",
     "organization_id",
-    "employee_id",
-    "employee_name",
     "department",
     "date",
     "activity_type",
@@ -51,7 +49,16 @@ REQUIRED_COLUMNS = [
     "unit",
 ]
 
+# Legacy and flexible column sets
+EMITTER_ID_CANDIDATES = ["emitter_id", "employee_id", "asset_id"]
+EMITTER_NAME_CANDIDATES = ["emitter_name", "employee_name", "asset_name"]
+
 OPTIONAL_COLUMNS = [
+    "emitter_type",
+    "emitter_id",
+    "emitter_name",
+    "employee_id",
+    "employee_name",
     "source_category",
     "spend_inr",
     "vendor",
@@ -99,8 +106,9 @@ def _normalize_date_string(value: Any) -> str:
 @dataclass
 class RowEmission:
     record_id: str
-    employee_id: str
-    employee_name: str
+    emitter_type: str
+    emitter_id: str
+    emitter_name: str
     department: str
     date: str
     activity_type: str
@@ -111,6 +119,8 @@ class RowEmission:
     emission_factor: float
     emissions_kg_co2e: float
     factor_source: str
+    employee_id: str = ""
+    employee_name: str = ""
 
 
 
@@ -126,6 +136,12 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
 
 def _validate_headers(headers: List[str]) -> None:
     missing = [c for c in REQUIRED_COLUMNS if c not in headers]
+    has_id = any(c in headers for c in EMITTER_ID_CANDIDATES)
+    has_name = any(c in headers for c in EMITTER_NAME_CANDIDATES)
+    if not has_id:
+        missing.append("emitter_id (or employee_id)")
+    if not has_name:
+        missing.append("emitter_name (or employee_name)")
     if missing:
         raise ValueError(f"Missing required columns: {', '.join(missing)}")
 
@@ -136,6 +152,29 @@ def _canonical_key(key: str) -> str:
 
 def _normalize_row_keys(row: Dict[str, Any]) -> Dict[str, Any]:
     return {_canonical_key(k): v for k, v in row.items()}
+
+
+def _infer_emitter_type(row: Dict[str, Any]) -> str:
+    raw_type = str(row.get("emitter_type") or "").strip().lower()
+    if raw_type in {"employee", "machinery", "facility"}:
+        return raw_type
+    if raw_type in {"machine", "equipment", "vehicle", "generator", "fleet"}:
+        return "machinery"
+    if raw_type in {"building", "plant", "site", "office", "campus"}:
+        return "facility"
+    if raw_type in {"person", "staff", "worker", "user"}:
+        return "employee"
+
+    # If employee_id is explicitly provided and no machine/facility context, assume employee
+    if row.get("employee_id") and not row.get("emitter_type"):
+        return "employee"
+
+    activity_type = str(row.get("activity_type", "")).strip().lower()
+    if activity_type in {"electricity_grid_kwh", "landfill_waste_kg", "recycled_waste_kg", "paper_kg"}:
+        return "facility"
+    if activity_type in {"diesel_liter", "petrol_liter", "cng_kg"}:
+        return "machinery"
+    return "employee"
 
 
 def _validate_row_schema(row: Dict[str, Any], row_index: int, seen_record_ids: set) -> None:
@@ -169,10 +208,28 @@ def _validate_row_schema(row: Dict[str, Any], row_index: int, seen_record_ids: s
 
     if not str(row.get("organization_id", "")).strip():
         raise ValueError("organization_id is required")
-    if not str(row.get("employee_id", "")).strip():
-        raise ValueError("employee_id is required")
-    if not str(row.get("employee_name", "")).strip():
-        raise ValueError("employee_name is required")
+
+    # Unified emitter resolution with legacy fallback
+    emitter_id = str(
+        row.get("emitter_id") or row.get("employee_id") or row.get("asset_id") or ""
+    ).strip()
+    if not emitter_id:
+        raise ValueError("emitter_id (or employee_id) is required")
+
+    emitter_name = str(
+        row.get("emitter_name") or row.get("employee_name") or row.get("asset_name") or ""
+    ).strip()
+    if not emitter_name:
+        raise ValueError("emitter_name (or employee_name) is required")
+
+    emitter_type = _infer_emitter_type(row)
+
+    row["emitter_id"] = emitter_id
+    row["emitter_name"] = emitter_name
+    row["emitter_type"] = emitter_type
+    row["employee_id"] = emitter_id
+    row["employee_name"] = emitter_name
+
     if not str(row.get("department", "")).strip():
         raise ValueError("department is required")
 
@@ -203,8 +260,9 @@ def calculate_emissions_from_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             computed_rows.append(
                 RowEmission(
                     record_id=str(row.get("record_id", f"row-{idx}")),
-                    employee_id=str(row.get("employee_id", "")),
-                    employee_name=str(row.get("employee_name", "")),
+                    emitter_type=str(row.get("emitter_type", "employee")),
+                    emitter_id=str(row.get("emitter_id", row.get("employee_id", ""))),
+                    emitter_name=str(row.get("emitter_name", row.get("employee_name", ""))),
                     department=str(row.get("department", "")),
                     date=str(row.get("date", "")),
                     activity_type=str(row.get("activity_type", "")),
@@ -215,6 +273,8 @@ def calculate_emissions_from_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
                     emission_factor=factor,
                     emissions_kg_co2e=round(emissions, 4),
                     factor_source=source,
+                    employee_id=str(row.get("employee_id", row.get("emitter_id", ""))),
+                    employee_name=str(row.get("employee_name", row.get("emitter_name", ""))),
                 )
             )
         except Exception as e:
@@ -228,28 +288,71 @@ def calculate_emissions_from_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     by_category: Dict[str, float] = {}
     by_scope: Dict[str, float] = {}
+    by_emitter_type: Dict[str, float] = {}
     by_employee: Dict[str, Dict[str, Any]] = {}
+    by_machinery: Dict[str, Dict[str, Any]] = {}
+    by_facility: Dict[str, Dict[str, Any]] = {}
 
     for r in computed_rows:
         by_category[r.category] = round(by_category.get(r.category, 0.0) + r.emissions_kg_co2e, 4)
         by_scope[r.scope] = round(by_scope.get(r.scope, 0.0) + r.emissions_kg_co2e, 4)
-
-        emp_key = r.employee_id or r.employee_name or "unknown"
-        if emp_key not in by_employee:
-            by_employee[emp_key] = {
-                "employee_id": r.employee_id,
-                "employee_name": r.employee_name,
-                "department": r.department,
-                "emissions_kg_co2e": 0.0,
-                "records": 0,
-            }
-        by_employee[emp_key]["emissions_kg_co2e"] = round(
-            by_employee[emp_key]["emissions_kg_co2e"] + r.emissions_kg_co2e, 4
+        by_emitter_type[r.emitter_type] = round(
+            by_emitter_type.get(r.emitter_type, 0.0) + r.emissions_kg_co2e, 4
         )
-        by_employee[emp_key]["records"] += 1
+
+        key = r.emitter_id or r.emitter_name or "unknown"
+        entry = {
+            "emitter_id": r.emitter_id,
+            "emitter_name": r.emitter_name,
+            "emitter_type": r.emitter_type,
+            "employee_id": r.emitter_id,
+            "employee_name": r.emitter_name,
+            "department": r.department,
+            "emissions_kg_co2e": 0.0,
+            "records": 0,
+        }
+
+        if r.emitter_type == "machinery":
+            target_map = by_machinery
+        elif r.emitter_type == "facility":
+            target_map = by_facility
+        else:
+            target_map = by_employee
+
+        if key not in target_map:
+            target_map[key] = entry
+        target_map[key]["emissions_kg_co2e"] = round(
+            target_map[key]["emissions_kg_co2e"] + r.emissions_kg_co2e, 4
+        )
+        target_map[key]["records"] += 1
+
+        # Also maintain by_employee for legacy callers if needed
+        if target_map is not by_employee and key not in by_employee:
+            by_employee[key] = dict(entry)
+            by_employee[key]["emissions_kg_co2e"] = round(r.emissions_kg_co2e, 4)
+            by_employee[key]["records"] = 1
+        elif target_map is not by_employee:
+            by_employee[key]["emissions_kg_co2e"] = round(
+                by_employee[key]["emissions_kg_co2e"] + r.emissions_kg_co2e, 4
+            )
+            by_employee[key]["records"] += 1
 
     top_employees = sorted(
-        by_employee.values(), key=lambda x: x["emissions_kg_co2e"], reverse=True
+        [v for v in by_employee.values() if v.get("emitter_type") == "employee"],
+        key=lambda x: x["emissions_kg_co2e"],
+        reverse=True,
+    )[:10]
+    # Fallback to top emitters overall if no specific employee emitters exist
+    if not top_employees and by_employee:
+        top_employees = sorted(
+            by_employee.values(), key=lambda x: x["emissions_kg_co2e"], reverse=True
+        )[:10]
+
+    top_machinery = sorted(
+        by_machinery.values(), key=lambda x: x["emissions_kg_co2e"], reverse=True
+    )[:10]
+    top_facilities = sorted(
+        by_facility.values(), key=lambda x: x["emissions_kg_co2e"], reverse=True
     )[:10]
 
     kpi_snapshots = [
@@ -262,6 +365,15 @@ def calculate_emissions_from_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "kpi_value": val,
                 "kpi_unit": "kgCO2e",
                 "meta": {"category": cat},
+            }
+        )
+    for em_type, val in sorted(by_emitter_type.items(), key=lambda kv: kv[1], reverse=True):
+        kpi_snapshots.append(
+            {
+                "kpi_name": f"emitter_type_{em_type.lower()}_kg_co2e",
+                "kpi_value": val,
+                "kpi_unit": "kgCO2e",
+                "meta": {"emitter_type": em_type},
             }
         )
 
@@ -277,7 +389,10 @@ def calculate_emissions_from_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "breakdown": {
             "by_category_kg_co2e": by_category,
             "by_scope_kg_co2e": by_scope,
+            "by_emitter_type_kg_co2e": by_emitter_type,
             "top_employees_kg_co2e": top_employees,
+            "top_machinery_kg_co2e": top_machinery,
+            "top_facilities_kg_co2e": top_facilities,
         },
         "kpi_snapshots": kpi_snapshots,
         "computed_rows": [r.__dict__ for r in computed_rows],
