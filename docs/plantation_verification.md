@@ -100,13 +100,21 @@ NEXT_PUBLIC_ARCGIS_API_KEY=              # optional — falls back to OSM tiles
 
 ---
 
-## ArcGIS Satellite Basemap (Optional)
+## Live Satellite Map (Mapbox)
 
-1. Create account at https://location.arcgis.com/
-2. **API Keys → New key** → enable "Basemaps" scope only
-3. Add your domain as a referer (e.g. `https://your-app.vercel.app`)
-4. Set `NEXT_PUBLIC_ARCGIS_API_KEY` in frontend `.env.local`
-5. If not set, the map uses OpenStreetMap tiles (no satellite view). A banner is shown.
+The plantation map shows **real satellite imagery** of exactly the lat/lng coordinates the manager enters. This is powered by Mapbox.
+
+1. Go to https://account.mapbox.com/access-tokens/
+2. Copy your **Default public token** (starts with `pk.eyJ1...`)
+3. Set in frontend `.env.local`:
+   ```
+   NEXT_PUBLIC_MAPBOX_TOKEN=pk.eyJ1...
+   ```
+
+**Free tier:** 50,000 map loads/month — more than sufficient for a multi-company platform.  
+**Without the token:** Map falls back to OpenStreetMap (street map only, no satellite view).
+
+> **Security tip:** To prevent key abuse, go to Mapbox → Tokens → edit your token → add **Allowed URLs** (e.g. `https://your-app.vercel.app`) so the token only works on your domain.
 
 ---
 

@@ -45,7 +45,7 @@ export default function PlantationMap({
 
       // Initialise map only once
       if (!mapRef.current) {
-        const arcgisKey = process.env.NEXT_PUBLIC_ARCGIS_API_KEY;
+        const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
         const initialLat = latitude ?? 20.5937;
         const initialLng = longitude ?? 78.9629;
         const initialZoom = latitude ? 13 : 5;
@@ -56,12 +56,15 @@ export default function PlantationMap({
           doubleClickZoom: !readOnly,
         }).setView([initialLat, initialLng], initialZoom);
 
-        if (arcgisKey) {
+        if (mapboxToken) {
+          // Mapbox Satellite Streets — sharp global imagery with road/place labels
           L.tileLayer(
-            `https://ibasemaps-api.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}?token=${arcgisKey}`,
+            `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${mapboxToken}`,
             {
-              attribution: 'Esri, Maxar, Earthstar Geographics',
-              maxZoom: 19,
+              attribution: '© <a href="https://www.mapbox.com/">Mapbox</a> © <a href="https://www.openstreetmap.org/">OpenStreetMap</a>',
+              tileSize: 512,
+              zoomOffset: -1,
+              maxZoom: 22,
             },
           ).addTo(map);
         } else {
@@ -76,7 +79,7 @@ export default function PlantationMap({
               const div = L.DomUtil.create('div');
               div.innerHTML =
                 '<div style="background:rgba(0,0,0,0.65);color:#e2e8f0;font-size:11px;padding:4px 8px;border-radius:6px;">' +
-                '🌍 Satellite view requires NEXT_PUBLIC_ARCGIS_API_KEY</div>';
+                '🗺️ Set NEXT_PUBLIC_MAPBOX_TOKEN for satellite view</div>';
               return div;
             },
           });
