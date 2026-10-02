@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
 	TreePine,
 	TrendingUp,
@@ -307,6 +308,13 @@ export default function TEMEDashboard() {
 					>
 						NEW PROJECT
 					</Button>
+					<Link
+						href="/tree-engine/plantation"
+						className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 hover:border-primary/60 transition-colors"
+					>
+						<MapPin className="size-4" />
+						Plantation Tracker
+					</Link>
 				</div>
 			</div>
 

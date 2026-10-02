@@ -4,18 +4,19 @@ import Sidebar from '@/components/Sidebar';
 import Navbar from '@/components/Navbar';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import {
-  LayoutDashboard, Building2, Users, Activity, Shield, Settings, BookOpen, Database,
+  LayoutDashboard, Building2, Users, Activity, Shield, Settings, BookOpen, Database, TreePine,
 } from 'lucide-react';
 
 const adminNavItems = [
-  { name: 'Platform Overview',    href: '/admin/dashboard',              icon: LayoutDashboard },
-  { name: 'Companies',            href: '/admin/companies',              icon: Building2 },
-  { name: 'Managers',             href: '/admin/managers',               icon: Users },
-  { name: 'Rec. Catalog',         href: '/admin/recommendation-catalog', icon: Database },
-  { name: 'Policy Library',       href: '/admin/policy-library',         icon: BookOpen },
-  { name: 'Platform Health',      href: '/admin/health',                 icon: Activity },
-  { name: 'Access Control',       href: '/admin/access',                 icon: Shield },
-  { name: 'Platform Settings',    href: '/admin/settings',               icon: Settings },
+  { name: 'Platform Overview',       href: '/admin/dashboard',              icon: LayoutDashboard },
+  { name: 'Companies',               href: '/admin/companies',              icon: Building2 },
+  { name: 'Managers',                href: '/admin/managers',               icon: Users },
+  { name: 'Plantation Verification', href: '/admin/plantation',             icon: TreePine },
+  { name: 'Rec. Catalog',            href: '/admin/recommendation-catalog', icon: Database },
+  { name: 'Policy Library',          href: '/admin/policy-library',         icon: BookOpen },
+  { name: 'Platform Health',         href: '/admin/health',                 icon: Activity },
+  { name: 'Access Control',          href: '/admin/access',                 icon: Shield },
+  { name: 'Platform Settings',       href: '/admin/settings',               icon: Settings },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

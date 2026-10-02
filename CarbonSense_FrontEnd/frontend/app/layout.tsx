@@ -4,6 +4,7 @@ import { Toaster } from "react-hot-toast";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ThemeProvider from "@/components/ThemeProvider";
 import AuthProvider from "@/components/AuthProvider";
+import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
 

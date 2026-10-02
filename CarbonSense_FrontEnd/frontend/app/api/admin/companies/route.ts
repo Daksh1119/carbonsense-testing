@@ -104,6 +104,39 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Organization not found.' }, { status: 404 });
     }
 
+    // ── Plantation storage cleanup ──────────────────────────────────────────
+    // Must happen BEFORE the DB cascade delete so we can still enumerate files.
+    // FK cascades handle the DB rows; storage files must be removed manually.
+    const PLANTATION_BUCKETS = ['plantation-proofs', 'plantation-imagery'] as const;
+    for (const bucket of PLANTATION_BUCKETS) {
+      try {
+        let offset = 0;
+        const PAGE_SIZE = 100;
+        // Paginate through all objects under the org prefix
+        while (true) {
+          const { data: objects, error: listErr } = await supabase.storage
+            .from(bucket)
+            .list(organizationId, { limit: PAGE_SIZE, offset });
+          if (listErr) {
+            console.warn(`[companies DELETE] Could not list ${bucket}/${organizationId}:`, listErr.message);
+            break;
+          }
+          if (!objects || objects.length === 0) break;
+          const paths = objects.map((o) => `${organizationId}/${o.name}`);
+          const { error: removeErr } = await supabase.storage.from(bucket).remove(paths);
+          if (removeErr) {
+            console.warn(`[companies DELETE] Failed to remove objects from ${bucket}:`, removeErr.message);
+          }
+          if (objects.length < PAGE_SIZE) break;
+          offset += PAGE_SIZE;
+        }
+      } catch (storageErr) {
+        // Non-fatal — bucket may not exist yet (feature not deployed to this env)
+        console.warn(`[companies DELETE] Storage cleanup skipped for ${bucket}:`, storageErr);
+      }
+    }
+    // ── End plantation storage cleanup ─────────────────────────────────────
+
     // Try calling PL/pgSQL function if available
     const { error: rpcError } = await supabase.rpc('delete_organization_cascade', {
       target_org_id: organizationId,
