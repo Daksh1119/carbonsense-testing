@@ -11,11 +11,15 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import {
   TreePine, Search, RefreshCw, ShieldCheck, AlertTriangle,
   Clock, CheckCircle2, BarChart3, Building2, Camera,
   ChevronDown, ChevronUp, MapPin, Info,
 } from 'lucide-react';
+
+// Leaflet must not render on server
+const PlantationMap = dynamic(() => import('@/components/plantation/PlantationMap'), { ssr: false });
 import DashboardCard from '@/components/DashboardCard';
 import Badge from '@/components/Badge';
 import Button from '@/components/Button';
@@ -373,8 +377,8 @@ export default function AdminPlantationPage() {
 
       {/* Review modal */}
       {reviewTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6 space-y-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+          <div className="w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6 space-y-5 my-4">
             <div className="flex items-center gap-3">
               <div className="p-3 bg-primary/10 border border-primary/20 rounded-xl">
                 <ShieldCheck className="w-6 h-6 text-primary" />
@@ -384,6 +388,23 @@ export default function AdminPlantationPage() {
                 <p className="text-xs text-slate-400">
                   {reviewTarget.org_name} · {reviewTarget.site_name} · {reviewTarget.period_label}
                 </p>
+              </div>
+            </div>
+
+            {/* Satellite map — live view of the reported site */}
+            <div className="rounded-xl overflow-hidden border border-slate-700/60 relative">
+              <div className="absolute top-2 left-2 z-[500] bg-slate-900/80 backdrop-blur-sm text-xs text-slate-300 px-2.5 py-1 rounded-full flex items-center gap-1.5 font-medium">
+                <MapPin className="w-3 h-3 text-primary" />
+                {reviewTarget.latitude.toFixed(5)}, {reviewTarget.longitude.toFixed(5)}
+              </div>
+              <PlantationMap
+                latitude={reviewTarget.latitude}
+                longitude={reviewTarget.longitude}
+                readOnly
+                heightClass="h-52"
+              />
+              <div className="absolute bottom-2 right-2 z-[500] bg-slate-900/80 backdrop-blur-sm text-[10px] text-slate-400 px-2 py-1 rounded-full">
+                {reviewTarget.area_hectares} ha · Zoom in to verify vegetation
               </div>
             </div>
 
