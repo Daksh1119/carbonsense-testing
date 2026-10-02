@@ -40,6 +40,7 @@ CarbonSense is designed to support end-to-end carbon management workflows for or
 - Reduction-first strategy, with offsets modeled as projected, delayed mitigation rather than immediate neutralization.
 - AI-driven decarbonization recommendations using Groq (`llama-3.3-70b-versatile`) with catalog-based fallback.
 - Automated compliance tracking, policy matching, and evidence verification.
+- **Satellite-Backed Plantation Verification**: Mapbox-enabled visual verification for remote tree planting and offsetting initiatives.
 
 ---
 
@@ -84,7 +85,10 @@ The platform uses a strict RBAC model with three roles:
   - **Action Plan: What the Manager & Team Should Do**: Structured 2-column numbered roadmap with check badges.
   - Direct status controls: **Start (In Progress)**, **Mark Implemented**, **Dismiss**.
   - **Employee Task Delegation**: Assign specific actions directly to team viewers via dropdown.
-  - Expandable **Evidence & Verified Citations** drawer linking actions to GHG Protocol, BEE, ISO 14064, and ENERGY STAR frameworks.
+- Expandable **Evidence & Verified Citations** drawer linking actions to GHG Protocol, BEE, ISO 14064, and ENERGY STAR frameworks.
+- **Tree Planting Tracker (TEME Extension)**: 
+  - Visual satellite mapping using **Mapbox** for new site registration.
+  - Periodic manager reporting with species mix tracking, survival rate, and photo evidence upload.
 - Tree Engine (TEME)
 - Policy Intelligence (radar, drawer, structured policy chat)
 - Compliance Command Center (score ring, trend graph, deadlines, task verification, OCR evidence upload)
@@ -108,6 +112,7 @@ The platform uses a strict RBAC model with three roles:
 - Company Management (`/admin/companies`) — organization cards show `active` / `setup` status badges; cascade delete
 - Manager Oversight (`/admin/managers`) — managers show `active` / `pending` / `rejected` status badges; inline quick-approve
 - Access Control (`/admin/access`) — full pending approval review queue with organization details
+- **Tree Planting Verification** (`/admin/plantation`) — review manager-submitted plantation reports using live, high-zoom Mapbox satellite verification overlays.
 - Platform Health (API latency, DB load, service status)
 
 ---
@@ -274,7 +279,14 @@ carbonsense/
 - `POST /ocr/receipt` — Process single receipt image/PDF
 - `POST /ocr/receipts/bulk` — Process ZIP archive of receipts
 
-### 5.7 Admin API Endpoints (Next.js Route Handlers)
+### 5.7 Plantation Verification Endpoints
+- `GET /plantation/config` — Fetch global plantation configurations (photo bounds, FY limits)
+- `POST /plantation/sites` — Manager registers a new plantation parcel boundary/coordinate
+- `POST /plantation/reports` — Multipart form submission of tree survival data and image proofs
+- `GET /plantation/reports/admin` — Fetch comprehensive verification queue for Platform Admins
+- `POST /plantation/reports/{id}/review` — Admin signs off or flags a submitted plantation report
+
+### 5.8 Admin API Endpoints (Next.js Route Handlers)
 - `DELETE /api/admin/companies?id=...` — Cascade delete organization and all associated data
 - `DELETE /api/admin/managers?id=...` — Demote or remove manager profile
 - `POST /api/admin/managers/invite` — Invite manager for existing or new company

@@ -632,10 +632,10 @@ def create_site(payload: CreateSitePayload):
                 supabase.table("teme_runs")
                 .select("id, organization_id, total_trees, land_required_hectare")
                 .eq("id", payload.teme_run_id)
-                .maybeSingle()
+                .limit(1)
                 .execute()
             )
-            if run_res.data and str(run_res.data.get("organization_id", "")) != org_id:
+            if run_res.data and str(run_res.data[0].get("organization_id", "")) != org_id:
                 raise HTTPException(status_code=404, detail="TEME run not found")
         except HTTPException:
             raise
@@ -658,11 +658,9 @@ def create_site(payload: CreateSitePayload):
                 "boundary_geojson": payload.boundary_geojson,
                 "created_by": payload.user_id,
             })
-            .select("*")
-            .single()
             .execute()
         )
-        return {"site": res.data}
+        return {"site": res.data[0] if res.data else None}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create site: {e}")
 
@@ -700,7 +698,7 @@ async def submit_report(
             supabase.table("plantation_sites")
             .select("*")
             .eq("id", report_data.site_id)
-            .maybeSingle()
+            .limit(1)
             .execute()
         )
     except Exception as e:
@@ -709,7 +707,7 @@ async def submit_report(
     if not site_res.data:
         raise HTTPException(status_code=404, detail="Site not found")  # 404, not 403
 
-    site = site_res.data
+    site = site_res.data[0]
     if str(site["org_id"]) != org_id:
         raise HTTPException(status_code=404, detail="Site not found")
 
@@ -941,7 +939,7 @@ def refresh_imagery(report_id: str, user_id: str = Form(...), background_tasks: 
             supabase.table("plantation_reports")
             .select("site_id, org_id, latitude, longitude, area_hectares, submitted_at")
             .eq("id", report_id)
-            .maybeSingle()
+            .limit(1)
             .execute()
         )
     except Exception as e:
@@ -950,7 +948,7 @@ def refresh_imagery(report_id: str, user_id: str = Form(...), background_tasks: 
     if not rep_res.data:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    rep = rep_res.data
+    rep = rep_res.data[0]
 
     # Check 24h cooldown
     try:

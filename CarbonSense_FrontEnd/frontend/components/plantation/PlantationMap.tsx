@@ -48,7 +48,7 @@ export default function PlantationMap({
         const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
         const initialLat = latitude ?? 20.5937;
         const initialLng = longitude ?? 78.9629;
-        const initialZoom = latitude ? 13 : 5;
+        const initialZoom = latitude ? 17 : 5;
 
         const map = L.map(containerRef.current!, {
           zoomControl: true,
