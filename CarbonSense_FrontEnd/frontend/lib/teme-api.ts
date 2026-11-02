@@ -1,4 +1,4 @@
-import { SupabaseClient, createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabaseClient";
 import { getCurrentUserContext } from "@/lib/recommendations-api";
 import {
 	TEMERequest,
@@ -53,32 +53,6 @@ function normalizeTEMEResult(body: any): TEMEResult {
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 const useMockTeme = process.env.NEXT_PUBLIC_USE_TEME_MOCK === "true";
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseAnonKey) {
-	// eslint-disable-next-line no-console
-	console.warn(
-		"Supabase env vars are missing. TEME persistence will fail until NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set."
-	);
-}
-
-let supabaseClient: SupabaseClient | null = null;
-
-function getSupabaseClient(): SupabaseClient {
-	if (supabaseClient) {
-		return supabaseClient;
-	}
-
-	if (!supabaseUrl || !supabaseAnonKey) {
-		throw new Error(
-			"Supabase env vars are missing. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
-		);
-	}
-
-	supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
-	return supabaseClient;
-}
 
 function getCurrentUserId(): string {
 	if (typeof window === "undefined") return "anonymous";
@@ -190,10 +164,43 @@ export async function saveTEMERun(
 	inputPayload: TEMERequest,
 	result: TEMEResult
 ): Promise<TEMERunRecord> {
-	const supabase = getSupabaseClient();
 	const userId = getCurrentUserId();
 	const organizationId = getCurrentOrgId();
 
+	let token: string | undefined;
+	try {
+		const { data: sessionData } = await supabase.auth.getSession();
+		token = sessionData?.session?.access_token;
+	} catch {}
+
+	// Attempt via server API route first
+	try {
+		const res = await fetch("/api/teme/save", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				...(token ? { Authorization: `Bearer ${token}` } : {}),
+			},
+			body: JSON.stringify({
+				projectName,
+				inputPayload,
+				result,
+				userId,
+				organizationId,
+			}),
+		});
+
+		if (res.ok) {
+			const json = await res.json();
+			if (json.run) {
+				return mapRowToRecord(json.run);
+			}
+		}
+	} catch (apiErr) {
+		console.warn("[teme-api] /api/teme/save failed, falling back to direct client insert:", apiErr);
+	}
+
+	// Direct client fallback using authenticated Supabase client
 	const { data, error } = await supabase
 		.from("teme_runs")
 		.insert({
@@ -220,16 +227,45 @@ export async function saveTEMERun(
 }
 
 export async function getTEMEHistory(): Promise<TEMERunRecord[]> {
-	const supabase = getSupabaseClient();
 	const userId = getCurrentUserId();
+	const organizationId = getCurrentOrgId();
 
-	const { data, error } = await supabase
+	let token: string | undefined;
+	try {
+		const { data: sessionData } = await supabase.auth.getSession();
+		token = sessionData?.session?.access_token;
+	} catch {}
+
+	try {
+		const res = await fetch(
+			`/api/teme/projects?userId=${userId}&organizationId=${organizationId || ""}`,
+			{
+				headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+			}
+		);
+		if (res.ok) {
+			const json = await res.json();
+			if (Array.isArray(json.projects)) {
+				return json.projects.map(mapRowToRecord);
+			}
+		}
+	} catch (e) {
+		console.warn("[teme-api] /api/teme/projects failed, falling back to direct client:", e);
+	}
+
+	let query = supabase
 		.from("teme_runs")
 		.select("*")
-		.eq("user_id", userId)
 		.order("created_at", { ascending: false })
 		.limit(50);
 
+	if (organizationId) {
+		query = query.or(`user_id.eq.${userId},organization_id.eq.${organizationId}`);
+	} else if (userId) {
+		query = query.eq("user_id", userId);
+	}
+
+	const { data, error } = await query;
 	if (error) {
 		throw new Error(`Failed to fetch TEME history: ${error.message}`);
 	}
@@ -238,16 +274,45 @@ export async function getTEMEHistory(): Promise<TEMERunRecord[]> {
 }
 
 export async function getPlantingProjects(): Promise<TEMERunRecord[]> {
-	const supabase = getSupabaseClient();
 	const userId = getCurrentUserId();
+	const organizationId = getCurrentOrgId();
 
-	const { data, error } = await supabase
+	let token: string | undefined;
+	try {
+		const { data: sessionData } = await supabase.auth.getSession();
+		token = sessionData?.session?.access_token;
+	} catch {}
+
+	try {
+		const res = await fetch(
+			`/api/teme/projects?status=completed&userId=${userId}&organizationId=${organizationId || ""}`,
+			{
+				headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+			}
+		);
+		if (res.ok) {
+			const json = await res.json();
+			if (Array.isArray(json.projects)) {
+				return json.projects.map(mapRowToRecord);
+			}
+		}
+	} catch (e) {
+		console.warn("[teme-api] /api/teme/projects completed failed, falling back to direct client:", e);
+	}
+
+	let query = supabase
 		.from("teme_runs")
 		.select("*")
-		.eq("user_id", userId)
 		.eq("status", "completed")
 		.order("created_at", { ascending: false });
 
+	if (organizationId) {
+		query = query.or(`user_id.eq.${userId},organization_id.eq.${organizationId}`);
+	} else if (userId) {
+		query = query.eq("user_id", userId);
+	}
+
+	const { data, error } = await query;
 	if (error) {
 		throw new Error(`Failed to fetch planting projects: ${error.message}`);
 	}

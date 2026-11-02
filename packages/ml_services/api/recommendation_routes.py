@@ -1,3 +1,5 @@
+import hashlib
+import json
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -104,27 +106,117 @@ def create_recommendation_feedback(session_id: str, recommendation_id: str, payl
 # ---------------------------------------------------------------------------
 
 @router.get("/items")
-def list_recommendation_items(organization_id: str, status: Optional[str] = None):
+def list_recommendation_items(
+    organization_id: str,
+    upload_id: Optional[str] = None,
+    status: Optional[str] = None,
+):
     """
-    List recommendations for an organization from the recommendations table
-    (where LLM-generated recommendations are stored per session).
+    List recommendations for an organization from the recommendations table.
+    - If upload_id is provided, returns tactical recommendations scoped to that specific upload.
+    - If upload_id is omitted or 'all', returns the persistent Enterprise Decarbonization Roadmap.
     Optionally filter by implementation_status.
     """
     try:
-        # Step 1: get the latest generated session for this org
-        sess_res = (
-            supabase.table("recommendation_sessions")
-            .select("id")
-            .eq("organization_id", organization_id)
-            .eq("status", "generated")
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if not sess_res.data:
-            return {"items": [], "count": 0}
+        session_id = None
+        session_info: Dict[str, Any] = {}
+        clean_upload_id = upload_id.strip() if upload_id else None
+        is_upload_mode = bool(clean_upload_id and clean_upload_id.lower() != "all")
 
-        session_id = sess_res.data[0]["id"]
+        if is_upload_mode:
+            # 1. Lookup by input_hash (upload::{org_id}::{upload_id})
+            upload_hash = hashlib.sha256(f"upload::{organization_id}::{clean_upload_id}".encode("utf-8")).hexdigest()
+            sess_res = (
+                supabase.table("recommendation_sessions")
+                .select("id, project_name, emission_kg, created_at, input_hash, input_payload")
+                .eq("organization_id", organization_id)
+                .eq("input_hash", upload_hash)
+                .eq("status", "generated")
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if sess_res.data:
+                session_info = sess_res.data[0]
+                session_id = session_info["id"]
+            else:
+                # 2. Check by input_payload->>emissions_upload_id
+                all_org_sess = (
+                    supabase.table("recommendation_sessions")
+                    .select("id, project_name, emission_kg, created_at, input_hash, input_payload")
+                    .eq("organization_id", organization_id)
+                    .eq("status", "generated")
+                    .order("created_at", desc=True)
+                    .limit(50)
+                    .execute()
+                )
+                for s in (all_org_sess.data or []):
+                    payload = s.get("input_payload") or {}
+                    if isinstance(payload, dict) and str(payload.get("emissions_upload_id") or "") == clean_upload_id:
+                        session_info = s
+                        session_id = s["id"]
+                        break
+
+            # 3. If still not found, check organization_uploads for filename match
+            if not session_id:
+                up_res = (
+                    supabase.table("organization_uploads")
+                    .select("original_file_name, total_emissions_kg")
+                    .eq("id", clean_upload_id)
+                    .limit(1)
+                    .execute()
+                )
+                if up_res.data:
+                    fname = up_res.data[0].get("original_file_name")
+                    if fname:
+                        fname_res = (
+                            supabase.table("recommendation_sessions")
+                            .select("id, project_name, emission_kg, created_at, input_hash, input_payload")
+                            .eq("organization_id", organization_id)
+                            .eq("project_name", fname)
+                            .eq("status", "generated")
+                            .order("created_at", desc=True)
+                            .limit(1)
+                            .execute()
+                        )
+                        if fname_res.data:
+                            session_info = fname_res.data[0]
+                            session_id = session_info["id"]
+
+        else:
+            # Enterprise / All Uploads mode
+            all_org_sess = (
+                supabase.table("recommendation_sessions")
+                .select("id, project_name, emission_kg, created_at, input_hash, input_payload")
+                .eq("organization_id", organization_id)
+                .eq("status", "generated")
+                .order("created_at", desc=True)
+                .limit(50)
+                .execute()
+            )
+            # Find an enterprise-level session (where emissions_upload_id is None / not tied to a single file)
+            for s in (all_org_sess.data or []):
+                payload = s.get("input_payload") or {}
+                if isinstance(payload, dict) and not payload.get("emissions_upload_id"):
+                    session_info = s
+                    session_id = s["id"]
+                    break
+
+            # Fallback if no explicit enterprise session: use latest generated session
+            if not session_id and all_org_sess.data:
+                session_info = all_org_sess.data[0]
+                session_id = session_info["id"]
+
+        if not session_id:
+            return {
+                "items": [],
+                "count": 0,
+                "session_id": None,
+                "mode": "upload" if is_upload_mode else "enterprise",
+                "upload_id": clean_upload_id if is_upload_mode else None,
+                "project_name": None,
+                "emission_kg": 0,
+            }
 
         # Step 2: fetch recommendations for that session
         q = (
@@ -181,7 +273,19 @@ def list_recommendation_items(organization_id: str, status: Optional[str] = None
                 "assigned_to": r.get("assigned_to"),
             })
 
-        return {"items": items, "count": len(items)}
+        display_name = session_info.get("project_name")
+        if not is_upload_mode:
+            display_name = "Enterprise Decarbonization Roadmap (All Uploads)"
+
+        return {
+            "items": items,
+            "count": len(items),
+            "session_id": session_id,
+            "mode": "upload" if is_upload_mode else "enterprise",
+            "upload_id": clean_upload_id if is_upload_mode else None,
+            "project_name": display_name,
+            "emission_kg": session_info.get("emission_kg"),
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list recommendation items: {e}")
 
